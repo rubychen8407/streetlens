@@ -9,8 +9,8 @@ export interface GreenSourceResult {
   error?: string;
 }
 
-const DATA_TAIPEI_URL =
-  "https://data.taipei/api/v1/dataset/7a49d00c-a5ff-4a6b-be9e-aaa6dc1ff7e8";
+const STREET_TREE_URL = "https://tppkl.blob.core.windows.net/blobfs/TaipeiTree.csv";
+const PARK_TREE_URL = "https://tppkl.blob.core.windows.net/blobfs/TaipeiParkTree.json";
 
 function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -69,107 +69,23 @@ async function fetchDatasetResource(
   resource: "streetTrees" | "parkTrees",
   signal: AbortSignal
 ): Promise<any[]> {
-  const response = await fetch(DATA_TAIPEI_URL, {
-    signal,
-    headers: { Accept: "application/json", "User-Agent": "StreetLens/1.0" },
-  });
-  if (!response.ok) throw new Error(`data.taipei metadata HTTP ${response.status}`);
-  const metadata: any = await response.json();
-
-  const resources = extractRows(metadata?.resources ?? metadata?.result?.resources);
-  const match = resources.find((item: any) => {
-    const name = String(item.name ?? item.title ?? item.description ?? "");
-    return resource === "streetTrees"
-      ? /行道樹.*CSV|行道樹資料/i.test(name)
-      : /公園樹木.*(JSON|CSV)/i.test(name);
-  });
-
-  const url = match?.url ?? match?.download_url ?? match?.resource_url;
-  if (!url) throw new Error(`No ${resource} resource URL in data.taipei metadata`);
-
-  const dataResponse = await fetch(url, {
+  const url = resource === "streetTrees" ? STREET_TREE_URL : PARK_TREE_URL;
+  const response = await fetch(url, {
     signal,
     headers: { Accept: "application/json,text/csv,*/*", "User-Agent": "StreetLens/1.0" },
   });
-  if (!dataResponse.ok) throw new Error(`${resource} resource HTTP ${dataResponse.status}`);
-
-  const text = await dataResponse.text();
+  if (!response.ok) throw new Error(\`\${resource} resource HTTP \${response.status}\`);
+  const text = await response.text();
   try {
     return extractRows(JSON.parse(text));
   } catch {
-    return text
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map((line) => line.split(","));
+    const lines = text.split(/\\r?\\n/).filter(Boolean);
+    if (!lines.length) return [];
+    const headers = lines[0].split(",").map((value) => value.trim().replace(/^"|"$/g, ""));
+    return lines.slice(1).map((line) => {
+      const values = line.split(",").map((value) => value.trim().replace(/^"|"$/g, ""));
+      return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
+    });
   }
 }
 
-export async function fetchTaipeiGreenData(lat: number, lng: number): Promise<GreenSourceResult> {
-  const retrievedAt = new Date().toISOString();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const [streetRows, parkRows] = await Promise.all([
-      fetchDatasetResource("streetTrees", controller.signal),
-      fetchDatasetResource("parkTrees", controller.signal),
-    ]);
-
-    const streetTrees = streetRows
-      .map((row: any) => {
-        const coordinate = findCoordinate(row);
-        return coordinate
-          ? {
-              ...coordinate,
-              treeId: row.TreeID ?? row.properties?.TreeID ?? null,
-              treeType: row.TreeType ?? row.properties?.TreeType ?? null,
-              source: "Taipei City Parks and Street Trees dataset",
-              sourceType: "official",
-              retrievedAt,
-              distanceMeters: haversineDistanceMeters(lat, lng, coordinate.lat, coordinate.lng),
-            }
-          : null;
-      })
-      .filter(Boolean)
-      .filter((tree: any) => tree.distanceMeters <= 800)
-      .sort((a: any, b: any) => a.distanceMeters - b.distanceMeters);
-
-    const parkTrees = parkRows
-      .map((row: any) => {
-        const coordinate = findCoordinate(row);
-        return coordinate
-          ? {
-              ...coordinate,
-              treeId: row.TreeID ?? row.properties?.TreeID ?? null,
-              parkName: row.ParkName ?? row.properties?.ParkName ?? null,
-              source: "Taipei City Parks and Street Trees dataset",
-              sourceType: "official",
-              retrievedAt,
-              distanceMeters: haversineDistanceMeters(lat, lng, coordinate.lat, coordinate.lng),
-            }
-          : null;
-      })
-      .filter(Boolean)
-      .filter((tree: any) => tree.distanceMeters <= 800)
-      .sort((a: any, b: any) => a.distanceMeters - b.distanceMeters);
-
-    return {
-      streetTrees,
-      parkTrees,
-      source: "Taipei City Parks and Street Trees dataset",
-      status: streetTrees.length || parkTrees.length ? "available" : "empty",
-      retrievedAt,
-    };
-  } catch (error: any) {
-    return {
-      streetTrees: [],
-      parkTrees: [],
-      source: "Taipei City Parks and Street Trees dataset",
-      status: error?.name === "AbortError" ? "timeout" : "error",
-      retrievedAt,
-      error: error?.message,
-    };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}

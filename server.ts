@@ -580,7 +580,7 @@ function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
 // background refresh job; user requests never probe upstream sources.
 const VALIDATOR_RESOURCES: Record<string, string[]> = {
   taipei_green: Object.values(GREEN_RESOURCE_URLS),
-  taipei_safety: [SAFETY_RESOURCE_URLS.taipeiFatalInjuryAccidents2025],
+  taipei_safety: [SAFETY_RESOURCE_URLS.taipeiTrafficAccidentPoints2025],
   taipei_flood: Object.values(FLOOD_RESOURCE_URLS),
 };
 

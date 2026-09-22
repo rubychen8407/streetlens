@@ -966,11 +966,26 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     const parkPois = pois.filter((x: any) => x.amenityType === "park" && Number.isFinite(x.distanceMeters));
     const nearestParkDist = parkPois.length ? Math.min(...parkPois.map((x: any) => x.distanceMeters)) : undefined;
+    const GREEN_RADIUS_METERS = 800;
+    const GREEN_OBSERVATION_AREA_KM2 = Math.PI * (GREEN_RADIUS_METERS / 1000) ** 2;
+    const streetTreeCount800m = greenData.streetTrees?.length;
+    const parkTreeCount800m = greenData.parkTrees?.length;
     const c4GreenMetrics = {
-      streetTreeCount800m: greenData.streetTrees?.length || undefined, parkTreeCount800m: greenData.parkTrees?.length || undefined,
-      nearestParkDist, parkCount800m: parkPois.length || undefined, source: greenData.source || "Taipei City Parks and Street Trees dataset",
-      method: "calculated" as const, confidence: greenData.status === "available" ? "high" as const : "low" as const,
-      status: greenData.status, retrievedAt: greenData.retrievedAt,
+      streetTreeCount800m: Number.isFinite(Number(streetTreeCount800m)) ? Number(streetTreeCount800m) : undefined,
+      parkTreeCount800m: Number.isFinite(Number(parkTreeCount800m)) ? Number(parkTreeCount800m) : undefined,
+      streetTreeDensityPerKm2: Number.isFinite(Number(streetTreeCount800m))
+        ? Number(streetTreeCount800m) / GREEN_OBSERVATION_AREA_KM2
+        : undefined,
+      parkTreeDensityPerKm2: Number.isFinite(Number(parkTreeCount800m))
+        ? Number(parkTreeCount800m) / GREEN_OBSERVATION_AREA_KM2
+        : undefined,
+      nearestParkDist,
+      parkCount800m: parkPois.length || undefined,
+      source: greenData.source || "Taipei City Parks and Street Trees dataset",
+      method: "calculated" as const,
+      confidence: greenData.status === "available" ? "high" as const : "low" as const,
+      status: greenData.status,
+      retrievedAt: greenData.retrievedAt,
     };
 
     const accidents = safetyData.accidents || [];

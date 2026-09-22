@@ -896,6 +896,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const c4GreenMetrics = {
       streetTreeCount800m: greenData.streetTrees.length || undefined,
       parkTreeCount800m: greenData.parkTrees.length || undefined,
+      nearestParkDist: nearestParkDist,
+      parkCount800m: parkPois.length || undefined,
       source: greenData.source,
       method: "calculated" as const,
       confidence: greenData.status === "available" ? "high" as const : "low" as const,

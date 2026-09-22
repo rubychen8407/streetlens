@@ -598,9 +598,9 @@ function parseValidatorState(snapshot: any): ValidatorState {
 async function checkStaticResourceValidators(
   sourceKey: string,
   snapshot: any,
-): Promise<{ decision: "unchanged" | "changed" | "unknown"; version: string | null; method: "etag" | "last_modified" | "unknown" }> {
+): Promise<{ decision: "unchanged" | "changed" | "unknown"; version: string | null; method: "etag" | "last_modified" | "unknown"; sourceUpdatedAt: string | null }> {
   const urls = VALIDATOR_RESOURCES[sourceKey];
-  if (!urls?.length) return { decision: "unknown", version: null, method: "unknown" };
+  if (!urls?.length) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
 
   const previous = parseValidatorState(snapshot);
   const state: ValidatorState = {};
@@ -621,11 +621,11 @@ async function checkStaticResourceValidators(
         state[url] = prior;
         continue;
       }
-      if (!response.ok) return { decision: "unknown", version: null, method: "unknown" };
+      if (!response.ok) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
 
       const etag = response.headers.get("etag") || undefined;
       const lastModified = response.headers.get("last-modified") || undefined;
-      if (!etag && !lastModified) return { decision: "unknown", version: null, method: "unknown" };
+      if (!etag && !lastModified) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
       sawValidator = true;
       state[url] = { etag, lastModified };
 
@@ -634,15 +634,24 @@ async function checkStaticResourceValidators(
         || (!prior.etag && !prior.lastModified);
       if (changed) sawChanged += 1;
     } catch {
-      return { decision: "unknown", version: null, method: "unknown" };
+      return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
     }
   }
 
   const version = JSON.stringify(state);
-  if (sawNotModified === urls.length) return { decision: "unchanged", version, method: "etag" };
-  if (sawChanged > 0) return { decision: "changed", version, method: "etag" };
-  if (sawValidator) return { decision: "unchanged", version, method: "etag" };
-  return { decision: "unknown", version, method: "unknown" };
+  const modifiedDates = Object.values(state)
+    .map((item) => item.lastModified)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  const sourceUpdatedAt = modifiedDates.length
+    ? new Date(Math.max(...modifiedDates)).toISOString()
+    : null;
+  const method = Object.values(state).some((item) => item.etag) ? "etag" : "last_modified";
+  if (sawNotModified === urls.length) return { decision: "unchanged", version, method, sourceUpdatedAt };
+  if (sawChanged > 0) return { decision: "changed", version, method, sourceUpdatedAt };
+  if (sawValidator) return { decision: "unchanged", version, method, sourceUpdatedAt };
+  return { decision: "unknown", version, method: "unknown", sourceUpdatedAt };
 }
 
 
@@ -725,6 +734,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         if (existing && validator.decision === "unchanged") {
           await markSnapshotChecked(sourceKey, scopeKey, {
             sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
             freshnessMethod: validator.method,
           });
           results.push({
@@ -772,6 +782,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         const saved = await saveSnapshot(sourceKey, scopeKey, payload, {
           status: String(payload?.status || "available"),
           sourceVersion: validator.version,
+          sourceUpdatedAt: validator.sourceUpdatedAt,
           freshnessMethod: validator.method,
         });
 

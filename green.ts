@@ -12,6 +12,11 @@ export interface GreenSourceResult {
 const STREET_TREE_URL = "https://tppkl.blob.core.windows.net/blobfs/TaipeiTree.csv";
 const PARK_TREE_URL = "https://tppkl.blob.core.windows.net/blobfs/TaipeiParkTree.json";
 
+export const GREEN_RESOURCE_URLS = {
+  streetTrees: STREET_TREE_URL,
+  parkTrees: PARK_TREE_URL,
+};
+
 function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;

@@ -78,7 +78,7 @@ async function fetchDatasetResource(
     signal,
     headers: { Accept: "application/json,text/csv,*/*", "User-Agent": "StreetLens/1.0" },
   });
-  if (!response.ok) throw new Error(\`\${resource} resource HTTP \${response.status}\`);
+  if (!response.ok) throw new Error(`${resource} resource HTTP ${response.status}`);
   const text = await response.text();
   try {
     return extractRows(JSON.parse(text));

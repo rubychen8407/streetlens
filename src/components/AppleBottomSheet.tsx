@@ -9,6 +9,7 @@ import {
   FieldCheckItem,
   WeatherData,
   IndicatorSourceItem,
+  SavedLocation,
 } from '../types';
 import {
   X,
@@ -31,7 +32,28 @@ import {
   RefreshCw,
   Wind,
   CheckCircle2,
+  Bookmark,
+  BookmarkCheck,
+  Trash2,
+  MapPin,
+  Compass,
+  Search,
+  Download,
 } from 'lucide-react';
+
+const SAVED_LOCATIONS_STORAGE_KEY = 'cls_saved_locations';
+
+function getStoredSavedLocations(): SavedLocation[] {
+  try {
+    const raw = localStorage.getItem(SAVED_LOCATIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('Failed to parse saved locations from localStorage', e);
+    return [];
+  }
+}
 
 interface AppleBottomSheetProps {
   isOpen: boolean;
@@ -73,6 +95,7 @@ interface AppleBottomSheetProps {
   weatherData?: WeatherData | null;
   indicatorSources?: IndicatorSourceItem[];
   targetLocation?: { lat: number; lng: number };
+  onSelectSavedLocation?: (saved: SavedLocation) => void;
 }
 
 export function AppleBottomSheet({
@@ -108,13 +131,153 @@ export function AppleBottomSheet({
   weatherData,
   indicatorSources = [],
   targetLocation,
+  onSelectSavedLocation,
 }: AppleBottomSheetProps) {
-  const [sheetTab, setSheetTab] = useState<'overview' | 'sources' | 'calibrate' | 'report'>('overview');
+  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'sources' | 'calibrate' | 'report'>('overview');
   const [selectedCat, setSelectedCat] = useState<'C1' | 'C2' | 'C3' | 'C4' | 'C5'>('C1');
   const [sheetHeight, setSheetHeight] = useState<'half' | 'full'>('half');
   const [copied, setCopied] = useState(false);
 
+  // Saved Locations state
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>(getStoredSavedLocations);
+  const [customLocationName, setCustomLocationName] = useState('');
+  const [savedSearchQuery, setSavedSearchQuery] = useState('');
+  const [saveSuccessNotice, setSaveSuccessNotice] = useState<string | null>(null);
+  const [copiedCoordId, setCopiedCoordId] = useState<string | null>(null);
+
   if (!isOpen) return null;
+
+  const currentCoords = targetLocation || { lat: 25.033, lng: 121.5654 };
+  const isCurrentSaved = savedLocations.some(
+    (loc) =>
+      Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
+      Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001
+  );
+
+  const handleSaveCurrentLocation = () => {
+    const defaultName = `${district ? district + ' ' : ''}${streetName || '實勘點位'}`;
+    const nameToUse = customLocationName.trim() || defaultName;
+
+    const existingIndex = savedLocations.findIndex(
+      (loc) =>
+        Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
+        Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001
+    );
+
+    const newEntry: SavedLocation = {
+      id:
+        existingIndex >= 0
+          ? savedLocations[existingIndex].id
+          : `saved_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: nameToUse,
+      streetName: streetName || '實勘路段',
+      district: district || '',
+      city: city || '台灣',
+      coords: currentCoords,
+      clsScore,
+      grade,
+      scores: {
+        c1: c1.score,
+        c2: c2.score,
+        c3: c3.score,
+        c4: c4.score,
+        c5: c5.score,
+      },
+      c1Data: c1,
+      c2Data: c2,
+      c3Data: c3,
+      c4Data: c4,
+      c5Data: c5,
+      weights,
+      fieldNotes,
+      timestamp: Date.now(),
+    };
+
+    let updatedList: SavedLocation[];
+    if (existingIndex >= 0) {
+      updatedList = [...savedLocations];
+      updatedList[existingIndex] = newEntry;
+    } else {
+      updatedList = [newEntry, ...savedLocations];
+    }
+
+    setSavedLocations(updatedList);
+    try {
+      localStorage.setItem(SAVED_LOCATIONS_STORAGE_KEY, JSON.stringify(updatedList));
+    } catch (e) {
+      console.warn('Failed to save to localStorage', e);
+    }
+
+    setCustomLocationName('');
+    setSaveSuccessNotice(
+      existingIndex >= 0
+        ? `已更新【${nameToUse}】之評估分數（CLS: ${clsScore}分）！`
+        : `已成功儲存【${nameToUse}】（CLS: ${clsScore}分）！`
+    );
+    setTimeout(() => setSaveSuccessNotice(null), 3500);
+  };
+
+  const handleDeleteSavedLocation = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const updated = savedLocations.filter((loc) => loc.id !== id);
+    setSavedLocations(updated);
+    try {
+      localStorage.setItem(SAVED_LOCATIONS_STORAGE_KEY, JSON.stringify(updated));
+    } catch (err) {
+      console.warn('Failed to update localStorage', err);
+    }
+  };
+
+  const handleClearAllSaved = () => {
+    if (window.confirm('確定要清空所有已儲存的勘查地點嗎？')) {
+      setSavedLocations([]);
+      try {
+        localStorage.removeItem(SAVED_LOCATIONS_STORAGE_KEY);
+      } catch (err) {}
+    }
+  };
+
+  const handleCopyCoords = (loc: SavedLocation, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const str = `${loc.coords.lat.toFixed(6)}, ${loc.coords.lng.toFixed(6)}`;
+    navigator.clipboard.writeText(str);
+    setCopiedCoordId(loc.id);
+    setTimeout(() => setCopiedCoordId(null), 2000);
+  };
+
+  const handleLoadSavedLocation = (loc: SavedLocation) => {
+    if (onSelectSavedLocation) {
+      onSelectSavedLocation(loc);
+    }
+    setSaveSuccessNotice(`已在地圖載入【${loc.name}】之座標與評估！`);
+    setTimeout(() => setSaveSuccessNotice(null), 3500);
+  };
+
+  const handleExportSavedJson = () => {
+    const dataStr =
+      'data:text/json;charset=utf-8,' +
+      encodeURIComponent(JSON.stringify(savedLocations, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute(
+      'download',
+      `cls_saved_locations_${new Date().toISOString().slice(0, 10)}.json`
+    );
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  const filteredSavedLocations = savedLocations.filter((loc) => {
+    if (!savedSearchQuery.trim()) return true;
+    const q = savedSearchQuery.toLowerCase();
+    return (
+      loc.name.toLowerCase().includes(q) ||
+      loc.streetName.toLowerCase().includes(q) ||
+      loc.district.toLowerCase().includes(q) ||
+      loc.city.toLowerCase().includes(q)
+    );
+  });
 
   const getDeltaBadge = (current: number, base: number) => {
     const diff = Math.round(current - base);
@@ -203,6 +366,28 @@ export function AppleBottomSheet({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
+              onClick={() => {
+                if (sheetTab !== 'saved') {
+                  setSheetTab('saved');
+                } else {
+                  handleSaveCurrentLocation();
+                }
+              }}
+              className={`p-1.5 rounded-full transition-colors text-xs flex items-center gap-1 ${
+                isCurrentSaved
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-white/10 hover:bg-white/20 text-slate-300'
+              }`}
+              title={isCurrentSaved ? '此地點已在收藏清單（點擊查看）' : '收藏此地點與 CLS 評估'}
+            >
+              {isCurrentSaved ? (
+                <BookmarkCheck className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Bookmark className="w-4 h-4" />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setSheetHeight((h) => (h === 'half' ? 'full' : 'half'))}
               className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 transition-colors text-xs"
               title={sheetHeight === 'half' ? '放大抽屜' : '縮小抽屜'}
@@ -226,11 +411,11 @@ export function AppleBottomSheet({
 
         {/* Apple Segmented Control */}
         <div className="px-5 pt-2.5 pb-2">
-          <div className="flex p-1 bg-black/40 rounded-xl border border-white/5 text-xs font-semibold">
+          <div className="flex p-1 bg-black/40 rounded-xl border border-white/5 text-xs font-semibold overflow-x-auto drawer-scrollbar">
             <button
               type="button"
               onClick={() => setSheetTab('overview')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
                 sheetTab === 'overview'
                   ? 'bg-white/20 text-white shadow-xs font-bold'
                   : 'text-slate-400 hover:text-white'
@@ -241,8 +426,25 @@ export function AppleBottomSheet({
             </button>
             <button
               type="button"
+              onClick={() => setSheetTab('saved')}
+              className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+                sheetTab === 'saved'
+                  ? 'bg-white/20 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Bookmark className="w-3.5 h-3.5 text-amber-400" />
+              <span>已存地點</span>
+              {savedLocations.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-amber-500/30 text-amber-300 text-[10px] font-bold">
+                  {savedLocations.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setSheetTab('sources')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
                 sheetTab === 'sources'
                   ? 'bg-white/20 text-white shadow-xs font-bold'
                   : 'text-slate-400 hover:text-white'
@@ -254,7 +456,7 @@ export function AppleBottomSheet({
             <button
               type="button"
               onClick={() => setSheetTab('calibrate')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
                 sheetTab === 'calibrate'
                   ? 'bg-white/20 text-white shadow-xs font-bold'
                   : 'text-slate-400 hover:text-white'
@@ -266,7 +468,7 @@ export function AppleBottomSheet({
             <button
               type="button"
               onClick={() => setSheetTab('report')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
                 sheetTab === 'report'
                   ? 'bg-white/20 text-white shadow-xs font-bold'
                   : 'text-slate-400 hover:text-white'
@@ -306,6 +508,36 @@ export function AppleBottomSheet({
                   <div className="text-2xl font-black text-white font-mono">{grade}</div>
                 </div>
               </div>
+
+              {/* Quick Save Current Location Banner in Overview */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveCurrentLocation();
+                  setSheetTab('saved');
+                }}
+                className={`w-full py-2.5 px-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all ${
+                  isCurrentSaved
+                    ? 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25'
+                    : 'bg-indigo-600/20 border-indigo-500/30 text-indigo-200 hover:bg-indigo-600/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {isCurrentSaved ? (
+                    <BookmarkCheck className="w-4 h-4 text-amber-400" />
+                  ) : (
+                    <Bookmark className="w-4 h-4 text-indigo-400" />
+                  )}
+                  <span>
+                    {isCurrentSaved
+                      ? '此地點已收藏 · 點擊前往查看或更新評分'
+                      : '儲存目前座標與 CLS 評估分數至已存清單'}
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold">
+                  {isCurrentSaved ? '查看已存地點 →' : '儲存點位 +'}
+                </span>
+              </button>
 
               {/* Real-time Weather & Monitoring Station Pill */}
               {weatherData && (
@@ -561,6 +793,333 @@ export function AppleBottomSheet({
                     PCA 主成分
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SAVED LOCATIONS (已存地點) */}
+          {sheetTab === 'saved' && (
+            <div className="space-y-4 pb-6">
+              {/* Feedback toast / notification */}
+              {saveSuccessNotice && (
+                <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{saveSuccessNotice}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSaveSuccessNotice(null)}
+                    className="text-emerald-400 hover:text-white text-xs px-1.5 py-0.5"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Current Target Save Hero Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/60 via-[#1e1c2e]/60 to-black/60 border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center">
+                      <MapPin className="w-4 h-4 text-indigo-400" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">儲存目前勘查點位</div>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        {currentCoords.lat.toFixed(5)}, {currentCoords.lng.toFixed(5)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="flex items-baseline justify-end gap-1.5">
+                      <span className="text-2xl font-black text-white font-mono">{clsScore}</span>
+                      <span className="text-[11px] text-slate-400">分</span>
+                      <span className="px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
+                        {grade}級
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">當前綜合 CLS 指數</div>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
+                  <div className="text-xs font-semibold text-slate-200 truncate">
+                    {city} · {district} · {streetName || '實勘路段'}
+                  </div>
+                  <div className="grid grid-cols-5 gap-1 text-center text-[10px]">
+                    <div className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300 font-mono">
+                      <div className="text-[9px] text-rose-400/80">C1 安全</div>
+                      <div className="font-bold">{c1.score}</div>
+                    </div>
+                    <div className="p-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono">
+                      <div className="text-[9px] text-amber-400/80">C2 機能</div>
+                      <div className="font-bold">{c2.score}</div>
+                    </div>
+                    <div className="p-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-300 font-mono">
+                      <div className="text-[9px] text-sky-400/80">C3 移動</div>
+                      <div className="font-bold">{c3.score}</div>
+                    </div>
+                    <div className="p-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
+                      <div className="text-[9px] text-emerald-400/80">C4 綠意</div>
+                      <div className="font-bold">{c4.score}</div>
+                    </div>
+                    <div className="p-1 rounded bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
+                      <div className="text-[9px] text-purple-400/80">C5 活力</div>
+                      <div className="font-bold">{c5.score}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Name / Tag Input */}
+                <div className="space-y-1">
+                  <label className="text-[11px] text-slate-300 font-medium">
+                    自訂地點備註標籤（選填）：
+                  </label>
+                  <input
+                    type="text"
+                    value={customLocationName}
+                    onChange={(e) => setCustomLocationName(e.target.value)}
+                    placeholder={`${district ? district + ' ' : ''}${streetName || '實勘點位'} (例如：公園景觀預售案、學區換屋首選)`}
+                    className="w-full text-xs p-2.5 bg-black/50 border border-white/10 rounded-xl focus:outline-none focus:border-indigo-500 text-white placeholder:text-slate-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentLocation}
+                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                    isCurrentSaved
+                      ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-950/40'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-950/40'
+                  }`}
+                >
+                  {isCurrentSaved ? (
+                    <>
+                      <BookmarkCheck className="w-4 h-4" />
+                      <span>已在清單中 · 點擊更新最新評分 (CLS: {clsScore}分)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="w-4 h-4" />
+                      <span>儲存此座標與 CLS 評估分數至已存清單</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Saved Locations List Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">已儲存的地點</span>
+                    <span className="px-2 py-0.5 rounded-full bg-white/10 text-slate-300 text-[11px] font-mono font-bold">
+                      {savedLocations.length} 處
+                    </span>
+                  </div>
+
+                  {savedLocations.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleExportSavedJson}
+                        className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white text-[11px] flex items-center gap-1 transition-colors"
+                        title="匯出已存地點資料 (JSON)"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>匯出</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearAllSaved}
+                        className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[11px] transition-colors"
+                        title="清空所有已存地點"
+                      >
+                        清空
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter Search Input if multiple saved */}
+                {savedLocations.length >= 2 && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={savedSearchQuery}
+                      onChange={(e) => setSavedSearchQuery(e.target.value)}
+                      placeholder="搜尋已存地點名稱、道路或行政區..."
+                      className="w-full text-xs pl-8 pr-3 py-1.5 bg-black/40 border border-white/10 rounded-xl focus:outline-none focus:border-indigo-500 text-white placeholder:text-slate-500"
+                    />
+                    {savedSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSavedSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {savedLocations.length === 0 ? (
+                  <div className="p-8 rounded-2xl border border-dashed border-white/10 text-center space-y-3 bg-white/[0.02]">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mx-auto text-slate-400">
+                      <Bookmark className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">尚未儲存任何勘查地點</div>
+                      <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-1 leading-relaxed">
+                        點選地圖上任何地點或完成現場校正後，點擊上方按鈕即可儲存該位置座標與 5 大面向 CLS 指標，供日後回顧與比對。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSaveCurrentLocation}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-md"
+                    >
+                      <Bookmark className="w-3.5 h-3.5" />
+                      <span>立即儲存目前位置 (CLS: {clsScore}分)</span>
+                    </button>
+                  </div>
+                ) : filteredSavedLocations.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400 bg-white/5 rounded-xl border border-white/5">
+                    找不到符合「{savedSearchQuery}」的已存地點
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {filteredSavedLocations.map((loc) => {
+                      const isCurrentActive =
+                        Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
+                        Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001;
+
+                      const formattedTime = new Date(loc.timestamp).toLocaleString('zh-TW', {
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
+
+                      return (
+                        <div
+                          key={loc.id}
+                          className={`p-3.5 rounded-2xl border transition-all ${
+                            isCurrentActive
+                              ? 'bg-indigo-950/40 border-indigo-500/40 shadow-md'
+                              : 'bg-white/5 hover:bg-white/10 border-white/5'
+                          }`}
+                        >
+                          {/* Card Header */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-white">{loc.name}</span>
+                                {isCurrentActive && (
+                                  <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-semibold border border-indigo-500/30">
+                                    當前位置
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-300 mt-0.5">
+                                {loc.city} {loc.district} {loc.streetName}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                座標: {loc.coords.lat.toFixed(5)}, {loc.coords.lng.toFixed(5)} · {formattedTime}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <div className="flex items-baseline gap-1 justify-end">
+                                <span className="text-xl font-black text-white font-mono">
+                                  {loc.clsScore}
+                                </span>
+                                <span className="text-[10px] text-slate-400">分</span>
+                                <span className="px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
+                                  {loc.grade}級
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                CLS 宜居指數
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 5-Dimension Mini Grid */}
+                          <div className="grid grid-cols-5 gap-1 mt-2.5 text-center text-[10px] bg-black/40 p-1.5 rounded-xl border border-white/5">
+                            <div className="font-mono">
+                              <span className="text-[9px] text-rose-400 block">C1 安全</span>
+                              <span className="font-bold text-white">{loc.scores.c1}</span>
+                            </div>
+                            <div className="font-mono">
+                              <span className="text-[9px] text-amber-400 block">C2 機能</span>
+                              <span className="font-bold text-white">{loc.scores.c2}</span>
+                            </div>
+                            <div className="font-mono">
+                              <span className="text-[9px] text-sky-400 block">C3 移動</span>
+                              <span className="font-bold text-white">{loc.scores.c3}</span>
+                            </div>
+                            <div className="font-mono">
+                              <span className="text-[9px] text-emerald-400 block">C4 綠意</span>
+                              <span className="font-bold text-white">{loc.scores.c4}</span>
+                            </div>
+                            <div className="font-mono">
+                              <span className="text-[9px] text-purple-400 block">C5 活力</span>
+                              <span className="font-bold text-white">{loc.scores.c5}</span>
+                            </div>
+                          </div>
+
+                          {/* Field Notes Snippet if available */}
+                          {loc.fieldNotes && (
+                            <div className="mt-2 text-[11px] text-slate-300 bg-white/5 p-2 rounded-lg border border-white/5 italic line-clamp-2">
+                              "{loc.fieldNotes}"
+                            </div>
+                          )}
+
+                          {/* Card Actions */}
+                          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/10 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleLoadSavedLocation(loc)}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                                title="將地圖移動至此坐標並載入評估數據供檢視"
+                              >
+                                <Compass className="w-3.5 h-3.5" />
+                                <span>載入至地圖檢視</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyCoords(loc, e)}
+                                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+                                title="複製經緯度座標"
+                              >
+                                {copiedCoordId === loc.id ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteSavedLocation(loc.id, e)}
+                              className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors"
+                              title="刪除此儲存點"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

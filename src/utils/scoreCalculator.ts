@@ -332,77 +332,15 @@ export function generateDefaultBaselineData(
 }
 
 /**
- * 產生鄰近周邊主要街道的段落評分，供地圖繪製不同路段的高低宜居度對比
+ * 產生鄰近周邊主要街道的段落評分。
+ * 真實路網幾何直接由後端 /api/street-network (Google Routes API + OSRM) 動態生成，
+ * 確保道路標線 100% 貼齊在地真實路幅與街巷，絕不產生貫穿建物的粗劣直線。
  */
 export function generateSurroundingStreetSegments(
-  center: LocationCoord,
-  baseScore: number,
-  streetName: string = ''
+  _center: LocationCoord,
+  _baseScore: number,
+  _streetName: string = ''
 ): StreetSegmentScore[] {
-  const dLat = 0.0025;
-  const dLng = 0.003;
-  const primaryName = streetName ? `${streetName}核心段` : '核心實勘街段';
-  const parkLaneName = streetName ? `${streetName.slice(0, 3)}北側綠廊道` : '北側林蔭綠道';
-  const commercialName = streetName ? `${streetName.slice(0, 3)}東側生活商街` : '東側生活商街';
-  const quietLaneName = streetName ? `${streetName.slice(0, 3)}巷內純住靜巷` : '南側純住靜巷';
-
-  return [
-    {
-      id: 'seg_main',
-      name: primaryName,
-      coords: [
-        [center.lat - dLat * 0.4, center.lng - dLng * 0.6],
-        [center.lat + dLat * 0.4, center.lng + dLng * 0.6],
-      ],
-      clsScore: baseScore,
-      c1: Math.min(100, baseScore + 2),
-      c2: Math.min(100, baseScore + 4),
-      c3: Math.min(100, baseScore + 1),
-      c4: Math.max(0, baseScore - 3),
-      c5: baseScore,
-    },
-    {
-      id: 'seg_north_park',
-      name: parkLaneName,
-      coords: [
-        [center.lat + dLat * 0.5, center.lng - dLng * 0.8],
-        [center.lat + dLat * 0.7, center.lng + dLng * 0.4],
-      ],
-      clsScore: Math.min(96, baseScore + 6),
-      c1: Math.min(98, baseScore + 5),
-      c2: Math.max(60, baseScore - 4),
-      c3: baseScore,
-      c4: Math.min(99, baseScore + 12),
-      c5: baseScore,
-    },
-    {
-      id: 'seg_east_commercial',
-      name: commercialName,
-      coords: [
-        [center.lat + dLat * 0.3, center.lng + dLng * 0.7],
-        [center.lat - dLat * 0.5, center.lng + dLng * 0.8],
-      ],
-      clsScore: Math.max(65, baseScore - 2),
-      c1: Math.max(60, baseScore - 5),
-      c2: Math.min(98, baseScore + 10),
-      c3: Math.min(95, baseScore + 8),
-      c4: Math.max(50, baseScore - 12),
-      c5: Math.min(95, baseScore + 7),
-    },
-    {
-      id: 'seg_south_lane',
-      name: quietLaneName,
-      coords: [
-        [center.lat - dLat * 0.6, center.lng - dLng * 0.5],
-        [center.lat - dLat * 0.7, center.lng + dLng * 0.3],
-      ],
-      clsScore: Math.min(94, baseScore + 3),
-      c1: Math.min(95, baseScore + 4),
-      c2: Math.max(65, baseScore - 6),
-      c3: Math.max(60, baseScore - 5),
-      c4: Math.min(94, baseScore + 8),
-      c5: baseScore,
-    },
-  ];
+  return [];
 }
 

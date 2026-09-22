@@ -16,6 +16,7 @@ import {
   POIMarker,
   StreetSegmentScore,
   WeatherData,
+  SavedLocation,
 } from './types';
 import {
   DEFAULT_CLS_WEIGHTS,
@@ -57,6 +58,7 @@ export default function App() {
   // Real-time environmental & POI data for the selected location
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [nearbyPois, setNearbyPois] = useState<POIMarker[]>([]);
+  const [realStreetSegments, setRealStreetSegments] = useState<StreetSegmentScore[]>([]);
 
   // Map theme: default to dark to match the Apple Maps dark screenshot
   const [mapTheme, setMapTheme] = useState<'dark' | 'light'>('dark');
@@ -158,6 +160,17 @@ export default function App() {
       if (res.ok) {
         const wData = await res.json();
         setWeatherData(wData);
+        if (wData && typeof wData.aqi === 'number') {
+          // Dynamic EPA Air Quality integration into C4
+          const dynamicAqiScore = Math.max(20, Math.min(100, Math.round(100 - (wData.aqi - 15) * 0.8)));
+          setC4((prev) => {
+            const updated = { ...prev, airQualityScore: dynamicAqiScore };
+            return {
+              ...updated,
+              score: calculateC4Score(updated, []),
+            };
+          });
+        }
       }
     } catch (e) {
       console.warn('Weather fetch error:', e);
@@ -183,6 +196,23 @@ export default function App() {
     }
   };
 
+  // Fetch real street road network geometry from Google Routes API
+  const fetchStreetNetwork = async (coord: LocationCoord, street: string) => {
+    try {
+      const res = await fetch(
+        `/api/street-network?lat=${coord.lat}&lng=${coord.lng}&streetName=${encodeURIComponent(street)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.segments) && data.segments.length > 0) {
+          setRealStreetSegments(data.segments);
+        }
+      }
+    } catch (e) {
+      console.warn('Street network fetch error:', e);
+    }
+  };
+
   // Central data fetcher for any coordinate
   const fetchLocationData = useCallback(
     async (
@@ -194,9 +224,10 @@ export default function App() {
       try {
         setIsLoadingBaseline(true);
 
-        // Run weather, POIs, and 8-source baseline concurrently
+        // Run weather, POIs, street network, and 8-source baseline concurrently
         fetchWeather(coord);
         fetchNearbyPois(coord, targetDist, targetCity, targetStreet);
+        fetchStreetNetwork(coord, targetStreet);
 
         const url = `/api/baseline-data?lat=${coord.lat}&lng=${coord.lng}&district=${encodeURIComponent(
           targetDist
@@ -336,6 +367,25 @@ export default function App() {
     setC5(baselineData.c5);
   };
 
+  // Select and load a saved location from the Bottom Sheet
+  const handleSelectSavedLocation = (saved: SavedLocation) => {
+    setTargetLocation(saved.coords);
+    setStreetName(saved.streetName);
+    setDistrict(saved.district);
+    setCity(saved.city);
+    if (saved.c1Data) setC1(saved.c1Data);
+    if (saved.c2Data) setC2(saved.c2Data);
+    if (saved.c3Data) setC3(saved.c3Data);
+    if (saved.c4Data) setC4(saved.c4Data);
+    if (saved.c5Data) setC5(saved.c5Data);
+    if (saved.weights) setWeights(saved.weights);
+    if (saved.fieldNotes) setFieldNotes(saved.fieldNotes);
+    // Refresh weather for this coordinate
+    fetchWeather(saved.coords);
+    setGpsSuccessMsg(`已切換至已存地點【${saved.name || saved.streetName}】(CLS: ${saved.clsScore}分)`);
+    setTimeout(() => setGpsSuccessMsg(null), 4000);
+  };
+
   // Reliable Browser Geolocation Handler
   const handleLocateMe = useCallback(() => {
     if (!navigator.geolocation) {
@@ -471,11 +521,10 @@ export default function App() {
     );
   };
 
-  // Map POIs & Street Segments (localized to streetName & targetLocation)
-  const streetSegments: StreetSegmentScore[] = useMemo(
-    () => generateSurroundingStreetSegments(targetLocation, clsScore, streetName),
-    [targetLocation, clsScore, streetName]
-  );
+  // Map POIs & Street Segments (100% real Google Routes & OSRM road geometry)
+  const streetSegments: StreetSegmentScore[] = useMemo(() => {
+    return realStreetSegments || [];
+  }, [realStreetSegments]);
 
   // Only ever show real POIs fetched from the backend (Google Places /
   // OSM). If none are available yet, no markers render for that area
@@ -559,6 +608,7 @@ export default function App() {
         currentLocation={currentLocation}
         targetLocation={targetLocation}
         accuracyRadius={accuracyRadius}
+        weatherData={weatherData}
       />
 
       {/* 3. Apple Maps Sliding Bottom Sheet (Hidden by default, triggered by buttons!) */}
@@ -594,6 +644,7 @@ export default function App() {
         onResetToBaseline={handleResetToBaseline}
         weatherData={weatherData}
         targetLocation={targetLocation}
+        onSelectSavedLocation={handleSelectSavedLocation}
       />
     </div>
   );

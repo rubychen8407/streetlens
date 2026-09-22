@@ -160,6 +160,7 @@ export interface WeatherData {
   aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康';
   pm25: number;
   stationName: string;
+  stationDistrict?: string;
   windSpeed?: number;
 }
 
@@ -170,4 +171,30 @@ export interface IndicatorSourceItem {
   currentValue: string;
   score: number;
   status: 'active' | 'loading';
+}
+
+export interface SavedLocation {
+  id: string;
+  name: string;
+  streetName: string;
+  district: string;
+  city: string;
+  coords: LocationCoord;
+  clsScore: number;
+  grade: 'S' | 'A' | 'B' | 'C' | 'D';
+  scores: {
+    c1: number;
+    c2: number;
+    c3: number;
+    c4: number;
+    c5: number;
+  };
+  c1Data?: C1Data;
+  c2Data?: C2Data;
+  c3Data?: C3Data;
+  c4Data?: C4Data;
+  c5Data?: C5Data;
+  weights?: CLSWeights;
+  fieldNotes?: string;
+  timestamp: number;
 }

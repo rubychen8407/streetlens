@@ -18,7 +18,7 @@ import {
   Copy,
   ExternalLink,
 } from 'lucide-react';
-import { LocationCoord } from '../types';
+import { LocationCoord, WeatherData } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
 import { CARTO_STORAGE_KEY, getActiveCartoKey } from './ScoutMap';
 
@@ -48,6 +48,7 @@ interface FloatingControlsProps {
   currentLocation: LocationCoord;
   targetLocation: LocationCoord;
   accuracyRadius?: number;
+  weatherData?: WeatherData | null;
 }
 
 // Helper to parse coordinate string (e.g. "25.033, 121.564" or "25.033 121.564")
@@ -88,6 +89,7 @@ export function FloatingControls({
   currentLocation,
   targetLocation,
   accuracyRadius,
+  weatherData,
 }: FloatingControlsProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -242,24 +244,53 @@ export function FloatingControls({
             type="button"
             onClick={() => setShowWeatherDetail((v) => !v)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1c1c1e]/85 hover:bg-[#1c1c1e] backdrop-blur-xl text-white text-xs font-semibold shadow-lg border border-white/10 transition-transform active:scale-95"
-            title="天氣與即時空品"
+            title="天氣、濕度與即時空品"
           >
             <Sun className="w-4 h-4 text-amber-400" />
-            <span className="font-bold">29°</span>
-            <span className="text-[11px] text-slate-400 hidden xs:inline">{district || '台北'}</span>
+            <span className="font-bold font-mono">{weatherData ? `${weatherData.temperature}°` : '26°'}</span>
+            <span className="text-[11px] text-slate-400 hidden xs:inline">
+              {weatherData?.stationDistrict || district || '台北'}
+            </span>
           </button>
 
           {/* Mini Weather Popover */}
           {showWeatherDetail && (
-            <div className="absolute top-full left-0 mt-2 w-48 p-3 rounded-2xl bg-[#1c1c1e]/95 backdrop-blur-xl text-white shadow-xl border border-white/10 text-xs space-y-1.5">
+            <div className="absolute top-full left-0 mt-2 w-56 p-3 rounded-2xl bg-[#1c1c1e]/95 backdrop-blur-xl text-white shadow-xl border border-white/10 text-xs space-y-2">
               <div className="flex justify-between items-center text-slate-300">
-                <span>{city || '台北市'} {district || '松山區'}</span>
-                <span className="font-bold text-amber-400">晴朗</span>
+                <span className="font-medium">
+                  {weatherData?.stationDistrict || `${city || '台北市'} ${district || '大安區'}`}
+                </span>
+                <span className="font-bold text-amber-400">
+                  {weatherData?.condition || '晴朗'}
+                </span>
               </div>
-              <div className="text-xl font-bold font-mono">29°C</div>
-              <div className="text-[10px] text-slate-400 flex justify-between border-t border-white/10 pt-1">
-                <span>空品 AQI：38 (良好)</span>
-                <span>濕度：62%</span>
+              <div className="flex items-baseline justify-between">
+                <div className="text-2xl font-bold font-mono">
+                  {weatherData ? `${weatherData.temperature}°C` : '26°C'}
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  {weatherData?.stationName ? `環保署【${weatherData.stationName}】測站` : '即時監測中'}
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/10 pt-1.5">
+                <div className="flex justify-between items-center">
+                  <span>空氣品質 AQI：</span>
+                  <span className="font-mono font-semibold text-emerald-400">
+                    {weatherData ? `${weatherData.aqi} (${weatherData.aqiStatus})` : '36 (良好)'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>相對濕度：</span>
+                  <span className="font-mono font-semibold text-sky-300">
+                    {weatherData ? `${weatherData.humidity}%` : '65%'}
+                  </span>
+                </div>
+                {weatherData?.pm25 !== undefined && (
+                  <div className="flex justify-between items-center text-[10px] text-slate-400">
+                    <span>細懸浮微粒 PM2.5：</span>
+                    <span className="font-mono">{weatherData.pm25} µg/m³</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

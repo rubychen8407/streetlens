@@ -20,8 +20,6 @@ import {
   Globe,
   Copy,
   Check,
-  RotateCcw,
-  Sliders,
   FileText,
   Activity,
   Shield,
@@ -70,11 +68,6 @@ interface AppleBottomSheetProps {
   c3: C3Data;
   c4: C4Data;
   c5: C5Data;
-  onUpdateC1: React.Dispatch<React.SetStateAction<C1Data>>;
-  onUpdateC2: React.Dispatch<React.SetStateAction<C2Data>>;
-  onUpdateC3: React.Dispatch<React.SetStateAction<C3Data>>;
-  onUpdateC4: React.Dispatch<React.SetStateAction<C4Data>>;
-  onUpdateC5: React.Dispatch<React.SetStateAction<C5Data>>;
   weights: CLSWeights;
   onUpdateWeights: (weights: CLSWeights, mode: 'equal' | 'pca' | 'custom') => void;
   weightMode: 'equal' | 'pca' | 'custom';
@@ -93,7 +86,6 @@ interface AppleBottomSheetProps {
   baselineSummary: string;
   fieldNotes: string;
   onUpdateNotes: (notes: string) => void;
-  onResetToBaseline: () => void;
   weatherData?: WeatherData | null;
   indicatorSources?: IndicatorSourceItem[];
   scoreFactors?: ScoreFactor[];
@@ -115,11 +107,6 @@ export function AppleBottomSheet({
   c3,
   c4,
   c5,
-  onUpdateC1,
-  onUpdateC2,
-  onUpdateC3,
-  onUpdateC4,
-  onUpdateC5,
   weights,
   onUpdateWeights,
   weightMode,
@@ -131,7 +118,6 @@ export function AppleBottomSheet({
   baselineSummary,
   fieldNotes,
   onUpdateNotes,
-  onResetToBaseline,
   weatherData,
   indicatorSources = [],
   scoreFactors = [],
@@ -139,7 +125,7 @@ export function AppleBottomSheet({
   targetLocation,
   onSelectSavedLocation,
 }: AppleBottomSheetProps) {
-  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'evidence' | 'sources' | 'calibrate' | 'report'>('overview');
+  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'evidence' | 'sources' | 'report'>('overview');
   const [selectedCat, setSelectedCat] = useState<'C1' | 'C2' | 'C3' | 'C4' | 'C5'>('C1');
   const [sheetHeight, setSheetHeight] = useState<'half' | 'full'>('half');
   const [copied, setCopied] = useState(false);
@@ -153,14 +139,15 @@ export function AppleBottomSheet({
 
   if (!isOpen) return null;
 
-  const currentCoords = targetLocation || { lat: 25.033, lng: 121.5654 };
-  const isCurrentSaved = savedLocations.some(
+  const currentCoords = targetLocation;
+  const isCurrentSaved = currentCoords ? savedLocations.some(
     (loc) =>
       Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
       Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001
-  );
+  ) : false;
 
   const handleSaveCurrentLocation = () => {
+    if (!currentCoords) return;
     const defaultName = `${district ? district + ' ' : ''}${streetName || '實勘點位'}`;
     const nameToUse = customLocationName.trim() || defaultName;
 
@@ -174,7 +161,7 @@ export function AppleBottomSheet({
       id:
         existingIndex >= 0
           ? savedLocations[existingIndex].id
-          : `saved_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          : `saved_${crypto.randomUUID()}`,
       name: nameToUse,
       streetName: streetName || '實勘路段',
       district: district || '',
@@ -470,19 +457,7 @@ export function AppleBottomSheet({
               }`}
             >
               <Database className="w-3.5 h-3.5" />
-              <span>8大資料源</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSheetTab('calibrate')}
-              className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
-                sheetTab === 'calibrate'
-                  ? 'bg-white/20 text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>現場校正</span>
+              <span>7大資料源</span>
             </button>
             <button
               type="button"
@@ -846,7 +821,7 @@ export function AppleBottomSheet({
                     <div>
                       <div className="text-xs font-bold text-white">儲存目前勘查點位</div>
                       <div className="text-[11px] text-slate-400 font-mono">
-                        {currentCoords.lat.toFixed(5)}, {currentCoords.lng.toFixed(5)}
+                        {currentCoords ? `${currentCoords.lat.toFixed(5)}, ${currentCoords.lng.toFixed(5)}` : '尚未取得座標'}
                       </div>
                     </div>
                   </div>
@@ -1380,378 +1355,6 @@ export function AppleBottomSheet({
                   </div>
                 );
               })()}
-            </div>
-          )}
-
-          {/* TAB 3: CALIBRATE */}
-          {sheetTab === 'calibrate' && (
-
-            <div className="space-y-4 pb-6">
-              {/* Category selector chips */}
-              <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs">
-                {(['C1', 'C2', 'C3', 'C4', 'C5'] as const).map((cat) => {
-                  const names = {
-                    C1: 'C1 安全',
-                    C2: 'C2 機能',
-                    C3: 'C3 移動',
-                    C4: 'C4 綠意',
-                    C5: 'C5 活力',
-                  };
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setSelectedCat(cat)}
-                      className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all ${
-                        selectedCat === cat
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-white/10 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {names[cat]}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Auto Baseline Action */}
-              <div className="flex items-center justify-between p-2.5 bg-white/5 rounded-xl border border-white/10 text-xs">
-                <span className="text-slate-300">目前為現場校正數值</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={onResetToBaseline}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] flex items-center gap-1"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>復原基準</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onAutoFetchBaseline}
-                    disabled={isLoadingBaseline}
-                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <Globe className="w-3 h-3" />
-                    <span>{isLoadingBaseline ? '載入中...' : '帶入網路基準'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sliders for selected category */}
-              {selectedCat === 'C1' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-rose-400">C1 安全指標數值微調</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c1.score ?? 'N/A'}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>犯罪治安率 (越低越好)</span>
-                      <span className="font-mono text-slate-200">{c1.crimeRate} / 100</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={c1.crimeRate ?? ''}
-                      onChange={(e) =>
-                        onUpdateC1((prev) => ({ ...prev, crimeRate: parseInt(e.target.value, 10) }))
-                      }
-                      className="w-full accent-rose-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>交通事故件數 (越低越好)</span>
-                      <span className="font-mono text-slate-200">{c1.accidentRate} / 100</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={c1.accidentRate ?? ''}
-                      onChange={(e) =>
-                        onUpdateC1((prev) => ({
-                          ...prev,
-                          accidentRate: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-rose-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>災害潛勢 (1安全 ~ 5高風險)</span>
-                      <span className="font-mono text-slate-200">{c1.hazardLevel} 級</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={5}
-                      value={c1.hazardLevel ?? ''}
-                      onChange={(e) =>
-                        onUpdateC1((prev) => ({
-                          ...prev,
-                          hazardLevel: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-rose-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C2' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400">C2 機能可及距離 (公尺)</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c2.score ?? 'N/A'}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>生鮮超市距離 (公尺)</span>
-                      <span className="font-mono text-slate-200">{c2.supermarketDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={50}
-                      max={1500}
-                      step={50}
-                      value={c2.supermarketDist ?? ''}
-                      onChange={(e) =>
-                        onUpdateC2((prev) => ({
-                          ...prev,
-                          supermarketDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>便利商店距離 (公尺)</span>
-                      <span className="font-mono text-slate-200">{c2.convenienceDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={30}
-                      max={1000}
-                      step={20}
-                      value={c2.convenienceDist ?? ''}
-                      onChange={(e) =>
-                        onUpdateC2((prev) => ({
-                          ...prev,
-                          convenienceDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>診所藥局距離 (公尺)</span>
-                      <span className="font-mono text-slate-200">{c2.clinicDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={50}
-                      max={1500}
-                      step={50}
-                      value={c2.clinicDist ?? ''}
-                      onChange={(e) =>
-                        onUpdateC2((prev) => ({
-                          ...prev,
-                          clinicDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C3' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-400">C3 移動交通指標</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c3.score ?? 'N/A'}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>捷運／鐵路車站距離</span>
-                      <span className="font-mono text-slate-200">{c3.mrtOrRailDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={100}
-                      max={2000}
-                      step={50}
-                      value={c3.mrtOrRailDist ?? ''}
-                      onChange={(e) =>
-                        onUpdateC3((prev) => ({
-                          ...prev,
-                          mrtOrRailDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-sky-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>人行道完備度 (Walkability)</span>
-                      <span className="font-mono text-slate-200">{c3.walkabilityScore}分</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={c3.walkabilityScore ?? ''}
-                      onChange={(e) =>
-                        onUpdateC3((prev) => ({
-                          ...prev,
-                          walkabilityScore: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-sky-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C4' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-400">C4 環境綠意微調</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c4.score ?? 'N/A'}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>空氣品質 AQI 評分 (高為優)</span>
-                      <span className="font-mono text-slate-200">{c4.airQualityScore}分</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={20}
-                      max={100}
-                      value={c4.airQualityScore ?? ''}
-                      onChange={(e) =>
-                        onUpdateC4((prev) => ({
-                          ...prev,
-                          airQualityScore: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-emerald-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>綠覆率 (%)</span>
-                      <span className="font-mono text-slate-200">{c4.greenCoveragePct}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={5}
-                      max={60}
-                      value={c4.greenCoveragePct ?? ''}
-                      onChange={(e) =>
-                        onUpdateC4((prev) => ({
-                          ...prev,
-                          greenCoveragePct: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-emerald-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C5' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-400">C5 社會活力微調</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c5.score ?? 'N/A'}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>鄰里信任與守望度</span>
-                      <span className="font-mono text-slate-200">{c5.neighborhoodTrust}分</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={20}
-                      max={100}
-                      value={c5.neighborhoodTrust ?? ''}
-                      onChange={(e) =>
-                        onUpdateC5((prev) => ({
-                          ...prev,
-                          neighborhoodTrust: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-purple-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* On-site Checkboxes */}
-              <div className="space-y-2 pt-1">
-                <div className="text-xs font-bold text-slate-300">
-                  {selectedCat} 現場實地觀察項目（勾選直接影響得分）
-                </div>
-                <div className="space-y-1.5">
-                  {fieldChecks
-                    .filter((item) => item.category === selectedCat)
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        onClick={() => onToggleFieldCheck(item.id)}
-                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                          item.checked
-                            ? 'bg-indigo-600/25 border-indigo-500/40 text-white'
-                            : 'bg-white/5 border-white/5 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 text-xs">
-                          <div
-                            className={`w-4 h-4 rounded flex items-center justify-center border ${
-                              item.checked
-                                ? 'bg-indigo-600 border-indigo-400 text-white'
-                                : 'border-slate-500'
-                            }`}
-                          >
-                            {item.checked && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-                          <span>{item.title}</span>
-                        </div>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/40 text-slate-300">
-                          {item.scoreImpact == null ? 'N/A' : item.scoreImpact > 0 ? `+${item.scoreImpact}` : item.scoreImpact}分
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
             </div>
           )}
 

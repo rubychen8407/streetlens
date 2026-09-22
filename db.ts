@@ -136,12 +136,7 @@ export async function saveSnapshot(
   const contentHash = hashPayload(payload);
   const existing = await getCachedSnapshot(sourceKey, scopeKey);
 
-  if (
-    existing &&
-    existing.contentHash === contentHash &&
-    existing.etag === (metadata.etag ?? existing.etag) &&
-    existing.lastModified === (metadata.lastModified ?? existing.lastModified)
-  ) {
+  if (existing && existing.contentHash === contentHash) {
     // Content is unchanged: record the check, but do not rewrite the snapshot version.
     await dataDb.query(
       `UPDATE external_data_snapshots

@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { calculateAssessment } from "./scoring";
+import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 
 dotenv.config();
 

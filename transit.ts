@@ -68,12 +68,23 @@ async function fetchTdxJson(path: string, signal: AbortSignal): Promise<any> {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const url = `${TDX_BASE_URL}/${path}${path.includes("?") ? "&" : "?"}%24format=JSON`;
-  const response = await fetch(url, { signal, headers });
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(url, { signal, headers });
+    lastStatus = response.status;
+    if (response.ok) return response.json();
 
-  if (!response.ok) {
-    throw new Error(`TDX HTTP ${response.status}`);
+    if (response.status !== 429 && response.status < 500) {
+      throw new Error(`TDX HTTP ${response.status}`);
+    }
+
+    // TDX can rate-limit concurrent CI probes. Back off without inventing data.
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** attempt)));
+    }
   }
-  return response.json();
+
+  throw new Error(`TDX HTTP ${lastStatus}`);
 }
 
 export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<TransitSourceResult> {

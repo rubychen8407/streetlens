@@ -1199,6 +1199,28 @@ export function AppleBottomSheet({
                                       : 'N/A'}
                                   </div>
                                 </div>
+                                <div className="col-span-2">
+                                  <span className="text-slate-500">評分方式</span>
+                                  <div className="text-slate-200">
+                                    {factor.scoringMethod === 'empirical_percentile'
+                                      ? '實證 percentile（真實觀測分布）'
+                                      : factor.scoringMethod === 'raw_observation'
+                                        ? '原始觀測值（未做 percentile）'
+                                        : '未計分'}
+                                  </div>
+                                </div>
+                                {factor.availabilityReason && (
+                                  <div className="col-span-2">
+                                    <span className="text-slate-500">不可計分原因</span>
+                                    <div className="text-amber-300">
+                                      {factor.availabilityReason === 'insufficient_reference_data'
+                                        ? '真實 reference 觀測不足 20 筆'
+                                        : factor.availabilityReason === 'source_unavailable'
+                                          ? '來源資料不可用'
+                                          : '目前沒有此位置的真實觀測'}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                               {factor.retrievedAt && (
                                 <div className="text-[10px] text-slate-500 mt-2">
@@ -1223,7 +1245,7 @@ export function AppleBottomSheet({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
                     <Database className="w-4 h-4 text-indigo-400" />
-                    <span>官方開放資料庫對應 (8大指標)</span>
+                    <span>外部資料來源（7 個來源）</span>
                   </div>
                   <button
                     type="button"
@@ -1232,7 +1254,7 @@ export function AppleBottomSheet({
                     className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3 h-3 ${isLoadingBaseline ? 'animate-spin' : ''}`} />
-                    <span>即時更新</span>
+                    <span>查看快照</span>
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
@@ -1286,7 +1308,7 @@ export function AppleBottomSheet({
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">內政部警政署犯罪統計</strong></span>
+                    <span>來源狀態由上方持久化快照與 Evidence 指標決定，不使用靜態即時連線狀態。</span>
                     <span className="text-[10px] flex items-center gap-0.5">
                       <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
@@ -1306,7 +1328,7 @@ export function AppleBottomSheet({
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">交通部交通事故資料庫</strong></span>
+                    <span>來源與取得時間請查看 Evidence 指標。</span>
                     <span className="text-[10px] flex items-center gap-0.5">
                       <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
@@ -1326,7 +1348,7 @@ export function AppleBottomSheet({
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">經濟部水利署淹水潛勢圖、中央地質調查所</strong></span>
+                    <span>來源與取得時間請查看 Evidence 指標。</span>
                     <span className="text-[10px] flex items-center gap-0.5">
                       <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>

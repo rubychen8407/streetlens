@@ -604,7 +604,7 @@ export function AppleBottomSheet({
               >
                 <div className="flex items-center gap-2 text-xs text-slate-300">
                   <Database className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>已自動抓取 8 大官方來源對應數據</span>
+                  <span>已載入 8 大來源的持久化快照</span>
                 </div>
                 <div className="text-[11px] text-indigo-300 font-semibold flex items-center gap-1">
                   <span>查看詳情</span>
@@ -1236,7 +1236,7 @@ export function AppleBottomSheet({
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
-                  系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），自動對應抓取以下 8 大中央及地方主管機關之資料庫數值：
+                  系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），顯示以下 8 大來源的已持久化快照；外部來源由背景更新流程負責同步：
                 </p>
               </div>
 
@@ -1388,7 +1388,7 @@ export function AppleBottomSheet({
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">環保署監測站</strong></span>
                     <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 即時監測中
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1426,7 +1426,7 @@ export function AppleBottomSheet({
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">里辦公室公告、問卷調查</strong></span>
+                    <span>資料來源：<strong className="text-slate-200">政府開放資料與持久化觀測</strong></span>
                     <span className="text-[10px] flex items-center gap-0.5">
                       <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>

@@ -24,7 +24,7 @@ function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2:
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
-async function getTdxAccessToken(): Promise<string | null> {
+async function getTdxAccessToken(signal?: AbortSignal): Promise<string | null> {
   const clientId = process.env.TDX_CLIENT_ID;
   const clientSecret = process.env.TDX_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -43,6 +43,7 @@ async function getTdxAccessToken(): Promise<string | null> {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
+    signal,
   });
 
   if (!response.ok) {
@@ -60,7 +61,7 @@ async function getTdxAccessToken(): Promise<string | null> {
 }
 
 async function fetchTdxJson(path: string, signal: AbortSignal): Promise<any> {
-  const token = await getTdxAccessToken();
+  const token = await getTdxAccessToken(signal);
   const headers: Record<string, string> = {
     Accept: "application/json",
     "User-Agent": "StreetLens/1.0",
@@ -93,19 +94,24 @@ export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<
   const timeoutId = setTimeout(() => controller.abort(), 7000);
 
   try {
-    // TDX is the MOTC national transport data hub. The spatialFilter query
-    // returns real Taipei City bus stops from the source dataset.
+    // Keep both queries spatially bounded. TDX documents $spatialFilter/nearby
+    // for point datasets; this avoids downloading the full Taipei transit set.
     const busPath =
       `Bus/Stop/City/Taipei?%24spatialFilter=nearby(StopPosition,${lat},${lng},1500)`;
-    const railPath = "Rail/Metro/Station/TRTC";
+    const railPath =
+      `Rail/Metro/Station/TRTC?%24spatialFilter=nearby(StationPosition,${lat},${lng},1500)`;
 
-    const [busData, railData] = await Promise.all([
+    const [busResult, railResult] = await Promise.allSettled([
       fetchTdxJson(busPath, controller.signal),
       fetchTdxJson(railPath, controller.signal),
     ]);
 
-    const busRows = Array.isArray(busData) ? busData : [];
-    const railRows = Array.isArray(railData) ? railData : [];
+    const busRows = busResult.status === "fulfilled" && Array.isArray(busResult.value)
+      ? busResult.value
+      : [];
+    const railRows = railResult.status === "fulfilled" && Array.isArray(railResult.value)
+      ? railResult.value
+      : [];
 
     const stops = busRows
       .map((row: any) => {
@@ -151,7 +157,15 @@ export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<
       .filter((station: any) => station.distanceMeters <= 1500)
       .sort((a: any, b: any) => a.distanceMeters - b.distanceMeters);
 
-    const status = stops.length || railStations.length ? "available" : "empty";
+    const errors = [busResult, railResult]
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason?.message || String(result.reason));
+
+    const status = stops.length || railStations.length
+      ? "available"
+      : errors.length
+        ? (errors.some((error) => /abort|timeout/i.test(error)) ? "timeout" : "error")
+        : "empty";
 
     return {
       stops,
@@ -159,6 +173,7 @@ export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<
       source: "TDX / MOTC",
       status,
       retrievedAt,
+      ...(errors.length ? { error: errors.join("; ") } : {}),
     };
   } catch (error: any) {
     return {

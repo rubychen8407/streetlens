@@ -368,9 +368,9 @@ const GOOGLE_PLACE_TYPE_MAP: Record<string, { category: "C1" | "C2" | "C3" | "C4
   local_government_office: { category: "C5", note: "地方行政與里民服務據點" },
   city_hall: { category: "C5", note: "市政行政便民據點" },
   library: { category: "C5", note: "公共圖書館與文化自修據點" },
-  school: { category: "C5", note: "優質學區教育設施" },
-  primary_school: { category: "C5", note: "國民小學教育設施" },
-  secondary_school: { category: "C5", note: "國民中學教育設施" },
+  school: { category: "C2", note: "學校教育與日常生活機能" },
+  primary_school: { category: "C2", note: "國民小學教育設施" },
+  secondary_school: { category: "C2", note: "國民中學教育設施" },
 };
 
 // Real, accurately-located POIs from the Google Places API (New) "Nearby Search" endpoint.
@@ -459,10 +459,26 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]>
           note = "公共文化與公民活動據點";
         }
 
+        const amenityType =
+          /supermarket|grocery_store/.test(p.primaryType || "")
+            ? "supermarket"
+            : /convenience_store/.test(p.primaryType || "")
+              ? "convenience"
+              : /hospital|pharmacy|doctor|dentist|clinic/.test(p.primaryType || "")
+              ? "clinic"
+              : /school|primary_school|secondary_school/.test(p.primaryType || "")
+                ? "school"
+                : /bank|post_office|finance/.test(p.primaryType || "")
+                  ? "bank_post"
+                  : /subway_station|train_station|light_rail_station|transit_station|bus_station|bus_stop/.test(p.primaryType || "")
+                    ? "transit"
+                    : "other";
+
         return {
           id: `gp_${p.id}`,
           name: name || "在地生活機能設施",
           category,
+          amenityType,
           lat: p.location.latitude,
           lng: p.location.longitude,
           note,
@@ -553,10 +569,26 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
               note = "地方社區與公民活動";
             }
 
+            const amenityType =
+              /supermarket|grocery|market/.test(tags.shop || "")
+                ? "supermarket"
+                : /convenience/.test(tags.shop || "")
+                  ? "convenience"
+                  : /clinic|doctors|pharmacy|hospital|dentist/.test(tags.amenity || "")
+                ? "clinic"
+                  : /school|kindergarten|college|university/.test(tags.amenity || "")
+                    ? "school"
+                    : /bank|post_office/.test(tags.amenity || "")
+                      ? "bank_post"
+                      : /bus|station|tram_stop/.test(tags.public_transport || tags.amenity || tags.railway || "")
+                        ? "transit"
+                        : "other";
+
             pois.push({
               id: `osm_${item.id || pois.length}`,
               name,
               category: cat,
+              amenityType,
               lat: pLat,
               lng: pLng,
               distanceMeters: calcDistance(pLat, pLng),
@@ -980,7 +1012,30 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       return counts;
     }, {});
 
-    const scores = calculateAssessment(baseline, poiCounts, weather || undefined);
+    const nearest = (type: string): number | undefined => {
+      const matches = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters));
+      if (!matches.length) return undefined;
+      return Math.min(...matches.map((poi: any) => poi.distanceMeters));
+    };
+
+    const c2PoiMetrics = {
+      supermarketDist: nearest("supermarket"),
+      convenienceDist: nearest("convenience"),
+      clinicDist: nearest("clinic"),
+      schoolDist: nearest("school"),
+      bankPostDist: nearest("bank_post"),
+      poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length,
+      source: "Google Places (New) / OpenStreetMap",
+      method: "calculated" as const,
+      confidence: "high" as const,
+    };
+
+    const scores = calculateAssessment(
+      baseline,
+      poiCounts,
+      weather || undefined,
+      c2PoiMetrics,
+    );
     const allFactors = [
       ...scores.c1.factors,
       ...scores.c2.factors,
@@ -996,6 +1051,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       poiCount: pois.length,
       dataSources: [...new Set(allFactors.map((factor) => factor.source))],
       generatedAt: new Date().toISOString(),
+      c2DataMode: "poi-derived",
+      c2PoiMetrics,
+      c2PoiCount: pois.filter((poi: any) => poi.category === "C2").length,
     });
   } catch (error: any) {
     console.error("Assessment error:", error);

@@ -835,7 +835,7 @@ export function AppleBottomSheet({
 
                   <div className="text-right">
                     <div className="flex items-baseline justify-end gap-1.5">
-                      <span className="text-2xl font-black text-white font-mono"{clsScore ?? 'N/A'}</span>
+                      <span className="text-2xl font-black text-white font-mono">{clsScore ?? 'N/A'}</span>
                       <span className="text-[11px] text-slate-400">分</span>
                       <span className="px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
                         {grade}級

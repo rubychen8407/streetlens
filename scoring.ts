@@ -206,6 +206,7 @@ export function calculateAssessment(
     C5: { score: c5, factors: c5Factors },
   };
 
+  const allFactors = Object.values(categories).flatMap((category) => category.factors);
   const scoredCategories = Object.values(categories)
     .map((category) => category.score)
     .filter((score): score is number => score !== null);

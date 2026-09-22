@@ -17,6 +17,9 @@ import {
   Crosshair,
   Copy,
   ExternalLink,
+  UserCircle,
+  Star,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { LocationCoord, WeatherData } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
@@ -33,6 +36,8 @@ interface FloatingControlsProps {
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
   onOpenSheet: () => void;
   isSheetOpen: boolean;
+  onOpenSaved: () => void;
+  onOpenSettings: () => void;
   activeLayers: {
     c1Safety: boolean;
     c2Amenity: boolean;
@@ -90,6 +95,8 @@ export function FloatingControls({
   targetLocation,
   accuracyRadius,
   weatherData,
+  onOpenSaved,
+  onOpenSettings,
 }: FloatingControlsProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,6 +107,7 @@ export function FloatingControls({
   const [showWeatherDetail, setShowWeatherDetail] = useState(false);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showCoordModal, setShowCoordModal] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Custom coordinate input in modal
   const [customLat, setCustomLat] = useState(currentLocation.lat.toFixed(6));
@@ -316,6 +324,27 @@ export function FloatingControls({
           </span>
           <span className="text-[10px] text-sky-400/80 font-normal hidden sm:inline">經緯度</span>
         </button>
+
+        {/* Top-Right account menu: navigation lives here, not inside assessment */}
+        <div className="relative">
+          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="Account">
+            <UserCircle className="w-5 h-5" />
+          </button>
+          {showProfileMenu && (
+            <div className="absolute top-full right-0 mt-2 w-60 rounded-2xl bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/10 shadow-2xl p-2 text-white">
+              <div className="px-3 py-2.5 border-b border-white/10 mb-1">
+                <div className="text-sm font-bold">StreetLens</div>
+                <div className="text-[10px] text-slate-500">Street assessment workspace</div>
+              </div>
+              <button onClick={() => { onOpenSaved(); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-left">
+                <Star className="w-4 h-4 text-amber-300" /><div><div className="text-xs font-semibold">Favorites</div><div className="text-[10px] text-slate-500">Favorite streets & CLS list</div></div>
+              </button>
+              <button onClick={() => { onOpenSettings(); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-left">
+                <SlidersHorizontal className="w-4 h-4 text-sky-300" /><div><div className="text-xs font-semibold">Settings</div><div className="text-[10px] text-slate-500">Data sources & system status</div></div>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Top-Right Quick Score Pill (tap opens sheet) */}
         {!isSheetOpen && (

@@ -6,7 +6,7 @@ on:
       - main
   push:
     branches:
-      - refactor/data-integrity-and-security
+      - main
   workflow_dispatch:
 
 jobs:

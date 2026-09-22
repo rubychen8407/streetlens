@@ -29,6 +29,17 @@ export interface AssessmentScores {
   confidence: "high" | "medium" | "low";
 }
 
+export interface C1SafetyMetrics {
+  accidentCount500m?: number;
+  fatalAccidentCount500m?: number;
+  injuryAccidentCount500m?: number;
+  source: string;
+  method: "official" | "calculated";
+  confidence: "high" | "medium" | "low";
+  status?: "available" | "empty" | "timeout" | "error" | "unavailable";
+  retrievedAt?: string;
+}
+
 export interface C2PoiMetrics {
   supermarketDist?: number;
   convenienceDist?: number;
@@ -102,14 +113,57 @@ export function calculateAssessment(
   baseline: any,
   poiCounts: Partial<Record<Category, number>>,
   weather?: { aqi: number | null; pm25: number | null; source?: string; sourceType?: string },
+  c1SafetyMetrics?: C1SafetyMetrics,
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
   c4GreenMetrics?: C4GreenMetrics,
 ): AssessmentScores {
 
-  // Do not derive safety from regional estimates. Until a real safety source is wired in,
-  // C1 remains explicitly unavailable rather than presenting synthetic numbers.
-  const c1Factors: ScoreFactor[] = [];
+  // C1 uses only official, geocoded Taipei traffic accident records.
+  // The category score remains unavailable until crime/hazard sources are also wired in;
+  // we expose the real accident indicators without pretending they represent all safety risk.
+  const c1AccidentCount = c1SafetyMetrics?.accidentCount500m;
+  const c1FatalCount = c1SafetyMetrics?.fatalAccidentCount500m;
+  const c1InjuryCount = c1SafetyMetrics?.injuryAccidentCount500m;
+  const c1Source = c1SafetyMetrics?.source || "unavailable";
+  const c1Factors: ScoreFactor[] = [
+    {
+      category: "C1",
+      indicator: "trafficAccidentCount500m",
+      value: Number.isFinite(Number(c1AccidentCount)) ? Number(c1AccidentCount) : null,
+      unit: "accidents",
+      direction: "lower_is_better",
+      source: Number.isFinite(Number(c1AccidentCount)) ? c1Source : "unavailable",
+      method: Number.isFinite(Number(c1AccidentCount)) ? c1SafetyMetrics?.method || "official" : "calculated",
+      confidence: Number.isFinite(Number(c1AccidentCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
+      status: Number.isFinite(Number(c1AccidentCount)) ? "available" : "unavailable",
+      retrievedAt: c1SafetyMetrics?.retrievedAt,
+    },
+    {
+      category: "C1",
+      indicator: "fatalTrafficAccidentCount500m",
+      value: Number.isFinite(Number(c1FatalCount)) ? Number(c1FatalCount) : null,
+      unit: "accidents",
+      direction: "lower_is_better",
+      source: Number.isFinite(Number(c1FatalCount)) ? c1Source : "unavailable",
+      method: Number.isFinite(Number(c1FatalCount)) ? c1SafetyMetrics?.method || "official" : "calculated",
+      confidence: Number.isFinite(Number(c1FatalCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
+      status: Number.isFinite(Number(c1FatalCount)) ? "available" : "unavailable",
+      retrievedAt: c1SafetyMetrics?.retrievedAt,
+    },
+    {
+      category: "C1",
+      indicator: "injuryTrafficAccidentCount500m",
+      value: Number.isFinite(Number(c1InjuryCount)) ? Number(c1InjuryCount) : null,
+      unit: "accidents",
+      direction: "lower_is_better",
+      source: Number.isFinite(Number(c1InjuryCount)) ? c1Source : "unavailable",
+      method: Number.isFinite(Number(c1InjuryCount)) ? c1SafetyMetrics?.method || "official" : "calculated",
+      confidence: Number.isFinite(Number(c1InjuryCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
+      status: Number.isFinite(Number(c1InjuryCount)) ? "available" : "unavailable",
+      retrievedAt: c1SafetyMetrics?.retrievedAt,
+    },
+  ];
   const c1: number | null = null;
 
   // C2 is calculated only from source-backed POI distances/counts. Missing POI types

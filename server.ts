@@ -7,7 +7,7 @@ import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring"
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestParkDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -1168,15 +1168,23 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference] = await Promise.all([
+    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference, nearestCommunityReference] = await Promise.all([
       getSafetyReference(),
       getPoiDensityReference(),
       getC5CommunityReference(),
       getDistanceAndAirQualityReferences(),
       getNearestParkDistanceReference(),
+      getNearestCommunityDistanceReference(),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
+    const communityPois = pois.filter((poi: any) =>
+      poi.category === "C5"
+      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
+    );
+    const nearestCommunityDist = communityPois.length
+      ? Math.min(...communityPois.map((poi: any) => Number(poi.distanceMeters)).filter(Number.isFinite))
+      : undefined;
     const communityCount = pois.filter((poi: any) =>
       poi.category === "C5"
       || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
@@ -1195,6 +1203,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       {
         ...normalizationReferences,
         c4NearestParkDistances: nearestParkReference,
+        c5NearestCommunityDistance: nearestCommunityDist,
+        c5NearestCommunityDistanceReference: nearestCommunityReference,
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];

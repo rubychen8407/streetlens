@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
+import { fetchTaipeiGreenData } from "./green";
 
 dotenv.config();
 
@@ -840,10 +841,11 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Valid lat/lng are required" });
     }
 
-    const [google, osm, officialTransit, weatherResponse] = await Promise.all([
+    const [google, osm, officialTransit, greenData, weatherResponse] = await Promise.all([
       fetchGooglePlacesNearby(lat, lng),
       fetchOsmPoisNearby(lat, lng),
       fetchTdxTransitData(lat, lng),
+      fetchTaipeiGreenData(lat, lng),
       fetch(`http://127.0.0.1:${PORT}/api/weather?lat=${lat}&lng=${lng}`),
     ]);
 
@@ -889,6 +891,18 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const officialBusDist = officialBusDistances.length ? Math.min(...officialBusDistances) : undefined;
     const busDist = officialBusDist ?? (googleOsmBus.length ? Math.min(...googleOsmBus) : undefined);
 
+    const parkPois = pois.filter((poi: any) => poi.amenityType === "park" && Number.isFinite(poi.distanceMeters));
+    const nearestParkDist = parkPois.length ? Math.min(...parkPois.map((poi: any) => poi.distanceMeters)) : undefined;
+    const c4GreenMetrics = {
+      streetTreeCount800m: greenData.streetTrees.length || undefined,
+      parkTreeCount800m: greenData.parkTrees.length || undefined,
+      source: greenData.source,
+      method: "calculated" as const,
+      confidence: greenData.status === "available" ? "high" as const : "low" as const,
+      status: greenData.status,
+      retrievedAt: greenData.retrievedAt,
+    };
+
     const c3TransitMetrics = {
       mrtOrRailDist: railDist,
       busStopDist: busDist,
@@ -909,6 +923,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       weather || undefined,
       c2PoiMetrics,
       c3TransitMetrics,
+      c4GreenMetrics,
     );
     const allFactors = [
       ...scores.c1.factors,
@@ -928,12 +943,15 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         { source: google.source, status: google.status, retrievedAt: google.retrievedAt, error: google.error || null },
         { source: osm.source, status: osm.status, retrievedAt: osm.retrievedAt, error: osm.error || null },
         { source: officialTransit.source, status: officialTransit.status, retrievedAt: officialTransit.retrievedAt, error: officialTransit.error || null },
+        { source: greenData.source, status: greenData.status, retrievedAt: greenData.retrievedAt, error: greenData.error || null },
       ],
       weatherStatus: weather?.status || "error",
       generatedAt: new Date().toISOString(),
       c2DataMode: "poi-derived",
       c2PoiMetrics,
       c2PoiCount: pois.filter((poi: any) => poi.category === "C2").length,
+      c4GreenMetrics,
+      parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
     });
   } catch (error: any) {
     console.error("Assessment error:", error);

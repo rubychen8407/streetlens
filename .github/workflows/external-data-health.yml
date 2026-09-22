@@ -21,4 +21,7 @@ jobs:
       - name: Type check
         run: npm run lint
       - name: Check official external resources
+        env:
+          TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}
+          TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
         run: npm run check:external-data

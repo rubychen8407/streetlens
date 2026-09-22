@@ -101,8 +101,7 @@ function toWgs84(x: number, y: number): { lat: number; lng: number } | null {
   const [lng, lat] = proj4(
     "+proj=tmerc +lat_0=0 +lon_0=121 +k=0.9999 +x_0=250000 +y_0=0 +ellps=GRS80 +units=m +no_defs",
     "+proj=longlat +datum=WGS84 +no_defs",
-    x,
-    y,
+    [x, y],
   );
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }

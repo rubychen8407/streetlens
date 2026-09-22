@@ -187,17 +187,21 @@ export async function getC5CommunityReference(excludeScopeKey?: string): Promise
      WHERE source_key IN ('google_places', 'openstreetmap')
        AND status IN ('available', 'empty')`,
   );
-  const byScope = new Map<string, number>();
+  const byScope = new Map<string, Map<string, any>>();
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    if (!byScope.has(row.scopeKey)) byScope.set(row.scopeKey, new Map());
+    const scopePois = byScope.get(row.scopeKey)!;
     const pois = Array.isArray(row.payload?.pois) ? row.payload.pois : [];
-    const count = pois.filter((poi: any) =>
-      poi.category === "C5"
-      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
-    ).length;
-    byScope.set(row.scopeKey, (byScope.get(row.scopeKey) || 0) + count);
+    for (const poi of pois) {
+      const isCommunity = poi.category === "C5"
+        || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || ""));
+      if (!isCommunity) continue;
+      const id = String(poi.id || `${poi.name}|${poi.lat}|${poi.lng}`);
+      scopePois.set(id, poi);
+    }
   }
-  return [...byScope.values()];
+  return [...byScope.values()].map((pois) => pois.size);
 }
 
 export async function getGreenDensityReference(

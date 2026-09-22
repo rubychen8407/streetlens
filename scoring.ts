@@ -9,6 +9,8 @@ export interface ScoreFactor {
   source: string;
   method: "official" | "api" | "osm" | "calculated" | "survey" | "estimated";
   confidence: "high" | "medium" | "low";
+  status?: "available" | "unavailable";
+  retrievedAt?: string;
 }
 
 export interface CategoryScore {
@@ -37,6 +39,8 @@ export interface C2PoiMetrics {
   source: string;
   method: "api" | "osm" | "calculated";
   confidence: "high" | "medium" | "low";
+  status?: "available" | "empty" | "timeout" | "error" | "unavailable";
+  retrievedAt?: string;
 }
 
 export interface C3TransitMetrics {
@@ -45,6 +49,8 @@ export interface C3TransitMetrics {
   source: string;
   method: "api" | "osm" | "calculated";
   confidence: "high" | "medium" | "low";
+  status?: "available" | "empty" | "timeout" | "error" | "unavailable";
+  retrievedAt?: string;
 }
 
 const DEFAULT_WEIGHTS: Record<Category, number> = {
@@ -86,10 +92,6 @@ export function calculateAssessment(
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
 ): AssessmentScores {
-  const source = baseline?.source || "regional_benchmark_estimate";
-  const baselineMethod = source === "regional_benchmark_estimate" ? "estimated" : "calculated";
-  const baselineConfidence: "high" | "medium" | "low" =
-    baselineMethod === "estimated" ? "low" : "medium";
 
   // Do not derive safety from regional estimates. Until a real safety source is wired in,
   // C1 remains explicitly unavailable rather than presenting synthetic numbers.
@@ -118,6 +120,7 @@ export function calculateAssessment(
     source: Number.isFinite(Number(raw)) ? c2Source : "unavailable",
     method: Number.isFinite(Number(raw)) ? c2Method : "calculated",
     confidence: Number.isFinite(Number(raw)) ? c2Confidence : "low",
+    status: Number.isFinite(Number(raw)) ? "available" : "unavailable",
   }));
 
   const poiDensity = c2PoiMetrics?.poiDensityCount;
@@ -130,6 +133,7 @@ export function calculateAssessment(
     source: Number.isFinite(Number(poiDensity)) ? c2Source : "unavailable",
     method: Number.isFinite(Number(poiDensity)) ? c2Method : "calculated",
     confidence: Number.isFinite(Number(poiDensity)) ? c2Confidence : "low",
+    status: Number.isFinite(Number(poiDensity)) ? "available" : "unavailable",
   });
 
   const c2ComponentScores = c2Definitions
@@ -156,6 +160,7 @@ export function calculateAssessment(
       source: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.source || "unavailable") : "unavailable",
       method: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
       confidence: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? "available" : "unavailable",
     },
     {
       category: "C3",
@@ -166,6 +171,7 @@ export function calculateAssessment(
       source: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.source || "unavailable") : "unavailable",
       method: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
       confidence: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? "available" : "unavailable",
     },
   ];
   const c3ComponentScores = c3Factors
@@ -190,6 +196,7 @@ export function calculateAssessment(
     source: airScore != null ? (weather?.source || "Open-Meteo Air Quality") : "unavailable",
     method: airScore != null ? "api" : "calculated",
     confidence: airScore != null ? "medium" : "low",
+    status: airScore != null ? "available" : "unavailable",
   }];
   const c4: number | null = airScore;
 

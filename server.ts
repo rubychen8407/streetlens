@@ -29,13 +29,97 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Geocoding proxy (Nominatim OpenStreetMap)
+// ---------------------------------------------------------------------------
+// Geocoding: Google Maps Geocoding API (primary, when GOOGLE_MAPS_API_KEY is
+// set) with automatic fallback to the free OpenStreetMap Nominatim service.
+// Google gives us far better road/lane-level accuracy in Taiwan and much
+// lower latency than the public Nominatim instance, which is also subject to
+// a 1 request/sec usage policy.
+// ---------------------------------------------------------------------------
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+
+// Small in-memory cache for reverse-geocode lookups so dragging the pin
+// around the same spot doesn't re-hit the geocoding API every time.
+const REVERSE_GEOCODE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const reverseGeocodeCache = new Map<string, { data: any; ts: number }>();
+
+function reverseGeocodeCacheKey(lat: string, lon: string): string {
+  // Round to ~5 decimal places (~1m) so nearby drags reuse the same entry.
+  return `${parseFloat(lat).toFixed(5)},${parseFloat(lon).toFixed(5)}`;
+}
+
+function getFromReverseGeocodeCache(key: string): any | null {
+  const entry = reverseGeocodeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > REVERSE_GEOCODE_CACHE_TTL_MS) {
+    reverseGeocodeCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setInReverseGeocodeCache(key: string, data: any) {
+  // Basic size cap to avoid unbounded growth on a long-running server.
+  if (reverseGeocodeCache.size > 1000) {
+    reverseGeocodeCache.clear();
+  }
+  reverseGeocodeCache.set(key, { data, ts: Date.now() });
+}
+
+// Converts a Google Geocoding API `address_components` array into the same
+// shape the frontend already expects from Nominatim (`data.address.road`,
+// `.suburb`, `.city`, etc.), so App.tsx / FloatingControls.tsx don't need to
+// change at all.
+function mapGoogleAddressComponents(components: any[] = []) {
+  const get = (type: string) =>
+    components.find((c) => Array.isArray(c.types) && c.types.includes(type))?.long_name;
+
+  return {
+    road: get("route"),
+    pedestrian: get("route"),
+    neighbourhood: get("neighborhood") || get("sublocality_level_2"),
+    suburb: get("sublocality_level_1") || get("sublocality"),
+    district: get("sublocality_level_1") || get("sublocality"),
+    town: get("locality") || get("administrative_area_level_3"),
+    city: get("administrative_area_level_1"),
+    county: get("administrative_area_level_2"),
+  };
+}
+
+// Geocoding proxy — Google Maps first, Nominatim (OpenStreetMap) fallback
 app.get("/api/geocode", async (req: Request, res: Response) => {
   try {
     const query = req.query.q as string;
     if (!query) {
       return res.status(400).json({ error: "Missing query" });
     }
+
+    if (GOOGLE_MAPS_API_KEY) {
+      try {
+        const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+          query
+        )}&language=zh-TW&region=tw&key=${GOOGLE_MAPS_API_KEY}`;
+        const gRes = await fetch(gUrl);
+        const gData: any = await gRes.json();
+
+        if (gData.status === "OK" && Array.isArray(gData.results) && gData.results.length > 0) {
+          const mapped = gData.results.slice(0, 5).map((r: any) => ({
+            lat: String(r.geometry.location.lat),
+            lon: String(r.geometry.location.lng),
+            display_name: r.formatted_address,
+            name: r.formatted_address.split(",")[0],
+            address: mapGoogleAddressComponents(r.address_components),
+          }));
+          return res.json(mapped);
+        }
+
+        console.warn("Google geocode returned non-OK status, falling back to Nominatim:", gData.status);
+      } catch (gErr) {
+        console.warn("Google geocode request failed, falling back to Nominatim:", gErr);
+      }
+    }
+
+    // Fallback: Nominatim (OpenStreetMap) — free, no key required
     const response = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
         query
@@ -58,7 +142,7 @@ app.get("/api/geocode", async (req: Request, res: Response) => {
   }
 });
 
-// Reverse Geocoding
+// Reverse Geocoding — Google Maps first, Nominatim (OpenStreetMap) fallback
 app.get("/api/reverse-geocode", async (req: Request, res: Response) => {
   try {
     const lat = req.query.lat as string;
@@ -66,6 +150,36 @@ app.get("/api/reverse-geocode", async (req: Request, res: Response) => {
     if (!lat || !lon) {
       return res.status(400).json({ error: "Missing lat/lon" });
     }
+
+    const cacheKey = reverseGeocodeCacheKey(lat, lon);
+    const cached = getFromReverseGeocodeCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    if (GOOGLE_MAPS_API_KEY) {
+      try {
+        const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&language=zh-TW&key=${GOOGLE_MAPS_API_KEY}`;
+        const gRes = await fetch(gUrl);
+        const gData: any = await gRes.json();
+
+        if (gData.status === "OK" && Array.isArray(gData.results) && gData.results.length > 0) {
+          const best = gData.results[0];
+          const result = {
+            display_name: best.formatted_address,
+            address: mapGoogleAddressComponents(best.address_components),
+          };
+          setInReverseGeocodeCache(cacheKey, result);
+          return res.json(result);
+        }
+
+        console.warn("Google reverse geocode returned non-OK status, falling back to Nominatim:", gData.status);
+      } catch (gErr) {
+        console.warn("Google reverse geocode request failed, falling back to Nominatim:", gErr);
+      }
+    }
+
+    // Fallback: Nominatim (OpenStreetMap) — free, no key required
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
       {
@@ -79,6 +193,7 @@ app.get("/api/reverse-geocode", async (req: Request, res: Response) => {
       throw new Error(`Nominatim error: ${response.statusText}`);
     }
     const data = await response.json();
+    setInReverseGeocodeCache(cacheKey, data);
     return res.json(data);
   } catch (error: any) {
     console.error("Reverse geocode error:", error);

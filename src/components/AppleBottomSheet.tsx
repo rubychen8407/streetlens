@@ -9,6 +9,7 @@ import {
   FieldCheckItem,
   WeatherData,
   IndicatorSourceItem,
+  ScoreFactor,
   SavedLocation,
 } from '../types';
 import {
@@ -94,6 +95,7 @@ interface AppleBottomSheetProps {
   onResetToBaseline: () => void;
   weatherData?: WeatherData | null;
   indicatorSources?: IndicatorSourceItem[];
+  scoreFactors?: ScoreFactor[];
   targetLocation?: { lat: number; lng: number };
   onSelectSavedLocation?: (saved: SavedLocation) => void;
 }
@@ -130,10 +132,11 @@ export function AppleBottomSheet({
   onResetToBaseline,
   weatherData,
   indicatorSources = [],
+  scoreFactors = [],
   targetLocation,
   onSelectSavedLocation,
 }: AppleBottomSheetProps) {
-  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'sources' | 'calibrate' | 'report'>('overview');
+  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'evidence' | 'sources' | 'calibrate' | 'report'>('overview');
   const [selectedCat, setSelectedCat] = useState<'C1' | 'C2' | 'C3' | 'C4' | 'C5'>('C1');
   const [sheetHeight, setSheetHeight] = useState<'half' | 'full'>('half');
   const [copied, setCopied] = useState(false);
@@ -441,6 +444,18 @@ export function AppleBottomSheet({
                   {savedLocations.length}
                 </span>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSheetTab('evidence')}
+              className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+                sheetTab === 'evidence'
+                  ? 'bg-white/20 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>分數證據</span>
             </button>
             <button
               type="button"
@@ -1122,6 +1137,69 @@ export function AppleBottomSheet({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB: SCORE EVIDENCE */}
+          {sheetTab === 'evidence' && (
+            <div className="space-y-3 pb-6">
+              <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/20">
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                  <Database className="w-4 h-4 text-indigo-400" />
+                  <span>分數證據</span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+                  每個分數只顯示後端已持久化的真實資料，以及實際使用的來源、方法、信心與取得時間。
+                </p>
+              </div>
+              {scoreFactors.length === 0 ? (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-400">
+                  尚無可用的分數證據。
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(['C1', 'C2', 'C3', 'C4', 'C5'] as const).map((category) => {
+                    const factors = scoreFactors.filter((factor) => factor.category === category);
+                    if (!factors.length) return null;
+                    return (
+                      <div key={category} className="rounded-xl bg-white/5 border border-white/5 overflow-hidden">
+                        <div className="px-3 py-2 bg-white/5 flex items-center justify-between">
+                          <span className="text-xs font-bold text-white">{category}</span>
+                          <span className="text-[10px] text-slate-400">{factors.length} 個指標</span>
+                        </div>
+                        <div className="divide-y divide-white/5">
+                          {factors.map((factor, index) => (
+                            <div key={factor.indicator + '-' + index} className="px-3 py-2.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-semibold text-white break-words">{factor.indicator}</div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">
+                                    {factor.direction === 'higher_is_better' ? '數值越高越有利' : '數值越低越有利'}
+                                  </div>
+                                </div>
+                                <span className="shrink-0 text-xs font-mono font-bold text-indigo-300">
+                                  {factor.value == null ? 'N/A' : String(factor.value) + (factor.unit ? ' ' + factor.unit : '')}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-[10px]">
+                                <div><span className="text-slate-500">來源</span><div className="text-slate-200 break-words">{factor.source || 'unavailable'}</div></div>
+                                <div><span className="text-slate-500">方法</span><div className="text-slate-200">{factor.method}</div></div>
+                                <div><span className="text-slate-500">信心</span><div className="text-slate-200">{factor.confidence}</div></div>
+                                <div><span className="text-slate-500">狀態</span><div className="text-slate-200">{factor.status || 'unavailable'}</div></div>
+                              </div>
+                              {factor.retrievedAt && (
+                                <div className="text-[10px] text-slate-500 mt-2">
+                                  retrievedAt: {new Date(factor.retrievedAt).toLocaleString('zh-TW')}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

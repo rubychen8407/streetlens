@@ -9,25 +9,65 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-async function checkHttpResource(url: string): Promise<void> {
-  const response = await fetch(url, {
-    method: "GET",
-    redirect: "follow",
-    headers: { "User-Agent": "StreetLens/1.0" },
-  });
-  if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);
-  const body = await response.arrayBuffer();
-  if (body.byteLength === 0) throw new Error(`${url} returned an empty body`);
-  console.log(`OK ${url} (${body.byteLength} bytes)`);
+interface HttpResourceResult {
+  url: string;
+  status: "ok" | "empty" | "timeout" | "error";
+  httpStatus?: number;
+  bytes?: number;
+  error?: string;
+}
+
+async function checkHttpResource(url: string): Promise<HttpResourceResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60_000);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      headers: { "User-Agent": "StreetLens/1.0" },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return { url, status: "error", httpStatus: response.status, error: `HTTP ${response.status}` };
+    }
+
+    const body = await response.arrayBuffer();
+    if (body.byteLength === 0) {
+      return { url, status: "empty", httpStatus: response.status, bytes: 0 };
+    }
+
+    return { url, status: "ok", httpStatus: response.status, bytes: body.byteLength };
+  } catch (error: any) {
+    return {
+      url,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      error: error?.message || String(error),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function main() {
   console.log(`External data health check at ${TEST_LAT},${TEST_LNG}`);
 
-  await Promise.all([
+  const resourceResults = await Promise.all([
     ...Object.values(GREEN_RESOURCE_URLS),
     ...Object.values(SAFETY_RESOURCE_URLS),
   ].map(checkHttpResource));
+
+  for (const result of resourceResults) {
+    if (result.status === "ok") {
+      console.log(`OK ${result.url} (${result.bytes ?? 0} bytes)`);
+    } else {
+      console.error(`RESOURCE ${result.status.toUpperCase()} ${result.url}${result.httpStatus ? ` HTTP ${result.httpStatus}` : ""}${result.error ? `: ${result.error}` : ""}`);
+    }
+  }
+
+  assert(resourceResults.every((result) => result.status === "ok"),
+    "One or more official external resources failed the HTTP health check.");
 
   const [green, transit, safety] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),

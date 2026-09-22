@@ -332,7 +332,7 @@ function parsePolygons(kml: string, scenario: FloodHazardCell["scenarioMmPerHour
   return polygons;
 }
 
-async function loadFloodPolygons(): Promise<typeof floodCache extends Map<any, infer V> ? V["polygons"] : never> {
+async function loadFloodPolygons(): Promise<{ scenario: FloodHazardCell["scenarioMmPerHour"]; polygon: Polygon; depthCm: number | null }[]> {
   const cached = floodCache.get("all");
   if (cached && cached.expiresAt > Date.now()) return cached.polygons;
 

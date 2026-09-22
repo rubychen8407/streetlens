@@ -138,6 +138,37 @@ function overallConfidence(factors: ScoreFactor[]): "high" | "medium" | "low" {
   return avg >= 2.6 ? "high" : avg >= 1.8 ? "medium" : "low";
 }
 
+
+export function validateAssessmentIntegrity(assessment: AssessmentScores): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const categories = [assessment.c1, assessment.c2, assessment.c3, assessment.c4, assessment.c5];
+
+  for (const category of categories) {
+    if (category.score !== null && (!Number.isFinite(category.score) || category.score < 0 || category.score > 100)) {
+      errors.push(`${category.factors[0]?.category ?? "unknown"} score must be null or within 0-100`);
+    }
+    for (const factor of category.factors) {
+      if (factor.value !== null && !Number.isFinite(factor.value)) {
+        errors.push(`${factor.category}/${factor.indicator} value must be null or finite`);
+      }
+      if (factor.scoringMethod === "empirical_percentile" && (factor.referenceSampleSize ?? 0) < 20) {
+        errors.push(`${factor.category}/${factor.indicator} percentile requires at least 20 reference samples`);
+      }
+      if (factor.status === "unavailable" && factor.value !== null) {
+        errors.push(`${factor.category}/${factor.indicator} cannot have a value when unavailable`);
+      }
+    }
+  }
+
+  if (assessment.overall !== null && categories.some((category) => category.score === null)) {
+    errors.push("overall must be null when any category score is unavailable");
+  }
+  if (assessment.overall !== null && (!Number.isFinite(assessment.overall) || assessment.overall < 0 || assessment.overall > 100)) {
+    errors.push("overall must be null or within 0-100");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
 export function calculateAssessment(
   baseline: any,
   poiCounts: Partial<Record<Category, number>>,

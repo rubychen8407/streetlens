@@ -11,6 +11,7 @@ export interface ScoreFactor {
   confidence: "high" | "medium" | "low";
   status?: "available" | "unavailable";
   retrievedAt?: string;
+  referenceSampleSize?: number;
 }
 
 export interface CategoryScore {
@@ -395,6 +396,8 @@ export function calculateAssessment(
   // C5 measures source-backed community/cultural access only. It does not
   // claim to measure subjective social trust or civic participation.
   const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference);
+  const communityReferenceSize = c5CommunityReference?.filter(Number.isFinite).length ?? 0;
+  const c5NearestDistanceReferenceSize = normalization?.c5NearestCommunityDistances?.filter(Number.isFinite).length ?? 0;
   const c5NearestDistanceScore = empiricalPercentileScore(
     c5NearestCommunityDistance,
     normalization?.c5NearestCommunityDistances,
@@ -410,6 +413,7 @@ export function calculateAssessment(
     method: "calculated",
     confidence: communityScore != null ? "medium" : "low",
     status: Number.isFinite(Number(c5CommunityCount)) ? "available" : "unavailable",
+    referenceSampleSize: communityReferenceSize,
   }];
   const c5Components = [communityScore, c5NearestDistanceScore].filter((value): value is number => value !== null);
   if (c5NearestDistanceScore !== null) {
@@ -423,6 +427,7 @@ export function calculateAssessment(
       method: "calculated",
       confidence: "medium",
       status: "available",
+      referenceSampleSize: c5NearestDistanceReferenceSize,
     });
   }
   const c5: number | null = c5Components.length ? clampScore(average(c5Components)) : null;

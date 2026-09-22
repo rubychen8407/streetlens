@@ -7,6 +7,7 @@ import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
+import { ensureDataCacheSchema, getCachedSnapshot, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -14,6 +15,10 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Assessment data is persisted first. User requests never crawl scoring sources.
+ensureDataCacheSchema().catch((error) => console.error("Data cache initialization failed:", error));
+const DATA_REFRESH_TOKEN = process.env.STREETLENS_REFRESH_TOKEN || "";
 
 // Lazy-initialized Gemini client
 let geminiClient: GoogleGenAI | null = null;
@@ -570,31 +575,86 @@ function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
 // an external geospatial source so the map never presents invented businesses
 // or facilities as real-world locations.
 
+// Scheduled refresh only: external scoring sources are fetched here, then persisted.
+app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
+  if (!DATA_REFRESH_TOKEN || req.headers.authorization !== "Bearer " + DATA_REFRESH_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    await ensureDataCacheSchema();
+    const targets = await listActiveAssessmentTargets();
+    const results: any[] = [];
+    for (const target of targets) {
+      const lat = target.latitude;
+      const lng = target.longitude;
+      const scopeKey = target.scopeKey;
+      const retrievedAt = new Date().toISOString();
+      const settled = await Promise.allSettled([
+        fetchGooglePlacesNearby(lat, lng),
+        fetchOsmPoisNearby(lat, lng),
+        fetchTdxTransitData(lat, lng),
+        fetchTaipeiGreenData(lat, lng),
+        fetchTaipeiSafetyData(lat, lng, 500),
+        fetchTaipeiFloodHazardData(lat, lng),
+        fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat + "&longitude=" + lng + "&current=us_aqi,pm2_5&timezone=auto", { headers: { "User-Agent": "StreetLens/1.0" } }),
+      ]);
+
+      const names = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
+      for (let i = 0; i < names.length; i++) {
+        const result = settled[i];
+        let payload: any;
+        if (result.status === "fulfilled") {
+          if (i === 6) {
+            try {
+              if (!result.value.ok) throw new Error("HTTP " + result.value.status);
+              const data: any = await result.value.json();
+              payload = {
+                aqi: typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null,
+                pm25: typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null,
+                airQualityTimestamp: data.current?.time || null,
+                retrievedAt,
+                source: "Open-Meteo Air Quality (CAMS model data)",
+                sourceType: "model",
+                status: data.current ? "available" : "empty",
+              };
+            } catch (error: any) {
+              payload = { status: "error", error: error?.message || String(error), retrievedAt };
+            }
+          } else {
+            payload = result.value;
+          }
+        } else {
+          payload = { status: "error", error: result.reason?.message || String(result.reason), retrievedAt };
+        }
+        const saved = await saveSnapshot(names[i], scopeKey, payload, { status: String(payload?.status || "available") });
+        results.push({ scopeKey, sourceKey: names[i], changed: saved.changed, status: payload?.status || "available" });
+      }
+    }
+    return res.json({ refreshedAt: new Date().toISOString(), targetCount: targets.length, snapshots: results });
+  } catch (error: any) {
+    console.error("Scheduled data refresh failed:", error);
+    return res.status(500).json({ error: error.message || "Failed to refresh persisted data" });
+  }
+});
+
 // 即時附近 POI 端點 — Google Places API (New) 優先，OSM Overpass 其次，
 // 結合在地空間開放常模確保各點位皆有清晰對應的生活機能標記
 app.get("/api/nearby-pois", async (req: Request, res: Response) => {
   try {
     const lat = parseFloat(req.query.lat as string);
     const lng = parseFloat(req.query.lng as string);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return res.status(400).json({ error: "Valid lat/lng are required" });
-    }
-
-    const [google, osm] = await Promise.all([
-      fetchGooglePlacesNearby(lat, lng),
-      fetchOsmPoisNearby(lat, lng),
-    ]);
-    const pois = mergePois(lat, lng, [google, osm]);
-
-    return res.json({
-      pois,
-      sources: [
-        { source: google.source, status: google.status, retrievedAt: google.retrievedAt },
-        { source: osm.source, status: osm.status, retrievedAt: osm.retrievedAt },
-      ],
-    });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
+    const scopeKey = await registerAssessmentTarget(lat, lng);
+    if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured" });
+    const [google, osm] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey)]);
+    if (!google && !osm) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
+    const pois = mergePois(lat, lng, [google?.payload, osm?.payload].filter(Boolean));
+    return res.json({ pois, dataStatus: "cached", scopeKey, sources: [
+      google ? { source: google.sourceKey, status: google.status, retrievedAt: google.fetchedAt } : { source: "google_places", status: "unavailable" },
+      osm ? { source: osm.sourceKey, status: osm.status, retrievedAt: osm.fetchedAt } : { source: "openstreetmap", status: "unavailable" },
+    ] });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || "Failed to fetch POIs" });
+    return res.status(500).json({ error: err.message || "Failed to load cached POIs" });
   }
 });
 
@@ -837,146 +897,90 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const district = (req.query.district as string) || "";
     const city = (req.query.city as string) || "";
     const streetName = (req.query.streetName as string) || "";
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return res.status(400).json({ error: "Valid lat/lng are required" });
+    const scopeKey = await registerAssessmentTarget(lat, lng);
+    if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured", dataStatus: "database_required" });
+
+    const sourceKeys = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
+    const cached = await Promise.all(sourceKeys.map((key) => getCachedSnapshot(key, scopeKey)));
+    const snapshots: Record<string, any> = {};
+    sourceKeys.forEach((key, i) => { snapshots[key] = cached[i]; });
+    const missing = sourceKeys.filter((key) => !snapshots[key]);
+    if (missing.length) {
+      return res.status(202).json({
+        location: { lat, lng, city, district, streetName },
+        scopeKey,
+        dataStatus: "pending_refresh",
+        missingSources: missing,
+        scores: null,
+        message: "資料尚未完成排程更新；未使用即時爬取或假資料。",
+      });
     }
 
-    const [google, osm, officialTransit, greenData, safetyData, weatherResponse] = await Promise.all([
-      fetchGooglePlacesNearby(lat, lng),
-      fetchOsmPoisNearby(lat, lng),
-      fetchTdxTransitData(lat, lng),
-      fetchTaipeiGreenData(lat, lng),
-      fetchTaipeiSafetyData(lat, lng, 500),
-      fetchTaipeiFloodHazardData(lat, lng),
-      fetch(`http://127.0.0.1:${PORT}/api/weather?lat=${lat}&lng=${lng}`),
-    ]);
-
+    const google = snapshots.google_places.payload;
+    const osm = snapshots.openstreetmap.payload;
+    const officialTransit = snapshots.tdx_transit.payload;
+    const greenData = snapshots.taipei_green.payload;
+    const safetyData = snapshots.taipei_safety.payload;
+    const floodData = snapshots.taipei_flood.payload;
+    const weather = snapshots.open_meteo_air_quality.payload;
     const pois = mergePois(lat, lng, [google, osm]);
-    const officialBusDistances = officialTransit.stops
-      .map((stop: any) => stop.distanceMeters)
-      .filter((value: any) => Number.isFinite(value));
-    const googleOsmRail = pois
-      .filter((poi: any) => poi.amenityType === "rail")
-      .map((poi: any) => poi.distanceMeters)
-      .filter((value: any) => Number.isFinite(value));
-    const googleOsmBus = pois
-      .filter((poi: any) => poi.amenityType === "bus")
-      .map((poi: any) => poi.distanceMeters)
-      .filter((value: any) => Number.isFinite(value));
-    const weather = weatherResponse.ok ? await weatherResponse.json() : null;
     const nearest = (type: string): number | undefined => {
-      const matches = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters));
-      return matches.length ? Math.min(...matches.map((poi: any) => poi.distanceMeters)) : undefined;
+      const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
+      return values.length ? Math.min(...values) : undefined;
     };
-
-    const sourceNames = [...new Set(
-      pois.map((poi: any) => poi.source).filter(Boolean)
-    )];
-
+    const sourceNames = [...new Set(pois.map((poi: any) => poi.source).filter(Boolean))];
     const c2PoiMetrics = {
-      supermarketDist: nearest("supermarket"),
-      convenienceDist: nearest("convenience"),
-      clinicDist: nearest("clinic"),
-      schoolDist: nearest("school"),
-      bankPostDist: nearest("bank_post"),
+      supermarketDist: nearest("supermarket"), convenienceDist: nearest("convenience"), clinicDist: nearest("clinic"), schoolDist: nearest("school"), bankPostDist: nearest("bank_post"),
       poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length || undefined,
-      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable",
-      method: "calculated" as const,
+      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable", method: "calculated" as const,
       confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
+      status: sourceNames.length ? "available" as const : "empty" as const, retrievedAt: snapshots.google_places.fetchedAt,
     };
 
-    const officialRailDistances = officialTransit.railStations
-      .map((station: any) => station.distanceMeters)
-      .filter((value: any) => Number.isFinite(value));
-    const officialRailDist = officialRailDistances.length ? Math.min(...officialRailDistances) : undefined;
-    const railDist = officialRailDist ?? (googleOsmRail.length ? Math.min(...googleOsmRail) : undefined);
-    const officialBusDist = officialBusDistances.length ? Math.min(...officialBusDistances) : undefined;
-    const busDist = officialBusDist ?? (googleOsmBus.length ? Math.min(...googleOsmBus) : undefined);
-
-    const parkPois = pois.filter((poi: any) => poi.amenityType === "park" && Number.isFinite(poi.distanceMeters));
-    const nearestParkDist = parkPois.length ? Math.min(...parkPois.map((poi: any) => poi.distanceMeters)) : undefined;
-    const c4GreenMetrics = {
-      streetTreeCount800m: greenData.streetTrees.length || undefined,
-      parkTreeCount800m: greenData.parkTrees.length || undefined,
-      nearestParkDist: nearestParkDist,
-      parkCount800m: parkPois.length || undefined,
-      source: greenData.source,
-      method: "calculated" as const,
-      confidence: greenData.status === "available" ? "high" as const : "low" as const,
-      status: greenData.status,
-      retrievedAt: greenData.retrievedAt,
-    };
-
-    const fatalTrafficAccidents = safetyData.accidents.filter((accident: any) =>
-      /1類|A1|死亡/.test(String(accident.type || "")),
-    ).length;
-    const injuryTrafficAccidents = safetyData.accidents.filter((accident: any) =>
-      /2類|A2|受傷/.test(String(accident.type || "")),
-    ).length;
-    const c1SafetyMetrics = {
-      accidentCount500m: safetyData.accidents.length || undefined,
-      fatalAccidentCount500m: fatalTrafficAccidents || undefined,
-      injuryAccidentCount500m: injuryTrafficAccidents || undefined,
-      source: safetyData.source,
-      method: "official" as const,
-      confidence: safetyData.status === "available" ? "high" as const : "low" as const,
-      status: safetyData.status,
-      retrievedAt: safetyData.retrievedAt,
-    };
-
+    const railDistances = (officialTransit.railStations || []).map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const busDistances = (officialTransit.stops || []).map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const osmRail = pois.filter((x: any) => x.amenityType === "rail").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const osmBus = pois.filter((x: any) => x.amenityType === "bus").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const railDist = railDistances.length ? Math.min(...railDistances) : (osmRail.length ? Math.min(...osmRail) : undefined);
+    const busDist = busDistances.length ? Math.min(...busDistances) : (osmBus.length ? Math.min(...osmBus) : undefined);
     const c3TransitMetrics = {
-      mrtOrRailDist: railDist,
-      busStopDist: busDist,
-      source: [
-        officialRailDist != null ? "TDX / MOTC (Taipei Metro stations)" :
-          railDist != null ? sourceNames.filter((s) => s.includes("Google") || s.includes("OpenStreetMap")) : "",
-        officialBusDist != null ? "TDX / MOTC (Taipei City bus stops)" : "",
-      ].filter(Boolean).join(" + ") || "unavailable",
-      method: "calculated" as const,
-      confidence: officialBusDist != null && railDist != null ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,
-      status: railDist != null || busDist != null ? "available" as const : officialTransit.status === "error" || officialTransit.status === "timeout" ? officialTransit.status : "empty" as const,
-      retrievedAt: officialTransit.retrievedAt,
+      mrtOrRailDist: railDist, busStopDist: busDist,
+      source: "TDX / MOTC + cached POIs", method: "calculated" as const,
+      confidence: railDistances.length && busDistances.length ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,
+      status: railDist != null || busDist != null ? "available" as const : "empty" as const,
+      retrievedAt: snapshots.tdx_transit.fetchedAt,
     };
 
-    const scores = calculateAssessment(
-      null,
-      {},
-      weather || undefined,
-      c1SafetyMetrics,
-      c2PoiMetrics,
-      c3TransitMetrics,
-      c4GreenMetrics,
-    );
-    const allFactors = [
-      ...scores.c1.factors,
-      ...scores.c2.factors,
-      ...scores.c3.factors,
-      ...scores.c4.factors,
-      ...scores.c5.factors,
-    ];
+    const parkPois = pois.filter((x: any) => x.amenityType === "park" && Number.isFinite(x.distanceMeters));
+    const nearestParkDist = parkPois.length ? Math.min(...parkPois.map((x: any) => x.distanceMeters)) : undefined;
+    const c4GreenMetrics = {
+      streetTreeCount800m: greenData.streetTrees?.length || undefined, parkTreeCount800m: greenData.parkTrees?.length || undefined,
+      nearestParkDist, parkCount800m: parkPois.length || undefined, source: greenData.source || "Taipei City Parks and Street Trees dataset",
+      method: "calculated" as const, confidence: greenData.status === "available" ? "high" as const : "low" as const,
+      status: greenData.status, retrievedAt: greenData.retrievedAt,
+    };
 
+    const accidents = safetyData.accidents || [];
+    const c1SafetyMetrics = {
+      accidentCount500m: accidents.length || undefined,
+      fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length || undefined,
+      injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length || undefined,
+      source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" ? "high" as const : "low" as const,
+      status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
+    };
+
+    const scores = calculateAssessment(null, {}, weather || undefined, c1SafetyMetrics, c2PoiMetrics, c3TransitMetrics, c4GreenMetrics);
+    const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
     return res.json({
-      location: { lat, lng, city, district, streetName },
-      scores,
-      factors: allFactors,
-      poiCount: pois.length,
+      location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
       dataSources: sourceNames,
-      sourceStatus: [
-        { source: google.source, status: google.status, retrievedAt: google.retrievedAt, error: google.error || null },
-        { source: osm.source, status: osm.status, retrievedAt: osm.retrievedAt, error: osm.error || null },
-        { source: officialTransit.source, status: officialTransit.status, retrievedAt: officialTransit.retrievedAt, error: officialTransit.error || null },
-        { source: greenData.source, status: greenData.status, retrievedAt: greenData.retrievedAt, error: greenData.error || null },
-        { source: safetyData.source, status: safetyData.status, retrievedAt: safetyData.retrievedAt, error: safetyData.error || null },
-      ],
-      weatherStatus: weather?.status || "error",
-      generatedAt: new Date().toISOString(),
-      c2DataMode: "poi-derived",
-      c2PoiMetrics,
-      c2PoiCount: pois.filter((poi: any) => poi.category === "C2").length,
-      c4GreenMetrics,
-      c1SafetyMetrics,
-      c1TrafficAccidents: safetyData.accidents,
+      sourceStatus: sourceKeys.map((key) => ({ source: key, status: snapshots[key].status, retrievedAt: snapshots[key].fetchedAt })),
+      weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
+      dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key].fetchedAt])),
+      c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
+      c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.cells || [],
       parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
     });
   } catch (error: any) {

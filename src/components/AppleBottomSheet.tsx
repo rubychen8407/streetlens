@@ -58,8 +58,8 @@ function getStoredSavedLocations(): SavedLocation[] {
 interface AppleBottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  clsScore: number;
-  grade: 'S' | 'A' | 'B' | 'C' | 'D';
+  clsScore: number | null;
+  grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   streetName: string;
   district: string;
   city: string;
@@ -77,12 +77,12 @@ interface AppleBottomSheetProps {
   onUpdateWeights: (weights: CLSWeights, mode: 'equal' | 'pca' | 'custom') => void;
   weightMode: 'equal' | 'pca' | 'custom';
   baselineScores: {
-    cls: number;
-    c1: number;
-    c2: number;
-    c3: number;
-    c4: number;
-    c5: number;
+    cls: number | null;
+    c1: number | null;
+    c2: number | null;
+    c3: number | null;
+    c4: number | null;
+    c5: number | null;
   };
   fieldChecks: FieldCheckItem[];
   onToggleFieldCheck: (id: string) => void;

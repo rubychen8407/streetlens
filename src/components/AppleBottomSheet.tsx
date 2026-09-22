@@ -279,7 +279,8 @@ export function AppleBottomSheet({
     );
   });
 
-  const getDeltaBadge = (current: number, base: number) => {
+  const getDeltaBadge = (current: number | null, base: number | null) => {
+    if (current == null || base == null) return null;
     const diff = Math.round(current - base);
     if (diff > 0) {
       return (
@@ -308,11 +309,11 @@ export function AppleBottomSheet({
 📍 探查地點：${city} ${district} ${streetName || '現場位置'}
 ⭐️ 宜居總分：${clsScore} 分 (${grade}級)
 📊 5 大指標：
-  • C1 安全風險：${c1.score}分 (基準: ${baselineScores.c1})
-  • C2 便利機能：${c2.score}分 (基準: ${baselineScores.c2})
-  • C3 移動連結：${c3.score}分 (基準: ${baselineScores.c3})
-  • C4 環境綠意：${c4.score}分 (基準: ${baselineScores.c4})
-  • C5 社會活力：${c5.score}分 (基準: ${baselineScores.c5})
+  • C1 安全風險：${c1.score ?? 'N/A'}分 (基準: ${baselineScores.c1})
+  • C2 便利機能：${c2.score ?? 'N/A'}分 (基準: ${baselineScores.c2})
+  • C3 移動連結：${c3.score ?? 'N/A'}分 (基準: ${baselineScores.c3})
+  • C4 環境綠意：${c4.score ?? 'N/A'}分 (基準: ${baselineScores.c4})
+  • C5 社會活力：${c5.score ?? 'N/A'}分 (基準: ${baselineScores.c5})
 📝 現場特徵：${checked.map((c) => c.title).join('、') || '無特殊勾選'}
 📌 筆記：${fieldNotes || '無'}
 時間：${new Date().toLocaleString('zh-TW')}`;
@@ -499,7 +500,7 @@ export function AppleBottomSheet({
                     {getDeltaBadge(clsScore, baselineScores.cls)}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    網路基準：{baselineScores.cls} 分 · 現場校正後得分
+                    資料狀態：{clsScore == null ? '尚無可用分數' : '已使用已儲存的來源資料'}
                   </div>
                 </div>
 
@@ -621,13 +622,13 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-rose-500 rounded-full"
-                        style={{ width: `${c1.score}%` }}
+                        style={{ width: `${c1.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c1.score, baselineScores.c1)}
-                    <span className="font-mono font-bold text-sm text-white">{c1.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c1.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
@@ -652,13 +653,13 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-amber-500 rounded-full"
-                        style={{ width: `${c2.score}%` }}
+                        style={{ width: `${c2.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c2.score, baselineScores.c2)}
-                    <span className="font-mono font-bold text-sm text-white">{c2.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c2.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
@@ -683,13 +684,13 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-sky-500 rounded-full"
-                        style={{ width: `${c3.score}%` }}
+                        style={{ width: `${c3.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c3.score, baselineScores.c3)}
-                    <span className="font-mono font-bold text-sm text-white">{c3.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c3.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
@@ -714,13 +715,13 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${c4.score}%` }}
+                        style={{ width: `${c4.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c4.score, baselineScores.c4)}
-                    <span className="font-mono font-bold text-sm text-white">{c4.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c4.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
@@ -745,13 +746,13 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-purple-500 rounded-full"
-                        style={{ width: `${c5.score}%` }}
+                        style={{ width: `${c5.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c5.score, baselineScores.c5)}
-                    <span className="font-mono font-bold text-sm text-white">{c5.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c5.score ?? 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -834,7 +835,7 @@ export function AppleBottomSheet({
 
                   <div className="text-right">
                     <div className="flex items-baseline justify-end gap-1.5">
-                      <span className="text-2xl font-black text-white font-mono">{clsScore}</span>
+                      <span className="text-2xl font-black text-white font-mono"{clsScore ?? 'N/A'}</span>
                       <span className="text-[11px] text-slate-400">分</span>
                       <span className="px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
                         {grade}級
@@ -851,23 +852,23 @@ export function AppleBottomSheet({
                   <div className="grid grid-cols-5 gap-1 text-center text-[10px]">
                     <div className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300 font-mono">
                       <div className="text-[9px] text-rose-400/80">C1 安全</div>
-                      <div className="font-bold">{c1.score}</div>
+                      <div className="font-bold">{c1.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono">
                       <div className="text-[9px] text-amber-400/80">C2 機能</div>
-                      <div className="font-bold">{c2.score}</div>
+                      <div className="font-bold">{c2.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-300 font-mono">
                       <div className="text-[9px] text-sky-400/80">C3 移動</div>
-                      <div className="font-bold">{c3.score}</div>
+                      <div className="font-bold">{c3.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
                       <div className="text-[9px] text-emerald-400/80">C4 綠意</div>
-                      <div className="font-bold">{c4.score}</div>
+                      <div className="font-bold">{c4.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
                       <div className="text-[9px] text-purple-400/80">C5 活力</div>
-                      <div className="font-bold">{c5.score}</div>
+                      <div className="font-bold">{c5.score ?? 'N/A'}</div>
                     </div>
                   </div>
                 </div>
@@ -1374,7 +1375,7 @@ export function AppleBottomSheet({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-rose-400">C1 安全指標數值微調</span>
                     <span className="font-mono text-xs font-bold text-white">
-                      得分: {c1.score}分
+                      得分: {c1.score ?? 'N/A'}分
                     </span>
                   </div>
 
@@ -1387,7 +1388,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={0}
                       max={100}
-                      value={c1.crimeRate}
+                      value={c1.crimeRate ?? ''}
                       onChange={(e) =>
                         onUpdateC1((prev) => ({ ...prev, crimeRate: parseInt(e.target.value, 10) }))
                       }
@@ -1404,7 +1405,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={0}
                       max={100}
-                      value={c1.accidentRate}
+                      value={c1.accidentRate ?? ''}
                       onChange={(e) =>
                         onUpdateC1((prev) => ({
                           ...prev,
@@ -1424,7 +1425,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={1}
                       max={5}
-                      value={c1.hazardLevel}
+                      value={c1.hazardLevel ?? ''}
                       onChange={(e) =>
                         onUpdateC1((prev) => ({
                           ...prev,
@@ -1442,7 +1443,7 @@ export function AppleBottomSheet({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-amber-400">C2 機能可及距離 (公尺)</span>
                     <span className="font-mono text-xs font-bold text-white">
-                      得分: {c2.score}分
+                      得分: {c2.score ?? 'N/A'}分
                     </span>
                   </div>
 
@@ -1456,7 +1457,7 @@ export function AppleBottomSheet({
                       min={50}
                       max={1500}
                       step={50}
-                      value={c2.supermarketDist}
+                      value={c2.supermarketDist ?? ''}
                       onChange={(e) =>
                         onUpdateC2((prev) => ({
                           ...prev,
@@ -1477,7 +1478,7 @@ export function AppleBottomSheet({
                       min={30}
                       max={1000}
                       step={20}
-                      value={c2.convenienceDist}
+                      value={c2.convenienceDist ?? ''}
                       onChange={(e) =>
                         onUpdateC2((prev) => ({
                           ...prev,
@@ -1498,7 +1499,7 @@ export function AppleBottomSheet({
                       min={50}
                       max={1500}
                       step={50}
-                      value={c2.clinicDist}
+                      value={c2.clinicDist ?? ''}
                       onChange={(e) =>
                         onUpdateC2((prev) => ({
                           ...prev,
@@ -1516,7 +1517,7 @@ export function AppleBottomSheet({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-sky-400">C3 移動交通指標</span>
                     <span className="font-mono text-xs font-bold text-white">
-                      得分: {c3.score}分
+                      得分: {c3.score ?? 'N/A'}分
                     </span>
                   </div>
 
@@ -1530,7 +1531,7 @@ export function AppleBottomSheet({
                       min={100}
                       max={2000}
                       step={50}
-                      value={c3.mrtOrRailDist}
+                      value={c3.mrtOrRailDist ?? ''}
                       onChange={(e) =>
                         onUpdateC3((prev) => ({
                           ...prev,
@@ -1550,7 +1551,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={0}
                       max={100}
-                      value={c3.walkabilityScore}
+                      value={c3.walkabilityScore ?? ''}
                       onChange={(e) =>
                         onUpdateC3((prev) => ({
                           ...prev,
@@ -1568,7 +1569,7 @@ export function AppleBottomSheet({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-emerald-400">C4 環境綠意微調</span>
                     <span className="font-mono text-xs font-bold text-white">
-                      得分: {c4.score}分
+                      得分: {c4.score ?? 'N/A'}分
                     </span>
                   </div>
 
@@ -1581,7 +1582,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={20}
                       max={100}
-                      value={c4.airQualityScore}
+                      value={c4.airQualityScore ?? ''}
                       onChange={(e) =>
                         onUpdateC4((prev) => ({
                           ...prev,
@@ -1601,7 +1602,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={5}
                       max={60}
-                      value={c4.greenCoveragePct}
+                      value={c4.greenCoveragePct ?? ''}
                       onChange={(e) =>
                         onUpdateC4((prev) => ({
                           ...prev,
@@ -1619,7 +1620,7 @@ export function AppleBottomSheet({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-purple-400">C5 社會活力微調</span>
                     <span className="font-mono text-xs font-bold text-white">
-                      得分: {c5.score}分
+                      得分: {c5.score ?? 'N/A'}分
                     </span>
                   </div>
 
@@ -1632,7 +1633,7 @@ export function AppleBottomSheet({
                       type="range"
                       min={20}
                       max={100}
-                      value={c5.neighborhoodTrust}
+                      value={c5.neighborhoodTrust ?? ''}
                       onChange={(e) =>
                         onUpdateC5((prev) => ({
                           ...prev,

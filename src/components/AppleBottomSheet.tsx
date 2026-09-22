@@ -1186,6 +1186,16 @@ export function AppleBottomSheet({
                                 <div><span className="text-slate-500">方法</span><div className="text-slate-200">{factor.method}</div></div>
                                 <div><span className="text-slate-500">信心</span><div className="text-slate-200">{factor.confidence}</div></div>
                                 <div><span className="text-slate-500">狀態</span><div className="text-slate-200">{factor.status || 'unavailable'}</div></div>
+                                <div className="col-span-2">
+                                  <span className="text-slate-500">Reference</span>
+                                  <div className="text-slate-200">
+                                    {factor.referenceSampleSize != null
+                                      ? factor.referenceSampleSize >= 20
+                                        ? `${factor.referenceSampleSize} 筆真實觀測`
+                                        : `${factor.referenceSampleSize} 筆真實觀測（不足 20，無法計算 percentile）`
+                                      : 'N/A'}
+                                  </div>
+                                </div>
                               </div>
                               {factor.retrievedAt && (
                                 <div className="text-[10px] text-slate-500 mt-2">

@@ -47,6 +47,8 @@ export interface C1SafetyMetrics {
     retrievedAt: string;
   }>;
   floodSource?: string | null;
+  accidentCountReference?: number[];
+  floodDepthReference?: number[];
 }
 
 export interface C2PoiMetrics {

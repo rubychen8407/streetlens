@@ -18,8 +18,14 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Type check
+      - name: Lint
         run: npm run lint
+      - name: Score integrity tests
+        run: npm run test:score-integrity
+      - name: Assessment snapshot policy tests
+        run: npm run test:assessment-policy
+      - name: Snapshot preservation tests
+        run: npm run test:snapshot-preservation
       - name: Check official external resources
         env:
           TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}

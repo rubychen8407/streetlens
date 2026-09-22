@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, X, ClipboardCheck, Database, Settings, Bookmark, Trash2 } from 'lucide-react';
+import { Check, ChevronRight, MapPin, Save, X, ClipboardCheck, Database, Star, Trash2, ArrowLeft } from 'lucide-react';
 import { FieldCheckItem, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 
 type View = 'assessment' | 'saved' | 'settings';
@@ -25,6 +25,8 @@ interface AssessmentWorkspaceProps {
   savedLocations: SavedLocation[];
   onDeleteSaved: (id: string) => void;
   onOpenDataLogs: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
 }
 
 const ratingLabels = ['Poor', 'Fair', 'Good', 'Great'];
@@ -44,6 +46,7 @@ export function AssessmentWorkspace({
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   const grouped = useMemo(() => {
     return ['C1','C2','C3','C4','C5'].map(category => ({
@@ -77,18 +80,11 @@ export function AssessmentWorkspace({
     <aside className="absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#111113]/95 backdrop-blur-2xl shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/10">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex gap-1 rounded-xl bg-white/5 p-1">
-            {[
-              ['assessment', 'Assess', ClipboardCheck],
-              ['saved', 'Saved', Bookmark],
-              ['settings', 'Settings', Settings],
-            ].map(([key, label, Icon]: any) => (
-              <button key={key} onClick={() => onViewChange(key)} className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${view === key ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-200'}`}>
-                <Icon className="w-3.5 h-3.5" />{label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10"><ArrowLeft className="w-4 h-4" /></button>
+            <div><div className="text-sm font-bold">Street assessment</div><div className="text-[10px] text-slate-500">Review → Observe → Save</div></div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10"><X className="w-4 h-4" /></button>
+          <button onClick={onToggleFavorite} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/10 text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>
         </div>
 
         {view === 'assessment' && (
@@ -109,8 +105,11 @@ export function AssessmentWorkspace({
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {view === 'assessment' && (
-          <div className="space-y-5 pb-4">
-            <section>
+          <div className="space-y-4 pb-4">
+            <div className="grid grid-cols-3 gap-1.5">
+              {['Review','Observe','Save'].map((label, index) => <button key={label} onClick={() => setStep((index + 1) as 1|2|3)} className={`rounded-xl py-2 text-[10px] font-bold border ${step === index + 1 ? 'bg-sky-500/15 border-sky-400/30 text-sky-200' : 'bg-white/[0.03] border-white/5 text-slate-500'}`}><span className="mr-1">{index + 1}</span>{label}</button>)}
+            </div>
+            {step === 1 && <section>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Objective data</h3>
                 <button onClick={onOpenDataLogs} className="text-[11px] text-sky-300 hover:text-sky-200 flex items-center gap-1">Data status <ChevronRight className="w-3 h-3" /></button>
@@ -124,9 +123,8 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
-            </section>
-
-            <section>
+            </section>}
+            {step === 2 && <section>
               <div className="mb-2">
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Your observation</h3>
                 <p className="text-[11px] text-slate-500 mt-1">Use what you see on site to record the street conditions. This is separate from external source data.</p>
@@ -159,17 +157,17 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
-            </section>
-
-            <section>
-              <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Field notes</label>
+            </section>}
+            {step === 3 && <section>
+              <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Review & save</label>
+              <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3 text-xs text-slate-300">Your observation is ready to be added to the CLS assessment.</div>
               <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder="What did you observe? e.g. sidewalk blocked, good shade, heavy traffic..." className="mt-2 w-full rounded-2xl bg-white/5 border border-white/10 p-3 text-xs outline-none focus:border-sky-400/50 resize-none placeholder:text-slate-600" />
             </section>
 
             <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3">
               <div className="flex items-center gap-2 text-xs font-bold"><MapPin className="w-4 h-4 text-sky-300" /> {targetLocation.lat.toFixed(5)}, {targetLocation.lng.toFixed(5)}</div>
               <div className="text-[10px] text-slate-500 mt-1">Observation will be stored with this location and assessment timestamp.</div>
-            </section>
+            </section>}
           </div>
         )}
 
@@ -219,11 +217,15 @@ export function AssessmentWorkspace({
 
       {view === 'assessment' && (
         <footer className="shrink-0 p-4 border-t border-white/10 bg-[#111113]">
-          <div className="flex gap-2 mb-2">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder={`${district ? district + ' ' : ''}${streetName || 'Assessment name'}`} className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs outline-none focus:border-sky-400/50" />
-            <button onClick={handleSave} className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold flex items-center gap-2"><Save className="w-4 h-4" /> Save</button>
-          </div>
-          {savedNotice && <div className="text-[10px] text-emerald-400 text-center">Assessment saved.</div>}
+          {step < 3 ? (
+            <button onClick={() => setStep((step + 1) as 1|2|3)} className="w-full py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold flex items-center justify-center gap-2">Continue <ChevronRight className="w-4 h-4" /></button>
+          ) : (
+            <div className="flex gap-2">
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Assessment name" className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-white/5 border border-white/10 text-xs outline-none" />
+              <button onClick={handleSave} className="px-5 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold flex items-center gap-2"><Save className="w-4 h-4" /> Save</button>
+            </div>
+          )}
+          {savedNotice && <div className="text-[10px] text-emerald-400 text-center mt-2">Assessment saved.</div>}
         </footer>
       )}
     </aside>

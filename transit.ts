@@ -23,41 +23,42 @@ function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2:
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+let tokenRequest: Promise<string | null> | null = null;
 
 async function getTdxAccessToken(signal?: AbortSignal): Promise<string | null> {
   const clientId = process.env.TDX_CLIENT_ID;
   const clientSecret = process.env.TDX_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
+  if (tokenRequest) return tokenRequest;
 
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
-    return cachedToken.value;
+  tokenRequest = (async () => {
+    const body = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    const response = await fetch(TDX_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      signal,
+    });
+    if (!response.ok) throw new Error(`TDX token HTTP ${response.status}`);
+    const data: any = await response.json();
+    if (!data.access_token) throw new Error("TDX token response did not contain access_token");
+    cachedToken = {
+      value: data.access_token,
+      expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 86400) - 60) * 1000,
+    };
+    return data.access_token;
+  })();
+
+  try {
+    return await tokenRequest;
+  } finally {
+    tokenRequest = null;
   }
-
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: clientId,
-    client_secret: clientSecret,
-  });
-
-  const response = await fetch(TDX_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`TDX token HTTP ${response.status}`);
-  }
-
-  const data: any = await response.json();
-  if (!data.access_token) throw new Error("TDX token response did not contain access_token");
-
-  cachedToken = {
-    value: data.access_token,
-    expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 86400) - 60) * 1000,
-  };
-  return cachedToken.value;
 }
 
 async function fetchTdxJson(path: string, signal: AbortSignal): Promise<any> {
@@ -90,8 +91,17 @@ async function fetchTdxJson(path: string, signal: AbortSignal): Promise<any> {
 
 export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<TransitSourceResult> {
   const retrievedAt = new Date().toISOString();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 7000);
+  const requestTimeoutMs = 15_000;
+
+  async function fetchBounded(path: string): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      return await fetchTdxJson(path, controller.signal);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
 
   try {
     // Keep both queries spatially bounded. TDX documents $spatialFilter/nearby
@@ -102,8 +112,8 @@ export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<
       `Rail/Metro/Station/TRTC?%24spatialFilter=nearby(StationPosition,${lat},${lng},1500)`;
 
     const [busResult, railResult] = await Promise.allSettled([
-      fetchTdxJson(busPath, controller.signal),
-      fetchTdxJson(railPath, controller.signal),
+      fetchBounded(busPath),
+      fetchBounded(railPath),
     ]);
 
     const busRows = busResult.status === "fulfilled" && Array.isArray(busResult.value)
@@ -184,7 +194,5 @@ export async function fetchTaiwanTransitData(lat: number, lng: number): Promise<
       retrievedAt,
       error: error?.message,
     };
-  } finally {
-    clearTimeout(timeoutId);
   }
 }

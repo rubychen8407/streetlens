@@ -30,7 +30,7 @@ export function calculateC1Score(
 
   // 加上實地勾選加扣分
   const c1Checks = fieldChecks.filter((c) => c.category === 'C1' && c.checked);
-  const bonus = c1Checks.reduce((acc, curr) => acc + curr.scoreImpact, 0);
+  const bonus = c1Checks.reduce((acc, curr) => acc + (curr.scoreImpact ?? 0), 0);
 
   return Math.min(100, Math.max(0, Math.round(rawSRI + bonus)));
 }
@@ -73,7 +73,7 @@ export function calculateC2Score(
   );
 
   const c2Checks = fieldChecks.filter((c) => c.category === 'C2' && c.checked);
-  const bonus = c2Checks.reduce((acc, curr) => acc + curr.scoreImpact, 0);
+  const bonus = c2Checks.reduce((acc, curr) => acc + (curr.scoreImpact ?? 0), 0);
 
   return Math.min(100, Math.max(0, Math.round(normalizedRaw + bonus)));
 }
@@ -104,7 +104,7 @@ export function calculateC3Score(
     sumWeights;
 
   const c3Checks = fieldChecks.filter((c) => c.category === 'C3' && c.checked);
-  const bonus = c3Checks.reduce((acc, curr) => acc + curr.scoreImpact, 0);
+  const bonus = c3Checks.reduce((acc, curr) => acc + (curr.scoreImpact ?? 0), 0);
 
   return Math.min(100, Math.max(0, Math.round(rawMCI + bonus)));
 }
@@ -133,7 +133,7 @@ export function calculateC4Score(
     sumWeights;
 
   const c4Checks = fieldChecks.filter((c) => c.category === 'C4' && c.checked);
-  const bonus = c4Checks.reduce((acc, curr) => acc + curr.scoreImpact, 0);
+  const bonus = c4Checks.reduce((acc, curr) => acc + (curr.scoreImpact ?? 0), 0);
 
   return Math.min(100, Math.max(0, Math.round(rawEGI + bonus)));
 }
@@ -157,7 +157,7 @@ export function calculateC5Score(
     sumWeights;
 
   const c5Checks = fieldChecks.filter((c) => c.category === 'C5' && c.checked);
-  const bonus = c5Checks.reduce((acc, curr) => acc + curr.scoreImpact, 0);
+  const bonus = c5Checks.reduce((acc, curr) => acc + (curr.scoreImpact ?? 0), 0);
 
   return Math.min(100, Math.max(0, Math.round(rawSVI + bonus)));
 }

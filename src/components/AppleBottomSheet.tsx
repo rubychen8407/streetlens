@@ -1258,7 +1258,7 @@ export function AppleBottomSheet({
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
-                  系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），顯示以下 8 大來源的已持久化快照；外部來源由背景更新流程負責同步：
+                  系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），顯示以下 7 個外部來源的已持久化快照；外部來源由背景更新流程負責同步：
                 </p>
               </div>
 

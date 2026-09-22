@@ -7,7 +7,7 @@ import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getGreenDensityReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -996,6 +996,10 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" ? "high" as const : "low" as const,
       status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
     };
+
+    const greenReference = await getGreenDensityReference(scopeKey);
+    c4GreenMetrics.streetTreeDensityReference = greenReference.street;
+    c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
     const scores = calculateAssessment(null, {}, weather || undefined, c1SafetyMetrics, c2PoiMetrics, c3TransitMetrics, c4GreenMetrics);
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];

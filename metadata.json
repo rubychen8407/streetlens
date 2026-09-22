@@ -1,0 +1,6 @@
+{
+  "name": "社區宜居指數實勘系統",
+  "description": "社區宜居綜合指數 (CLS) 實地探查與評分工具，涵蓋 C1 安全、C2 機能、C3 移動、C4 綠意、C5 活力，自動帶入網路基準值與現場校正。",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -753,6 +753,62 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
   }
 });
 
+// Taiwan official/public transport source adapters.
+// Distances are calculated from source coordinates; no frequency or accessibility
+// score is invented when the source does not provide it.
+interface TransitSourceResult {
+  stops: any[];
+  source: string;
+  status: "available" | "empty" | "error" | "timeout";
+  retrievedAt: string;
+  error?: string;
+}
+
+async function fetchTaiwanTransitData(lat: number, lng: number): Promise<TransitSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  // Taipei City bus-stop open data is published by Taipei City Transportation Department.
+  // Keep the endpoint configurable because data.gov.tw resource URLs can change.
+  const url = process.env.TAIPEI_BUS_STOPS_URL;
+  if (!url) {
+    return { stops: [], source: "Taipei City Transportation Department bus-stop data", status: "empty", retrievedAt };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "StreetLens/1.0" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data: any = await response.json();
+    const rows = Array.isArray(data) ? data : Array.isArray(data.result) ? data.result : [];
+    const stops = rows.map((row: any) => ({
+      id: String(row.id ?? row.stopLocationId ?? row.BSM_BUSSTO ?? ""),
+      name: row.nameZh ?? row.BSM_CHINES ?? row.name ?? "",
+      lat: Number(row.latitude ?? row.lat ?? row.showLat),
+      lng: Number(row.longitude ?? row.lon ?? row.showLon),
+      type: "bus",
+      source: "Taipei City Transportation Department",
+      retrievedAt,
+    })).filter((x: any) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+
+    const nearby = stops
+      .map((stop: any) => ({ ...stop, distanceMeters: haversineDistanceMeters(lat, lng, stop.lat, stop.lng) }))
+      .filter((stop: any) => stop.distanceMeters <= 1500)
+      .sort((a: any, b: any) => a.distanceMeters - b.distanceMeters);
+
+    return { stops: nearby, source: "Taipei City Transportation Department", status: nearby.length ? "available" : "empty", retrievedAt };
+  } catch (error: any) {
+    return {
+      stops: [],
+      source: "Taipei City Transportation Department",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // 台灣各主要行政區在 8 大資料來源下的基準常模庫
 // No synthetic regional measurements are exposed. Source-backed indicators are added
 // category by category; unavailable indicators remain null.
@@ -783,13 +839,25 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Valid lat/lng are required" });
     }
 
-    const [google, osm, weatherResponse] = await Promise.all([
+    const [google, osm, officialTransit, weatherResponse] = await Promise.all([
       fetchGooglePlacesNearby(lat, lng),
       fetchOsmPoisNearby(lat, lng),
+      fetchTaiwanTransitData(lat, lng),
       fetch(`http://127.0.0.1:${PORT}/api/weather?lat=${lat}&lng=${lng}`),
     ]);
 
     const pois = mergePois(lat, lng, [google, osm]);
+    const officialBusDistances = officialTransit.stops
+      .map((stop: any) => stop.distanceMeters)
+      .filter((value: any) => Number.isFinite(value));
+    const googleOsmRail = pois
+      .filter((poi: any) => poi.amenityType === "rail")
+      .map((poi: any) => poi.distanceMeters)
+      .filter((value: any) => Number.isFinite(value));
+    const googleOsmBus = pois
+      .filter((poi: any) => poi.amenityType === "bus")
+      .map((poi: any) => poi.distanceMeters)
+      .filter((value: any) => Number.isFinite(value));
     const weather = weatherResponse.ok ? await weatherResponse.json() : null;
     const nearest = (type: string): number | undefined => {
       const matches = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters));
@@ -812,12 +880,21 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
     };
 
+    const railDist = googleOsmRail.length ? Math.min(...googleOsmRail) : undefined;
+    const officialBusDist = officialBusDistances.length ? Math.min(...officialBusDistances) : undefined;
+    const busDist = officialBusDist ?? (googleOsmBus.length ? Math.min(...googleOsmBus) : undefined);
+
     const c3TransitMetrics = {
-      mrtOrRailDist: nearest("rail"),
-      busStopDist: nearest("bus"),
-      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable",
+      mrtOrRailDist: railDist,
+      busStopDist: busDist,
+      source: [
+        railDist != null ? sourceNames.filter((s) => s.includes("Google") || s.includes("OpenStreetMap")) : "",
+        officialBusDist != null ? "Taipei City Transportation Department" : "",
+      ].filter(Boolean).join(" + ") || "unavailable",
       method: "calculated" as const,
-      confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
+      confidence: officialBusDist != null && railDist != null ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,
+      status: railDist != null || busDist != null ? "available" as const : officialTransit.status === "error" || officialTransit.status === "timeout" ? officialTransit.status : "empty" as const,
+      retrievedAt: officialTransit.retrievedAt,
     };
 
     const scores = calculateAssessment(
@@ -844,6 +921,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       sourceStatus: [
         { source: google.source, status: google.status, retrievedAt: google.retrievedAt, error: google.error || null },
         { source: osm.source, status: osm.status, retrievedAt: osm.retrievedAt, error: osm.error || null },
+        { source: officialTransit.source, status: officialTransit.status, retrievedAt: officialTransit.retrievedAt, error: officialTransit.error || null },
       ],
       weatherStatus: weather?.status || "error",
       generatedAt: new Date().toISOString(),

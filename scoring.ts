@@ -393,6 +393,11 @@ export function calculateAssessment(
   // C5 measures source-backed community/cultural access only. It does not
   // claim to measure subjective social trust or civic participation.
   const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference);
+  const c5NearestDistanceScore = empiricalPercentileScore(
+    c5NearestCommunityDistance,
+    c5NearestCommunityDistanceReference,
+    "lower_is_better",
+  );
   const c5Factors: ScoreFactor[] = [{
     category: "C5",
     indicator: "communityCulturalPoiCount800m",

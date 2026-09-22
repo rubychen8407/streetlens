@@ -161,6 +161,8 @@ export function calculateAssessment(
   provenance?: {
     c4NearestParkSource?: string;
     c4NearestParkRetrievedAt?: string;
+    c4ParkSource?: string;
+    c4ParkRetrievedAt?: string;
     c5Source?: string;
     c5RetrievedAt?: string;
   },
@@ -233,7 +235,14 @@ export function calculateAssessment(
       status: cell.depthCm != null ? "available" : "unavailable",
       retrievedAt: cell.retrievedAt,
       referenceSampleSize: c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: "raw_observation",
+      scoringMethod: (c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0) >= 20
+        ? "empirical_percentile"
+        : "not_scored",
+      availabilityReason: cell.depthCm == null
+        ? "no_observation"
+        : ((c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0) < 20
+          ? "insufficient_reference_data"
+          : undefined),
     });
   }
 
@@ -289,6 +298,7 @@ export function calculateAssessment(
   for (const factor of c2Factors) {
     const reference = normalization?.c2Distances?.[factor.indicator as keyof NonNullable<typeof normalization.c2Distances>];
     factor.referenceSampleSize = reference?.filter(Number.isFinite).length ?? 0;
+    factor.retrievedAt = c2PoiMetrics?.retrievedAt;
     factor.scoringMethod = factor.value != null && factor.referenceSampleSize >= 20
       ? "empirical_percentile"
       : "not_scored";
@@ -422,8 +432,12 @@ export function calculateAssessment(
     },
     {
       category: "C4", indicator: "parkCount800m", value: Number.isFinite(Number(parkCount800m)) ? Number(parkCount800m) : null,
-      unit: "parks", direction: "higher_is_better", source: Number.isFinite(Number(parkCount800m)) ? "OpenStreetMap" : "unavailable",
-      method: Number.isFinite(Number(parkCount800m)) ? "osm" : "calculated", confidence: Number.isFinite(Number(parkCount800m)) ? "medium" : "low", status: Number.isFinite(Number(parkCount800m)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      unit: "parks", direction: "higher_is_better",
+      source: Number.isFinite(Number(parkCount800m)) ? (provenance?.c4ParkSource || "unavailable") : "unavailable",
+      method: Number.isFinite(Number(parkCount800m)) ? "osm" : "calculated",
+      confidence: Number.isFinite(Number(parkCount800m)) ? "medium" : "low",
+      status: Number.isFinite(Number(parkCount800m)) ? "available" : "unavailable",
+      retrievedAt: provenance?.c4ParkRetrievedAt,
       scoringMethod: "raw_observation",
       availabilityReason: Number.isFinite(Number(parkCount800m)) ? undefined : "no_observation",
     },
@@ -468,7 +482,9 @@ export function calculateAssessment(
     value: Number.isFinite(Number(c5CommunityCount)) ? Number(c5CommunityCount) : null,
     unit: "POIs",
     direction: "higher_is_better",
-    source: provenance?.c5Source || "Google Places / OpenStreetMap",
+    source: Number.isFinite(Number(c5CommunityCount))
+      ? (provenance?.c5Source || "unavailable")
+      : "unavailable",
     method: "calculated",
     confidence: communityScore != null ? "medium" : "low",
     status: Number.isFinite(Number(c5CommunityCount)) ? "available" : "unavailable",
@@ -485,7 +501,7 @@ export function calculateAssessment(
       value: c5NearestDistanceScore,
       unit: "score",
       direction: "higher_is_better",
-      source: provenance?.c5Source || "Google Places / OpenStreetMap",
+      source: provenance?.c5Source || "unavailable",
       method: "calculated",
       confidence: "medium",
       status: "available",

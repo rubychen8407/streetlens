@@ -1,5 +1,5 @@
-import { fetchTaipeiGreenData } from "./green";
-import { fetchTaiwanTransitData } from "./transit";
+import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "../green";
+import { fetchTaiwanTransitData } from "../transit";
 
 const TEST_LAT = Number(process.env.STREETLENS_TEST_LAT || "25.033964");
 const TEST_LNG = Number(process.env.STREETLENS_TEST_LNG || "121.564468");
@@ -8,10 +8,10 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-async function main() {
+async function checkHttpResource(url: string): Promise<void> {\n  const response = await fetch(url, { method: "GET", redirect: "follow", headers: { "User-Agent": "StreetLens/1.0" } });\n  if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);\n  const body = await response.arrayBuffer();\n  if (body.byteLength === 0) throw new Error(`${url} returned an empty body`);\n  console.log(`OK ${url} (${body.byteLength} bytes)`);\n}\n\nasync function main() {
   console.log(`External data health check at ${TEST_LAT},${TEST_LNG}`);
 
-  const [green, transit] = await Promise.all([
+  await Promise.all(Object.values(GREEN_RESOURCE_URLS).map(checkHttpResource));\n\n  const [green, transit] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
   ]);

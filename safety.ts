@@ -9,7 +9,7 @@ export interface SafetySourceResult {
 }
 
 const TAIPEI_RESIDENTIAL_THEFT_URL =
-  "https://data.taipei/api/dataset/7f4e5c5f-2c6e-4f6b-a8e4-4d0b0f8a6b53/resource/download";
+  "https://data.taipei/api/dataset/68785231-d6c5-47a1-b001-77eec70bec02/resource/93d9bc2d-af08-4db7-a56b-9f0a49226fa3/download";
 
 const TAIPEI_ACCIDENT_URL =
   "https://data.taipei/api/dataset/2f238b4f-1b27-4085-93e9-d684ef0e2735/resource/83d6d29c-6801-41a2-95c6-47d551646db3/download";

@@ -3,7 +3,7 @@ export type Category = "C1" | "C2" | "C3" | "C4" | "C5";
 export interface ScoreFactor {
   category: Category;
   indicator: string;
-  value: number;
+  value: number | null;
   unit: string;
   direction: "higher_is_better" | "lower_is_better";
   source: string;
@@ -12,7 +12,7 @@ export interface ScoreFactor {
 }
 
 export interface CategoryScore {
-  score: number;
+  score: number | null;
   factors: ScoreFactor[];
 }
 
@@ -22,7 +22,7 @@ export interface AssessmentScores {
   c3: CategoryScore;
   c4: CategoryScore;
   c5: CategoryScore;
-  overall: number;
+  overall: number | null;
   weights: Record<Category, number>;
   confidence: "high" | "medium" | "low";
 }
@@ -34,6 +34,14 @@ export interface C2PoiMetrics {
   schoolDist?: number;
   bankPostDist?: number;
   poiDensityCount?: number;
+  source: string;
+  method: "api" | "osm" | "calculated";
+  confidence: "high" | "medium" | "low";
+}
+
+export interface C3TransitMetrics {
+  mrtOrRailDist?: number;
+  busStopDist?: number;
   source: string;
   method: "api" | "osm" | "calculated";
   confidence: "high" | "medium" | "low";
@@ -76,186 +84,119 @@ export function calculateAssessment(
   poiCounts: Partial<Record<Category, number>>,
   weather?: { aqi: number | null; pm25: number | null; source?: string; sourceType?: string },
   c2PoiMetrics?: C2PoiMetrics,
+  c3TransitMetrics?: C3TransitMetrics,
 ): AssessmentScores {
   const source = baseline?.source || "regional_benchmark_estimate";
   const baselineMethod = source === "regional_benchmark_estimate" ? "estimated" : "calculated";
   const baselineConfidence: "high" | "medium" | "low" =
     baselineMethod === "estimated" ? "low" : "medium";
 
-  const c1Factors: ScoreFactor[] = [
-    {
-      category: "C1",
-      indicator: "crimeRate",
-      value: Number(baseline?.c1?.crimeRate ?? 0),
-      unit: "normalized",
-      direction: "lower_is_better",
-      source,
-      method: baselineMethod,
-      confidence: baselineConfidence,
-    },
-    {
-      category: "C1",
-      indicator: "accidentRate",
-      value: Number(baseline?.c1?.accidentRate ?? 0),
-      unit: "normalized",
-      direction: "lower_is_better",
-      source,
-      method: baselineMethod,
-      confidence: baselineConfidence,
-    },
-    {
-      category: "C1",
-      indicator: "hazardLevel",
-      value: Number(baseline?.c1?.hazardLevel ?? 0),
-      unit: "normalized",
-      direction: "lower_is_better",
-      source,
-      method: baselineMethod,
-      confidence: baselineConfidence,
-    },
-  ];
+  // Do not derive safety from regional estimates. Until a real safety source is wired in,
+  // C1 remains explicitly unavailable rather than presenting synthetic numbers.
+  const c1Factors: ScoreFactor[] = [];
+  const c1: number | null = null;
 
-  const c1 = clampScore(100 - average(c1Factors.map((f) => f.value)));
-
+  // C2 is calculated only from source-backed POI distances/counts. Missing POI types
+  // remain unavailable; they are never replaced by regional benchmark distances.
   const c2Definitions = [
-    ["supermarketDist", c2PoiMetrics?.supermarketDist ?? baseline?.c2?.supermarketDist],
-    ["convenienceDist", c2PoiMetrics?.convenienceDist ?? baseline?.c2?.convenienceDist],
-    ["clinicDist", c2PoiMetrics?.clinicDist ?? baseline?.c2?.clinicDist],
-    ["schoolDist", c2PoiMetrics?.schoolDist ?? baseline?.c2?.schoolDist],
-    ["bankPostDist", c2PoiMetrics?.bankPostDist ?? baseline?.c2?.bankPostDist],
+    ["supermarketDist", c2PoiMetrics?.supermarketDist],
+    ["convenienceDist", c2PoiMetrics?.convenienceDist],
+    ["clinicDist", c2PoiMetrics?.clinicDist],
+    ["schoolDist", c2PoiMetrics?.schoolDist],
+    ["bankPostDist", c2PoiMetrics?.bankPostDist],
   ] as const;
+  const c2Source = c2PoiMetrics?.source || "unavailable";
+  const c2Method = c2PoiMetrics?.method || "calculated";
+  const c2Confidence = c2PoiMetrics?.confidence || "low";
 
-  const c2UsesPoiData = Boolean(c2PoiMetrics);
-  const c2Source = c2PoiMetrics?.source || source;
-  const c2Method = c2PoiMetrics?.method || baselineMethod;
-  const c2Confidence = c2PoiMetrics?.confidence || baselineConfidence;
+  const c2Factors: ScoreFactor[] = c2Definitions.map(([indicator, raw]) => ({
+    category: "C2" as Category,
+    indicator,
+    value: Number.isFinite(Number(raw)) ? Number(raw) : null,
+    unit: "m",
+    direction: "lower_is_better" as const,
+    source: Number.isFinite(Number(raw)) ? c2Source : "unavailable",
+    method: Number.isFinite(Number(raw)) ? c2Method : "calculated",
+    confidence: Number.isFinite(Number(raw)) ? c2Confidence : "low",
+  }));
 
-  const c2Factors: ScoreFactor[] = c2Definitions.map(([indicator, raw]) => {
-    const hasPoiValue = c2UsesPoiData && Number.isFinite(Number(
-      c2PoiMetrics?.[indicator as keyof C2PoiMetrics],
-    ));
-    return {
-      category: "C2" as Category,
-      indicator,
-      value: Number(raw ?? 0),
-      unit: "m",
-      direction: "lower_is_better" as const,
-      source: hasPoiValue ? c2Source : source,
-      method: hasPoiValue ? c2Method : baselineMethod,
-      confidence: hasPoiValue ? c2Confidence : baselineConfidence,
-    };
-  });
-
-  const poiDensity = Number(
-    c2PoiMetrics?.poiDensityCount ??
-    baseline?.c2?.poiDensityCount ??
-    poiCounts.C2 ??
-    0,
-  );
-  const hasRealPoiDensity = c2PoiMetrics?.poiDensityCount != null;
+  const poiDensity = c2PoiMetrics?.poiDensityCount;
   c2Factors.push({
     category: "C2",
     indicator: "poiDensityCount",
-    value: poiDensity,
+    value: Number.isFinite(Number(poiDensity)) ? Number(poiDensity) : null,
     unit: "POIs",
     direction: "higher_is_better",
-    source: hasRealPoiDensity ? c2Source : source,
-    method: hasRealPoiDensity ? c2Method : baselineMethod,
-    confidence: hasRealPoiDensity ? c2Confidence : baselineConfidence,
+    source: Number.isFinite(Number(poiDensity)) ? c2Source : "unavailable",
+    method: Number.isFinite(Number(poiDensity)) ? c2Method : "calculated",
+    confidence: Number.isFinite(Number(poiDensity)) ? c2Confidence : "low",
   });
 
-  const c2 = clampScore(
-    average(c2Definitions.map(([indicator, value]) => {
-      const hasPoiValue = c2UsesPoiData && Number.isFinite(Number(
-        c2PoiMetrics?.[indicator as keyof C2PoiMetrics],
-      ));
-      return inverseDistanceScore(
-        Number(value),
-        indicator === "clinicDist" || indicator === "schoolDist" ? 500 : 400,
-      );
-    }).concat(clampScore(poiDensity * 2))),
-  );
+  const c2ComponentScores = c2Definitions
+    .map(([indicator, value]) => Number.isFinite(Number(value))
+      ? inverseDistanceScore(Number(value), indicator === "clinicDist" || indicator === "schoolDist" ? 500 : 400)
+      : null)
+    .filter((value): value is number => value !== null);
+  if (Number.isFinite(Number(poiDensity))) {
+    c2ComponentScores.push(clampScore(Number(poiDensity) * 2));
+  }
+  const c2: number | null = c2ComponentScores.length
+    ? clampScore(average(c2ComponentScores))
+    : null;
 
+  // C3 uses only actual transit POIs. Frequency, walkability and bike-lane scores
+  // are intentionally omitted until backed by real transit/infrastructure datasets.
   const c3Factors: ScoreFactor[] = [
-    ["mrtOrRailDist", baseline?.c3?.mrtOrRailDist, "m"],
-    ["busStopDist", baseline?.c3?.busStopDist, "m"],
-    ["busFrequencyScore", baseline?.c3?.busFrequencyScore, "score"],
-    ["walkabilityScore", baseline?.c3?.walkabilityScore, "score"],
-    ["bikeLaneScore", baseline?.c3?.bikeLaneScore, "score"],
-  ].map(([indicator, value, unit]) => ({
-    category: "C3",
-    indicator: String(indicator),
-    value: Number(value ?? 0),
-    unit: String(unit),
-    direction: String(indicator).endsWith("Dist") ? "lower_is_better" : "higher_is_better",
-    source,
-    method: baselineMethod,
-    confidence: baselineConfidence,
-  }));
-  const c3 = clampScore(
-    average([
-      inverseDistanceScore(Number(baseline?.c3?.mrtOrRailDist), 700),
-      inverseDistanceScore(Number(baseline?.c3?.busStopDist), 180),
-      Number(baseline?.c3?.busFrequencyScore ?? 0),
-      Number(baseline?.c3?.walkabilityScore ?? 0),
-      Number(baseline?.c3?.bikeLaneScore ?? 0),
-    ]),
-  );
-
-  const airScore = weather?.aqi != null
-    ? clampScore(100 - weather.aqi / 2)
-    : Number(baseline?.c4?.airQualityScore ?? 0);
-  const c4Factors: ScoreFactor[] = [
     {
-      category: "C4",
-      indicator: "airQualityScore",
-      value: airScore,
-      unit: "score",
-      direction: "higher_is_better",
-      source: weather?.aqi != null ? (weather.source || "Open-Meteo Air Quality") : source,
-      method: weather?.aqi != null ? "api" : baselineMethod,
-      confidence: weather?.aqi != null ? "medium" : baselineConfidence,
+      category: "C3",
+      indicator: "mrtOrRailDist",
+      value: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? Number(c3TransitMetrics?.mrtOrRailDist) : null,
+      unit: "m",
+      direction: "lower_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.source || "unavailable") : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
     },
-    ...[
-      ["noiseScore", baseline?.c4?.noiseScore],
-      ["greenCoveragePct", baseline?.c4?.greenCoveragePct],
-      ["parkDistance", baseline?.c4?.parkDistance],
-    ].map(([indicator, value]) => ({
-      category: "C4" as Category,
-      indicator: String(indicator),
-      value: Number(value ?? 0),
-      unit: indicator === "parkDistance" ? "m" : "score",
-      direction: indicator === "parkDistance" ? "lower_is_better" as const : "higher_is_better" as const,
-      source,
-      method: baselineMethod,
-      confidence: baselineConfidence,
-    })),
+    {
+      category: "C3",
+      indicator: "busStopDist",
+      value: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? Number(c3TransitMetrics?.busStopDist) : null,
+      unit: "m",
+      direction: "lower_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.source || "unavailable") : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
+    },
   ];
-  const c4 = clampScore(
-    average([
-      airScore,
-      Number(baseline?.c4?.noiseScore ?? 0),
-      Math.min(100, Number(baseline?.c4?.greenCoveragePct ?? 0) * 2),
-      inverseDistanceScore(Number(baseline?.c4?.parkDistance), 400),
-    ]),
-  );
+  const c3ComponentScores = c3Factors
+    .map((factor) => factor.value == null ? null : inverseDistanceScore(
+      factor.value,
+      factor.indicator === "busStopDist" ? 180 : 700,
+    ))
+    .filter((value): value is number => value !== null);
+  const c3: number | null = c3ComponentScores.length
+    ? clampScore(average(c3ComponentScores))
+    : null;
 
-  const c5Factors: ScoreFactor[] = [
-    ["activityFrequency", baseline?.c5?.activityFrequency],
-    ["neighborhoodTrust", baseline?.c5?.neighborhoodTrust],
-    ["jobCommercialDensity", baseline?.c5?.jobCommercialDensity],
-    ["governanceParticipation", baseline?.c5?.governanceParticipation],
-  ].map(([indicator, value]) => ({
-    category: "C5",
-    indicator: String(indicator),
-    value: Number(value ?? 0),
+  // C4 currently has one source-backed indicator: live/model AQI.
+  // Noise, green coverage and park distance stay unavailable until source-backed.
+  const airScore = weather?.aqi != null ? clampScore(100 - weather.aqi / 2) : null;
+  const c4Factors: ScoreFactor[] = [{
+    category: "C4",
+    indicator: "airQualityScore",
+    value: airScore,
     unit: "score",
     direction: "higher_is_better",
-    source,
-    method: baselineMethod,
-    confidence: baselineConfidence,
-  }));
-  const c5 = clampScore(average(c5Factors.map((factor) => factor.value)));
+    source: airScore != null ? (weather?.source || "Open-Meteo Air Quality") : "unavailable",
+    method: airScore != null ? "api" : "calculated",
+    confidence: airScore != null ? "medium" : "low",
+  }];
+  const c4: number | null = airScore;
+
+  // C5 is intentionally unavailable. Social trust/governance/activity must not be
+  // inferred from POIs or generated estimates.
+  const c5Factors: ScoreFactor[] = [];
+  const c5: number | null = null;
 
   const categories: Record<Category, CategoryScore> = {
     C1: { score: c1, factors: c1Factors },
@@ -265,15 +206,14 @@ export function calculateAssessment(
     C5: { score: c5, factors: c5Factors },
   };
 
-  const overall = clampScore(
-    (c1 * DEFAULT_WEIGHTS.C1) +
-    (c2 * DEFAULT_WEIGHTS.C2) +
-    (c3 * DEFAULT_WEIGHTS.C3) +
-    (c4 * DEFAULT_WEIGHTS.C4) +
-    (c5 * DEFAULT_WEIGHTS.C5),
-  );
+  const scoredCategories = Object.values(categories)
+    .map((category) => category.score)
+    .filter((score): score is number => score !== null);
+  const overall: number | null =
+    scoredCategories.length === Object.keys(categories).length
+      ? clampScore(average(scoredCategories))
+      : null;
 
-  const allFactors = Object.values(categories).flatMap((category) => category.factors);
   return {
     c1: categories.C1,
     c2: categories.C2,

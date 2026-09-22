@@ -741,14 +741,32 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         }
 
         let payload: any;
+        let fetchError: string | null = null;
         try {
           payload = await refreshPayloadForSource(sourceKey, lat, lng);
         } catch (error: any) {
-          payload = {
-            status: "error",
-            error: error?.message || String(error),
-            retrievedAt: new Date().toISOString(),
-          };
+          fetchError = error?.message || String(error);
+        }
+
+        // Never replace a previously valid snapshot with a transient upstream error.
+        // A stale real snapshot remains usable until a later scheduled refresh succeeds.
+        if (fetchError) {
+          if (existing) {
+            await markSnapshotChecked(sourceKey, scopeKey, {
+              freshnessMethod: validator.method,
+            });
+          }
+          results.push({
+            scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing?.status || "unavailable",
+            skipped: false,
+            error: fetchError,
+            preservedExisting: Boolean(existing),
+            freshnessMethod: validator.method,
+          });
+          continue;
         }
 
         const saved = await saveSnapshot(sourceKey, scopeKey, payload, {
@@ -1167,9 +1185,16 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     return res.json({
       location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
       dataSources: sourceNames,
-      sourceStatus: sourceKeys.map((key) => ({ source: key, status: snapshots[key].status, retrievedAt: snapshots[key].fetchedAt })),
+      sourceStatus: sourceKeys.map((key) => ({
+        source: key,
+        status: snapshots[key]?.status || "unavailable",
+        retrievedAt: snapshots[key]?.fetchedAt || null,
+        checkedAt: snapshots[key]?.checkedAt || null,
+        sourceVersion: snapshots[key]?.sourceVersion || null,
+        freshnessMethod: snapshots[key]?.freshnessMethod || "unknown",
+      })),
       missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
-      dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key].fetchedAt])),
+      dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key]?.fetchedAt || null])),
       c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
       c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.cells || [],
       parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },

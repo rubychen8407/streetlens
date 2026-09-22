@@ -68,6 +68,8 @@ export interface C3TransitMetrics {
 export interface C4GreenMetrics {
   streetTreeCount800m?: number;
   parkTreeCount800m?: number;
+  streetTreeDensityPerKm2?: number;
+  parkTreeDensityPerKm2?: number;
   nearestParkDist?: number;
   parkCount800m?: number;
   source: string;
@@ -269,6 +271,8 @@ export function calculateAssessment(
   const parkTreeCount = c4GreenMetrics?.parkTreeCount800m;
   const nearestParkDist = c4GreenMetrics?.nearestParkDist;
   const parkCount800m = c4GreenMetrics?.parkCount800m;
+  const streetTreeDensityPerKm2 = c4GreenMetrics?.streetTreeDensityPerKm2;
+  const parkTreeDensityPerKm2 = c4GreenMetrics?.parkTreeDensityPerKm2;
   c4Factors.push(
     {
       category: "C4", indicator: "streetTreeCount800m", value: Number.isFinite(Number(streetTreeCount)) ? Number(streetTreeCount) : null,
@@ -283,6 +287,16 @@ export function calculateAssessment(
   );
   c4Factors.push(
     {
+      category: "C4", indicator: "streetTreeDensityPerKm2", value: Number.isFinite(Number(streetTreeDensityPerKm2)) ? Number(streetTreeDensityPerKm2) : null,
+      unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(streetTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
+      method: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(streetTreeDensityPerKm2)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+    },
+    {
+      category: "C4", indicator: "parkTreeDensityPerKm2", value: Number.isFinite(Number(parkTreeDensityPerKm2)) ? Number(parkTreeDensityPerKm2) : null,
+      unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(parkTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
+      method: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeDensityPerKm2)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+    },
+    {
       category: "C4", indicator: "nearestParkDist", value: Number.isFinite(Number(nearestParkDist)) ? Number(nearestParkDist) : null,
       unit: "m", direction: "lower_is_better", source: Number.isFinite(Number(nearestParkDist)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
       method: Number.isFinite(Number(nearestParkDist)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(nearestParkDist)) ? "medium" : "low", status: Number.isFinite(Number(nearestParkDist)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
@@ -293,9 +307,11 @@ export function calculateAssessment(
       method: Number.isFinite(Number(parkCount800m)) ? "osm" : "calculated", confidence: Number.isFinite(Number(parkCount800m)) ? "medium" : "low", status: Number.isFinite(Number(parkCount800m)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
     },
   );
+  // Raw counts are preserved as facts. Density is calculated from the fixed 800m
+  // observation radius (2.0106 km²) so comparisons do not depend on an arbitrary
+  // "count × score" multiplier. We do not turn density into a score until a
+  // source-backed normalization benchmark is available.
   const greenScores = [
-    Number.isFinite(Number(streetTreeCount)) ? clampScore(Math.min(100, Number(streetTreeCount) * 1.5)) : null,
-    Number.isFinite(Number(parkTreeCount)) ? clampScore(Math.min(100, Number(parkTreeCount) * 1.5)) : null,
     Number.isFinite(Number(nearestParkDist)) ? inverseDistanceScore(Number(nearestParkDist), 600) : null,
     Number.isFinite(Number(parkCount800m)) ? clampScore(Math.min(100, Number(parkCount800m) * 20)) : null,
   ].filter((value): value is number => value !== null);

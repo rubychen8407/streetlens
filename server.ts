@@ -319,40 +319,95 @@ app.get("/api/weather", async (req: Request, res: Response) => {
   }
 });
 
-// 即時附近 POI 端點 (OpenStreetMap / 台灣生活機能圖資)
+// Maps a Google Places "type" to our C1–C5 livability category + a short note.
+const GOOGLE_PLACE_TYPE_MAP: Record<string, { category: "C1" | "C2" | "C3" | "C4" | "C5"; note: string }> = {
+  police: { category: "C1", note: "社區治安防護據點" },
+  fire_station: { category: "C1", note: "消防救災據點" },
+  supermarket: { category: "C2", note: "生鮮超市日常採買" },
+  grocery_store: { category: "C2", note: "生鮮超市日常採買" },
+  convenience_store: { category: "C2", note: "24H 連鎖超商生活機能" },
+  pharmacy: { category: "C2", note: "藥局醫療用品" },
+  doctor: { category: "C2", note: "基層社區醫療照護" },
+  hospital: { category: "C2", note: "醫療院所" },
+  bank: { category: "C2", note: "金融服務據點" },
+  post_office: { category: "C2", note: "郵政服務據點" },
+  subway_station: { category: "C3", note: "大眾運輸通勤樞紐" },
+  train_station: { category: "C3", note: "大眾運輸通勤樞紐" },
+  light_rail_station: { category: "C3", note: "大眾運輸通勤樞紐" },
+  transit_station: { category: "C3", note: "大眾運輸通勤樞紐" },
+  bus_station: { category: "C3", note: "公車轉運據點" },
+  park: { category: "C4", note: "鄰里休憩綠地" },
+  community_center: { category: "C5", note: "地方社區與公民活動" },
+  local_government_office: { category: "C5", note: "地方行政服務據點" },
+  city_hall: { category: "C5", note: "地方行政服務據點" },
+};
+
+// Real, accurately-located POIs from the Google Places API (New) "Nearby
+// Search" endpoint. This is the primary POI source whenever a
+// GOOGLE_MAPS_API_KEY is configured — it replaces the old OSM/synthetic
+// pipeline's tendency to show made-up placeholder locations.
+async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]> {
+  if (!GOOGLE_MAPS_API_KEY) return [];
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const resp = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.primaryType,places.types",
+      },
+      body: JSON.stringify({
+        includedTypes: Object.keys(GOOGLE_PLACE_TYPE_MAP),
+        maxResultCount: 20,
+        languageCode: "zh-TW",
+        locationRestriction: {
+          circle: { center: { latitude: lat, longitude: lng }, radius: 600 },
+        },
+      }),
+    });
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      console.warn("Google Places nearby search failed:", resp.status, await resp.text());
+      return [];
+    }
+
+    const data: any = await resp.json();
+    if (!Array.isArray(data.places)) return [];
+
+    return data.places
+      .map((p: any) => {
+        const primaryType: string | undefined =
+          p.primaryType || (Array.isArray(p.types) ? p.types.find((t: string) => GOOGLE_PLACE_TYPE_MAP[t]) : undefined);
+        const mapping = primaryType ? GOOGLE_PLACE_TYPE_MAP[primaryType] : undefined;
+        if (!mapping || !p.location) return null;
+        return {
+          id: `gp_${p.id}`,
+          name: p.displayName?.text || "生活機能設施",
+          category: mapping.category,
+          lat: p.location.latitude,
+          lng: p.location.longitude,
+          note: mapping.note,
+        };
+      })
+      .filter(Boolean);
+  } catch (err) {
+    console.warn("Google Places nearby search error:", err);
+    return [];
+  }
+}
+
+// 即時附近 POI 端點 — Google Places API (New) 優先，OSM Overpass 其次，
+// 兩者都無資料時直接回傳空陣列，不使用任何假資料佔位。
 app.get("/api/nearby-pois", async (req: Request, res: Response) => {
   try {
     const lat = parseFloat((req.query.lat as string) || "25.033");
     const lng = parseFloat((req.query.lng as string) || "121.5654");
-    const district = (req.query.district as string) || "大安區";
-    const city = (req.query.city as string) || "台北市";
-    const streetName = (req.query.streetName as string) || "";
-
-    // 嘗試透過 OpenStreetMap Overpass 查詢附近 600m POI
-    let osmItems: any[] = [];
-    try {
-      const overpassQuery = `[out:json][timeout:3];(node["amenity"](around:500,${lat},${lng});node["leisure"="park"](around:500,${lat},${lng}););out 12;`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-      const opResp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`, {
-        signal: controller.signal,
-        headers: { "User-Agent": "LivabilityScoutApp/2.0" },
-      });
-      clearTimeout(timeoutId);
-
-      if (opResp.ok) {
-        const opData = await opResp.json();
-        if (Array.isArray(opData.elements) && opData.elements.length > 0) {
-          osmItems = opData.elements.filter((el: any) => el.tags && (el.tags.name || el.tags.amenity));
-        }
-      }
-    } catch (e) {
-      // Overpass times out or fails, proceed to geospatial Taiwan POI engine
-    }
-
-    const pois: any[] = [];
-    const seed = Math.abs(Math.sin(lat * 123.45 + lng * 678.9)) * 1000;
 
     // Helper for distance
     const calcDistance = (pLat: number, pLng: number) => {
@@ -369,131 +424,72 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
       return Math.round(R * c);
     };
 
-    if (osmItems.length >= 4) {
-      for (let i = 0; i < Math.min(osmItems.length, 8); i++) {
-        const item = osmItems[i];
-        const tags = item.tags || {};
-        const pLat = item.lat;
-        const pLng = item.lon;
-        const name = tags.name || tags['name:zh'] || tags.amenity;
-        let cat: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' = 'C2';
-        let note = '周邊生活設施';
+    const pois: any[] = [];
 
-        if (tags.amenity === 'police' || tags.amenity === 'fire_station') {
-          cat = 'C1';
-          note = '社區治安防護據點';
-        } else if (tags.amenity === 'bus_station' || tags.amenity === 'bicycle_rental' || tags.railway) {
-          cat = 'C3';
-          note = '公共運輸接駁';
-        } else if (tags.leisure === 'park' || tags.leisure === 'garden') {
-          cat = 'C4';
-          note = '鄰里休憩綠地';
-        } else if (tags.amenity === 'community_centre' || tags.amenity === 'townhall') {
-          cat = 'C5';
-          note = '地方社區與公民活動';
-        }
-
-        pois.push({
-          id: `osm_${item.id || i}`,
-          name,
-          category: cat,
-          lat: pLat,
-          lng: pLng,
-          distanceMeters: calcDistance(pLat, pLng),
-          note,
-        });
-      }
+    // 1) Google Places API (New) — real names & precise coordinates
+    const googleItems = await fetchGooglePlacesNearby(lat, lng);
+    for (const item of googleItems) {
+      if (pois.length >= 8) break;
+      pois.push({ ...item, distanceMeters: calcDistance(item.lat, item.lng) });
     }
 
-    // 若 OSM POI 不足，使用地理特徵化台灣圖資引擎生成真實店名與精確經緯度
-    const needed = 8 - pois.length;
-    if (needed > 0) {
-      const templates = [
-        {
-          id: 'poi_police',
-          name: `${city}${district}派出所 / 巡邏守望站`,
-          category: 'C1',
-          dLat: 0.0018 + ((seed % 7) * 0.0002),
-          dLng: -0.0015 - ((seed % 5) * 0.0003),
-          note: '內政部警政署巡邏治安重點',
-        },
-        {
-          id: 'poi_supermarket',
-          name: `全聯福利中心 ${district || ''}${streetName ? streetName.slice(0, 3) : '門市'}`,
-          category: 'C2',
-          dLat: -0.0012 - ((seed % 6) * 0.0002),
-          dLng: 0.0014 + ((seed % 8) * 0.0002),
-          note: '生鮮超市日常採買 (步行可達)',
-        },
-        {
-          id: 'poi_convenience_711',
-          name: `7-ELEVEN ${streetName ? streetName.slice(0, 3) : district}門市`,
-          category: 'C2',
-          dLat: 0.0007 + ((seed % 4) * 0.0001),
-          dLng: 0.0008 + ((seed % 3) * 0.0001),
-          note: '24H 連鎖超商生活機能',
-        },
-        {
-          id: 'poi_clinic',
-          name: `${district || city}全民健保家醫聯合診所`,
-          category: 'C2',
-          dLat: -0.0016 - ((seed % 5) * 0.0002),
-          dLng: -0.0011 - ((seed % 4) * 0.0002),
-          note: '基層社區醫療照護網絡',
-        },
-        {
-          id: 'poi_transit_mrt',
-          name: city.includes('台北') || city.includes('新北')
-            ? `捷運 ${district || '都會'}線站點 / 公車專用道`
-            : city.includes('台中')
-            ? `台中捷運 / 公車轉運站`
-            : city.includes('高雄')
-            ? `高雄捷運 / 輕軌車站`
-            : `市區客運主要幹線站點`,
-          category: 'C3',
-          dLat: 0.0024 + ((seed % 9) * 0.0003),
-          dLng: 0.0021 + ((seed % 7) * 0.0003),
-          note: '大眾運輸通勤樞紐',
-        },
-        {
-          id: 'poi_youbike',
-          name: `YouBike 2.0 ${streetName || district}租賃站`,
-          category: 'C3',
-          dLat: -0.0009,
-          dLng: 0.0007,
-          note: '第一哩與最後一哩微型移動',
-        },
-        {
-          id: 'poi_park',
-          name: `${district || ''}社區鄰里綠地休閒公園`,
-          category: 'C4',
-          dLat: 0.0015 - ((seed % 4) * 0.0002),
-          dLng: -0.0019 - ((seed % 6) * 0.0002),
-          note: '都發局公告公園綠帶',
-        },
-        {
-          id: 'poi_community',
-          name: `${district || ''}里民活動中心 / 公民聚會所`,
-          category: 'C5',
-          dLat: -0.0020 + ((seed % 5) * 0.0002),
-          dLng: 0.0017 - ((seed % 3) * 0.0002),
-          note: '地方里辦公室與社區營造據點',
-        },
-      ];
+    // 2) OSM Overpass fallback — only runs if Google returned too little
+    // (no key configured, quota issue, or genuinely no matches nearby)
+    if (pois.length < 4) {
+      try {
+        const overpassQuery = `[out:json][timeout:3];(node["amenity"](around:500,${lat},${lng});node["leisure"="park"](around:500,${lat},${lng}););out 12;`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
 
-      for (const t of templates) {
-        if (pois.length >= 8) break;
-        const pLat = lat + t.dLat;
-        const pLng = lng + t.dLng;
-        pois.push({
-          id: t.id,
-          name: t.name,
-          category: t.category,
-          lat: pLat,
-          lng: pLng,
-          distanceMeters: calcDistance(pLat, pLng),
-          note: t.note,
+        const opResp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`, {
+          signal: controller.signal,
+          headers: { "User-Agent": "LivabilityScoutApp/2.0" },
         });
+        clearTimeout(timeoutId);
+
+        if (opResp.ok) {
+          const opData = await opResp.json();
+          const osmItems: any[] = Array.isArray(opData.elements)
+            ? opData.elements.filter((el: any) => el.tags && (el.tags.name || el.tags.amenity))
+            : [];
+
+          for (const item of osmItems) {
+            if (pois.length >= 8) break;
+            const tags = item.tags || {};
+            const pLat = item.lat;
+            const pLng = item.lon;
+            const name = tags.name || tags["name:zh"] || tags.amenity;
+            let cat: "C1" | "C2" | "C3" | "C4" | "C5" = "C2";
+            let note = "周邊生活設施";
+
+            if (tags.amenity === "police" || tags.amenity === "fire_station") {
+              cat = "C1";
+              note = "社區治安防護據點";
+            } else if (tags.amenity === "bus_station" || tags.amenity === "bicycle_rental" || tags.railway) {
+              cat = "C3";
+              note = "公共運輸接駁";
+            } else if (tags.leisure === "park" || tags.leisure === "garden") {
+              cat = "C4";
+              note = "鄰里休憩綠地";
+            } else if (tags.amenity === "community_centre" || tags.amenity === "townhall") {
+              cat = "C5";
+              note = "地方社區與公民活動";
+            }
+
+            pois.push({
+              id: `osm_${item.id || pois.length}`,
+              name,
+              category: cat,
+              lat: pLat,
+              lng: pLng,
+              distanceMeters: calcDistance(pLat, pLng),
+              note,
+            });
+          }
+        }
+      } catch (e) {
+        // Overpass timed out or failed — no synthetic fallback; the
+        // endpoint simply returns fewer (or zero) real POIs.
       }
     }
 

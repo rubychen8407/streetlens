@@ -477,67 +477,10 @@ export default function App() {
     [targetLocation, clsScore, streetName]
   );
 
-  const fallbackPois: POIMarker[] = useMemo(
-    () => [
-      {
-        id: 'poi_supermarket',
-        name: `生鮮超市 (${streetName ? streetName.slice(0, 3) : '門市'})`,
-        category: 'C2',
-        lat: targetLocation.lat + 0.0018,
-        lng: targetLocation.lng + 0.0014,
-        distanceMeters: c2.supermarketDist,
-        note: '生鮮採買步行3分鐘',
-      },
-      {
-        id: 'poi_convenience',
-        name: '24H 連鎖便利超商',
-        category: 'C2',
-        lat: targetLocation.lat - 0.0007,
-        lng: targetLocation.lng + 0.0006,
-        distanceMeters: c2.convenienceDist,
-        note: '下樓即達便利生活',
-      },
-      {
-        id: 'poi_clinic',
-        name: `${district || '社區'}家醫健保聯合診所`,
-        category: 'C2',
-        lat: targetLocation.lat + 0.0012,
-        lng: targetLocation.lng - 0.0012,
-        distanceMeters: c2.clinicDist,
-        note: '診所與健保藥局',
-      },
-      {
-        id: 'poi_transit_mrt',
-        name: '捷運站 / 大眾軌道站點',
-        category: 'C3',
-        lat: targetLocation.lat - 0.0032,
-        lng: targetLocation.lng + 0.0028,
-        distanceMeters: c3.mrtOrRailDist,
-        note: '通勤主力動能',
-      },
-      {
-        id: 'poi_park',
-        name: `${district || ''}鄰里休閒公園`,
-        category: 'C4',
-        lat: targetLocation.lat + 0.0022,
-        lng: targetLocation.lng - 0.0018,
-        distanceMeters: c4.parkDistance,
-        note: '林蔭綠帶散步空間',
-      },
-      {
-        id: 'poi_police',
-        name: `${district || ''}派出所 / 守望據點`,
-        category: 'C1',
-        lat: targetLocation.lat - 0.0021,
-        lng: targetLocation.lng - 0.0015,
-        distanceMeters: 280,
-        note: '治安守護巡邏重點',
-      },
-    ],
-    [targetLocation, streetName, district, c2, c3, c4]
-  );
-
-  const activePoiMarkers = nearbyPois.length > 0 ? nearbyPois : fallbackPois;
+  // Only ever show real POIs fetched from the backend (Google Places /
+  // OSM). If none are available yet, no markers render for that area
+  // rather than falling back to placeholder data.
+  const activePoiMarkers = nearbyPois;
 
   return (
     <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root">

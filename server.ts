@@ -7,7 +7,7 @@ import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring"
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -1130,6 +1130,13 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     const parkPois = pois.filter((x: any) => x.amenityType === "park" && Number.isFinite(x.distanceMeters));
     const nearestParkDist = parkPois.length ? Math.min(...parkPois.map((x: any) => x.distanceMeters)) : undefined;
+    const communityPois = pois.filter((x: any) =>
+      (x.category === "C5" || /community|library|活動中心|圖書館|服務中心|公民/.test(String(x.name || "")))
+      && Number.isFinite(x.distanceMeters)
+    );
+    const nearestCommunityCulturalDistance = communityPois.length
+      ? Math.min(...communityPois.map((x: any) => x.distanceMeters))
+      : undefined;
     const GREEN_RADIUS_METERS = 800;
     const GREEN_OBSERVATION_AREA_KM2 = Math.PI * (GREEN_RADIUS_METERS / 1000) ** 2;
     const streetTreeCount800m = greenData.streetTrees?.length;
@@ -1223,6 +1230,10 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
       c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.cells || [],
       parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
+      communityMetrics: {
+        nearestCommunityCulturalDistance: nearestCommunityCulturalDistance ?? null,
+        communityCulturalPoiCount800m: communityPois.length,
+      },
     });
   } catch (error: any) {
     console.error("Assessment error:", error);

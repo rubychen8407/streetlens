@@ -11,11 +11,13 @@ export interface SafetySourceResult {
 const TAIPEI_RESIDENTIAL_THEFT_URL =
   "https://data.taipei/api/dataset/68785231-d6c5-47a1-b001-77eec70bec02/resource/93d9bc2d-af08-4db7-a56b-9f0a49226fa3/download";
 
+// Current official 2025 accident point dataset. The older resource ID was
+// retired/replaced by Taipei Data Platform after the 2025 dataset rollover.
 const TAIPEI_ACCIDENT_URL =
-  "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=83d6d29c-6801-41a2-95c6-47d551646db3";
+  "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=d4aaaaa6-d03e-4539-945b-cdbd9387007d";
 
 export const SAFETY_RESOURCE_URLS = {
-  taipeiFatalInjuryAccidents2025: TAIPEI_ACCIDENT_URL,
+  taipeiTrafficAccidentPoints2025: TAIPEI_ACCIDENT_URL,
   taipeiResidentialTheft: TAIPEI_RESIDENTIAL_THEFT_URL,
 };
 

@@ -313,7 +313,7 @@ export function calculateAssessment(
   // source-backed normalization benchmark is available.
   const greenScores = [
     Number.isFinite(Number(nearestParkDist)) ? inverseDistanceScore(Number(nearestParkDist), 600) : null,
-    Number.isFinite(Number(parkCount800m)) ? clampScore(Math.min(100, Number(parkCount800m) * 20)) : null,
+    // Park count remains a raw indicator until normalized against a real reference distribution.
   ].filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;

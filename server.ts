@@ -7,7 +7,7 @@ import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getGreenDensityReference, getSafetyReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getGreenDensityReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -1001,8 +1001,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const [safetyReference, communityReference] = await Promise.all([
+    const [safetyReference, amenityReference, communityReference] = await Promise.all([
       getSafetyReference(scopeKey),
+      getPoiDensityReference(scopeKey),
       getC5CommunityReference(scopeKey),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
@@ -1019,6 +1020,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       c2PoiMetrics,
       c3TransitMetrics,
       c4GreenMetrics,
+      amenityReference,
       communityCount,
       communityReference,
     );

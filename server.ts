@@ -473,8 +473,11 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]>
                 ? "school"
                 : /bank|post_office|finance/.test(p.primaryType || "")
                   ? "bank_post"
-                  : /subway_station|train_station|light_rail_station|transit_station|bus_station|bus_stop/.test(p.primaryType || "")
-                    ? "transit"
+                  : /subway_station|train_station|light_rail_station/.test(p.primaryType || "")
+                    ? "rail"
+                    : /transit_station|bus_station|bus_stop/.test(p.primaryType || "")
+                      ? "bus"
+                      : /bank|post_office|finance/.test(p.primaryType || "")
                     : "other";
 
         return {
@@ -533,7 +536,7 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
     // 2) OSM Overpass fallback — only runs if Google returned nothing
     if (pois.length === 0) {
       try {
-        const overpassQuery = `[out:json][timeout:3];(node["amenity"](around:600,${lat},${lng});node["leisure"="park"](around:600,${lat},${lng}););out 15;`;
+        const overpassQuery = `[out:json][timeout:3];(node["amenity"](around:600,${lat},${lng});node["shop"](around:600,${lat},${lng});node["public_transport"](around:600,${lat},${lng});node["railway"](around:600,${lat},${lng});node["leisure"="park"](around:600,${lat},${lng}););out 25;`;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2500);
 
@@ -583,9 +586,11 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
                     ? "school"
                     : /bank|post_office/.test(tags.amenity || "")
                       ? "bank_post"
-                      : /bus|station|tram_stop/.test(tags.public_transport || tags.amenity || tags.railway || "")
-                        ? "transit"
-                        : "other";
+                      : /bus_stop|bus_station/.test(tags.public_transport || tags.amenity || "")
+                        ? "bus"
+                        : /station|subway|tram/.test(tags.railway || tags.public_transport || "")
+                          ? "rail"
+                          : "other";
 
             pois.push({
               id: `osm_${item.id || pois.length}`,
@@ -1033,11 +1038,20 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       confidence: "high" as const,
     };
 
+    const c3TransitMetrics = {
+      mrtOrRailDist: nearest("transit"),
+      busStopDist: nearest("transit"),
+      source: "Google Places (New) / OpenStreetMap",
+      method: "calculated" as const,
+      confidence: "high" as const,
+    };
+
     const scores = calculateAssessment(
       baseline,
       poiCounts,
       weather || undefined,
       c2PoiMetrics,
+      c3TransitMetrics,
     );
     const allFactors = [
       ...scores.c1.factors,

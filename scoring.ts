@@ -282,8 +282,8 @@ export function calculateAssessment(
     status: Number.isFinite(Number(poiDensity)) ? "available" : "unavailable",
     retrievedAt: c2PoiMetrics?.retrievedAt,
     referenceSampleSize: c2PoiDensityReference?.filter(Number.isFinite).length ?? 0,
-    scoringMethod: poiDensityScore !== null ? "empirical_percentile" : "not_scored",
-    availabilityReason: Number.isFinite(Number(poiDensity)) ? undefined : "no_observation",
+    scoringMethod: "not_scored",
+    availabilityReason: Number.isFinite(Number(poiDensity)) ? "insufficient_reference_data" : "no_observation",
   });
 
   for (const factor of c2Factors) {

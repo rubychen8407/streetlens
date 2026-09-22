@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getAssessmentSnapshotStatus } from "../server.ts";
+import { getAssessmentSnapshotStatus } from "../assessmentSnapshotPolicy";
 
 const sourceKeys = [
   "google_places",

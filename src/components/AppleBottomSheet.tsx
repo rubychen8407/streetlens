@@ -1293,168 +1293,93 @@ export function AppleBottomSheet({
                 </div>
               )}
 
-              {/* List of 8 items */}
-              <div className="space-y-2">
-                {/* 1. 犯罪率 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">犯罪率</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">C1 安全</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      每千人犯罪係數: {c1.crimeRate}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>來源狀態由上方持久化快照與 Evidence 指標決定，不使用靜態即時連線狀態。</span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
+              {/* Data-backed source indicators */}
+              {(() => {
+                const factor = (indicator: string) => scoreFactors.find((item) => item.indicator === indicator);
+                const displayValue = (item?: ScoreFactor) =>
+                  item?.value != null ? `${item.value} ${item.unit}` : 'N/A';
+                const displaySource = (item?: ScoreFactor) => item?.source || 'unavailable';
+                const displayStatus = (item?: ScoreFactor) => item?.status === 'available' ? 'available' : 'unavailable';
+                const cards = [
+                  {
+                    title: '交通事故',
+                    category: 'C1 安全',
+                    indicator: 'trafficAccidentCount500m',
+                    value: factor('trafficAccidentCount500m'),
+                    color: 'rose',
+                  },
+                  {
+                    title: '災害潛勢',
+                    category: 'C1 安全',
+                    indicator: 'floodHazard_100mmh',
+                    value: factor('floodHazard_100mmh') || factor('floodHazard_78.8mmh') || factor('floodHazard_130mmh'),
+                    color: 'rose',
+                  },
+                  {
+                    title: 'POI 生活機能',
+                    category: 'C2 機能',
+                    indicator: 'poiDensityCount',
+                    value: factor('poiDensityCount'),
+                    color: 'amber',
+                  },
+                  {
+                    title: '公共運輸',
+                    category: 'C3 移動',
+                    indicator: 'mrtOrRailDist',
+                    value: factor('mrtOrRailDist'),
+                    color: 'sky',
+                  },
+                  {
+                    title: '空氣品質',
+                    category: 'C4 環境',
+                    indicator: 'airQualityScore',
+                    value: factor('airQualityScore'),
+                    color: 'emerald',
+                  },
+                  {
+                    title: '綠地',
+                    category: 'C4 環境',
+                    indicator: 'nearestParkDist',
+                    value: factor('nearestParkDist') || factor('parkCount800m'),
+                    color: 'emerald',
+                  },
+                  {
+                    title: '社會 / 活動',
+                    category: 'C5 社會',
+                    indicator: 'communityCulturalPoiCount800m',
+                    value: factor('communityCulturalPoiCount800m'),
+                    color: 'purple',
+                  },
+                ];
 
-                {/* 2. 交通事故 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">交通事故</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">C1 安全</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      事故風險係數: {c1.accidentRate}
-                    </span>
+                return (
+                  <div className="space-y-2">
+                    {cards.map((card) => (
+                      <div key={card.title} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${displayStatus(card.value) === 'available' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                            <span className="text-xs font-bold text-white">{card.title}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10 text-slate-300 border border-white/10">
+                              {card.category}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-indigo-300 font-mono font-bold">
+                            {displayValue(card.value)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1.5 grid grid-cols-1 gap-0.5">
+                          <span>來源：{displaySource(card.value)}</span>
+                          <span>狀態：{displayStatus(card.value)} · 指標：{card.indicator}</span>
+                          {card.value?.retrievedAt && (
+                            <span>取得：{new Date(card.value.retrievedAt).toLocaleString('zh-TW')}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>來源與取得時間請查看 Evidence 指標。</span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3. 災害潛勢 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">災害潛勢</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">C1 安全</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      防汛地質潛勢: {c1.hazardLevel}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>來源與取得時間請查看 Evidence 指標。</span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-
-                {/* 4. POI */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">POI 生活機能</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">C2 機能</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      500m設施: {c2.poiDensityCount}處 · 超商{c2.convenienceDist}m
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">Google Maps API、OpenStreetMap、政府開放資料</strong></span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-
-                {/* 5. 公共運輸 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">公共運輸</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">C3 移動</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      軌道: {c3.mrtOrRailDist}m · 公車: {c3.busStopDist}m (班次{c3.busFrequencyScore}分)
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">公車動態 API、捷運營運資料</strong></span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-
-                {/* 6. 空氣/噪音 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">空氣 / 噪音</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">C4 環境</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      {weatherData ? `${weatherData.stationName}站 AQI ${weatherData.aqi} (${weatherData.aqiStatus})` : `空品: ${c4.airQualityScore}分`}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">環保署監測站</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-
-                {/* 7. 綠地 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">綠地</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">C4 環境</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      綠覆率: {c4.greenCoveragePct}% · 最近公園: {c4.parkDistance}m
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">國土測繪圖資、都發局綠地資料</strong></span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-
-                {/* 8. 社會/活動 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">社會 / 活動</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">C5 社會</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      活動頻率: {c5.activityFrequency} · 鄰里信任: {c5.neighborhoodTrust}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">政府開放資料與持久化觀測</strong></span>
-                    <span className="text-[10px] flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 已持久化
-                    </span>
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
           )}
 

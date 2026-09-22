@@ -1099,7 +1099,10 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const greenData = snapshots.taipei_green?.payload || { streetTrees: [], parkTrees: [], status: "unavailable" };
     const safetyData = snapshots.taipei_safety?.payload || { accidents: [], status: "unavailable", source: "unavailable" };
     const floodData = snapshots.taipei_flood?.payload || { cells: [], status: "unavailable" };
-    const weather = snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" };
+    const weather = {
+      ...(snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" }),
+      retrievedAt: snapshots.open_meteo_air_quality?.fetchedAt || undefined,
+    };
     const pois = mergePois(lat, lng, [google, osm]);
     const nearest = (type: string): number | undefined => {
       const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
@@ -1111,7 +1114,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length || undefined,
       source: sourceNames.length ? sourceNames.join(" + ") : "unavailable", method: "calculated" as const,
       confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
-      status: sourceNames.length ? "available" as const : "empty" as const, retrievedAt: snapshots.google_places.fetchedAt,
+      status: sourceNames.length ? "available" as const : "empty" as const,
+      retrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt,
     };
 
     const railDistances = (officialTransit.railStations || []).map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
@@ -1205,6 +1209,12 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         ...normalizationReferences,
         c4NearestParkDistances: nearestParkReference,
         c5NearestCommunityDistances: nearestCommunityReference,
+      },
+      {
+        c4NearestParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
+        c4NearestParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+        c5Source: communityPois.length ? [...new Set(communityPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
+        c5RetrievedAt: communityPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];

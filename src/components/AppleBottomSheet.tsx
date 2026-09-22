@@ -9,7 +9,9 @@ import {
   FieldCheckItem,
   WeatherData,
   IndicatorSourceItem,
+  ScoreFactor,
   SavedLocation,
+  AssessmentSourceStatus,
 } from '../types';
 import {
   X,
@@ -18,8 +20,6 @@ import {
   Globe,
   Copy,
   Check,
-  RotateCcw,
-  Sliders,
   FileText,
   Activity,
   Shield,
@@ -58,8 +58,8 @@ function getStoredSavedLocations(): SavedLocation[] {
 interface AppleBottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  clsScore: number;
-  grade: 'S' | 'A' | 'B' | 'C' | 'D';
+  clsScore: number | null;
+  grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   streetName: string;
   district: string;
   city: string;
@@ -68,21 +68,16 @@ interface AppleBottomSheetProps {
   c3: C3Data;
   c4: C4Data;
   c5: C5Data;
-  onUpdateC1: React.Dispatch<React.SetStateAction<C1Data>>;
-  onUpdateC2: React.Dispatch<React.SetStateAction<C2Data>>;
-  onUpdateC3: React.Dispatch<React.SetStateAction<C3Data>>;
-  onUpdateC4: React.Dispatch<React.SetStateAction<C4Data>>;
-  onUpdateC5: React.Dispatch<React.SetStateAction<C5Data>>;
   weights: CLSWeights;
   onUpdateWeights: (weights: CLSWeights, mode: 'equal' | 'pca' | 'custom') => void;
   weightMode: 'equal' | 'pca' | 'custom';
   baselineScores: {
-    cls: number;
-    c1: number;
-    c2: number;
-    c3: number;
-    c4: number;
-    c5: number;
+    cls: number | null;
+    c1: number | null;
+    c2: number | null;
+    c3: number | null;
+    c4: number | null;
+    c5: number | null;
   };
   fieldChecks: FieldCheckItem[];
   onToggleFieldCheck: (id: string) => void;
@@ -91,9 +86,10 @@ interface AppleBottomSheetProps {
   baselineSummary: string;
   fieldNotes: string;
   onUpdateNotes: (notes: string) => void;
-  onResetToBaseline: () => void;
   weatherData?: WeatherData | null;
   indicatorSources?: IndicatorSourceItem[];
+  scoreFactors?: ScoreFactor[];
+  sourceStatus?: AssessmentSourceStatus[];
   targetLocation?: { lat: number; lng: number };
   onSelectSavedLocation?: (saved: SavedLocation) => void;
 }
@@ -111,11 +107,6 @@ export function AppleBottomSheet({
   c3,
   c4,
   c5,
-  onUpdateC1,
-  onUpdateC2,
-  onUpdateC3,
-  onUpdateC4,
-  onUpdateC5,
   weights,
   onUpdateWeights,
   weightMode,
@@ -127,14 +118,14 @@ export function AppleBottomSheet({
   baselineSummary,
   fieldNotes,
   onUpdateNotes,
-  onResetToBaseline,
   weatherData,
   indicatorSources = [],
+  scoreFactors = [],
+  sourceStatus = [],
   targetLocation,
   onSelectSavedLocation,
 }: AppleBottomSheetProps) {
-  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'sources' | 'calibrate' | 'report'>('overview');
-  const [selectedCat, setSelectedCat] = useState<'C1' | 'C2' | 'C3' | 'C4' | 'C5'>('C1');
+  const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'evidence' | 'sources' | 'report'>('overview');
   const [sheetHeight, setSheetHeight] = useState<'half' | 'full'>('half');
   const [copied, setCopied] = useState(false);
 
@@ -147,14 +138,15 @@ export function AppleBottomSheet({
 
   if (!isOpen) return null;
 
-  const currentCoords = targetLocation || { lat: 25.033, lng: 121.5654 };
-  const isCurrentSaved = savedLocations.some(
+  const currentCoords = targetLocation;
+  const isCurrentSaved = currentCoords ? savedLocations.some(
     (loc) =>
       Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
       Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001
-  );
+  ) : false;
 
   const handleSaveCurrentLocation = () => {
+    if (!currentCoords) return;
     const defaultName = `${district ? district + ' ' : ''}${streetName || '實勘點位'}`;
     const nameToUse = customLocationName.trim() || defaultName;
 
@@ -168,7 +160,7 @@ export function AppleBottomSheet({
       id:
         existingIndex >= 0
           ? savedLocations[existingIndex].id
-          : `saved_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          : `saved_${crypto.randomUUID()}`,
       name: nameToUse,
       streetName: streetName || '實勘路段',
       district: district || '',
@@ -279,7 +271,8 @@ export function AppleBottomSheet({
     );
   });
 
-  const getDeltaBadge = (current: number, base: number) => {
+  const getDeltaBadge = (current: number | null, base: number | null) => {
+    if (current == null || base == null) return null;
     const diff = Math.round(current - base);
     if (diff > 0) {
       return (
@@ -308,11 +301,11 @@ export function AppleBottomSheet({
 📍 探查地點：${city} ${district} ${streetName || '現場位置'}
 ⭐️ 宜居總分：${clsScore} 分 (${grade}級)
 📊 5 大指標：
-  • C1 安全風險：${c1.score}分 (基準: ${baselineScores.c1})
-  • C2 便利機能：${c2.score}分 (基準: ${baselineScores.c2})
-  • C3 移動連結：${c3.score}分 (基準: ${baselineScores.c3})
-  • C4 環境綠意：${c4.score}分 (基準: ${baselineScores.c4})
-  • C5 社會活力：${c5.score}分 (基準: ${baselineScores.c5})
+  • C1 安全風險：${c1.score ?? 'N/A'}分 (基準: ${baselineScores.c1})
+  • C2 便利機能：${c2.score ?? 'N/A'}分 (基準: ${baselineScores.c2})
+  • C3 移動連結：${c3.score ?? 'N/A'}分 (基準: ${baselineScores.c3})
+  • C4 環境綠意：${c4.score ?? 'N/A'}分 (基準: ${baselineScores.c4})
+  • C5 社會活力：${c5.score ?? 'N/A'}分 (基準: ${baselineScores.c5})
 📝 現場特徵：${checked.map((c) => c.title).join('、') || '無特殊勾選'}
 📌 筆記：${fieldNotes || '無'}
 時間：${new Date().toLocaleString('zh-TW')}`;
@@ -443,6 +436,18 @@ export function AppleBottomSheet({
             </button>
             <button
               type="button"
+              onClick={() => setSheetTab('evidence')}
+              className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+                sheetTab === 'evidence'
+                  ? 'bg-white/20 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>分數證據</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setSheetTab('sources')}
               className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
                 sheetTab === 'sources'
@@ -451,19 +456,7 @@ export function AppleBottomSheet({
               }`}
             >
               <Database className="w-3.5 h-3.5" />
-              <span>8大資料源</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSheetTab('calibrate')}
-              className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
-                sheetTab === 'calibrate'
-                  ? 'bg-white/20 text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>現場校正</span>
+              <span>7大資料源</span>
             </button>
             <button
               type="button"
@@ -499,7 +492,7 @@ export function AppleBottomSheet({
                     {getDeltaBadge(clsScore, baselineScores.cls)}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    網路基準：{baselineScores.cls} 分 · 現場校正後得分
+                    資料狀態：{clsScore == null ? '尚無可用分數' : '已使用已儲存的來源資料'}
                   </div>
                 </div>
 
@@ -551,7 +544,7 @@ export function AppleBottomSheet({
                         <span>環保署【{weatherData.stationName}】測站 AQI {weatherData.aqi}</span>
                         <span
                           className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
-                            weatherData.aqi <= 50
+                            weatherData.aqi != null && weatherData.aqi <= 50
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                           }`}
@@ -578,14 +571,14 @@ export function AppleBottomSheet({
                 </div>
               )}
 
-              {/* Quick 8 Data Sources Banner */}
+              {/* Quick 7 Data Sources Banner */}
               <div
                 onClick={() => setSheetTab('sources')}
                 className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <div className="flex items-center gap-2 text-xs text-slate-300">
                   <Database className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>已自動抓取 8 大官方來源對應數據</span>
+                  <span>已載入 7 大來源的持久化快照</span>
                 </div>
                 <div className="text-[11px] text-indigo-300 font-semibold flex items-center gap-1">
                   <span>查看詳情</span>
@@ -597,15 +590,12 @@ export function AppleBottomSheet({
               <div className="space-y-2">
                 <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
                   <span>5 大核心面向得分</span>
-                  <span className="text-[11px] text-slate-500">點擊切換校正</span>
+                  <span className="text-[11px] text-slate-500">點擊查看證據</span>
                 </div>
 
                 {/* C1 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C1');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -621,22 +611,19 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-rose-500 rounded-full"
-                        style={{ width: `${c1.score}%` }}
+                        style={{ width: `${c1.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c1.score, baselineScores.c1)}
-                    <span className="font-mono font-bold text-sm text-white">{c1.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c1.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
                 {/* C2 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C2');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -652,22 +639,19 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-amber-500 rounded-full"
-                        style={{ width: `${c2.score}%` }}
+                        style={{ width: `${c2.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c2.score, baselineScores.c2)}
-                    <span className="font-mono font-bold text-sm text-white">{c2.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c2.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
                 {/* C3 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C3');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -683,22 +667,19 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-sky-500 rounded-full"
-                        style={{ width: `${c3.score}%` }}
+                        style={{ width: `${c3.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c3.score, baselineScores.c3)}
-                    <span className="font-mono font-bold text-sm text-white">{c3.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c3.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
                 {/* C4 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C4');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -714,22 +695,19 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${c4.score}%` }}
+                        style={{ width: `${c4.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c4.score, baselineScores.c4)}
-                    <span className="font-mono font-bold text-sm text-white">{c4.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c4.score ?? 'N/A'}</span>
                   </div>
                 </div>
 
                 {/* C5 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C5');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -745,13 +723,13 @@ export function AppleBottomSheet({
                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-purple-500 rounded-full"
-                        style={{ width: `${c5.score}%` }}
+                        style={{ width: `${c5.score ?? 'N/A'}%` }}
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getDeltaBadge(c5.score, baselineScores.c5)}
-                    <span className="font-mono font-bold text-sm text-white">{c5.score}</span>
+                    <span className="font-mono font-bold text-sm text-white">{c5.score ?? 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -827,14 +805,14 @@ export function AppleBottomSheet({
                     <div>
                       <div className="text-xs font-bold text-white">儲存目前勘查點位</div>
                       <div className="text-[11px] text-slate-400 font-mono">
-                        {currentCoords.lat.toFixed(5)}, {currentCoords.lng.toFixed(5)}
+                        {currentCoords ? `${currentCoords.lat.toFixed(5)}, ${currentCoords.lng.toFixed(5)}` : '尚未取得座標'}
                       </div>
                     </div>
                   </div>
 
                   <div className="text-right">
                     <div className="flex items-baseline justify-end gap-1.5">
-                      <span className="text-2xl font-black text-white font-mono">{clsScore}</span>
+                      <span className="text-2xl font-black text-white font-mono">{clsScore ?? 'N/A'}</span>
                       <span className="text-[11px] text-slate-400">分</span>
                       <span className="px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
                         {grade}級
@@ -851,23 +829,23 @@ export function AppleBottomSheet({
                   <div className="grid grid-cols-5 gap-1 text-center text-[10px]">
                     <div className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300 font-mono">
                       <div className="text-[9px] text-rose-400/80">C1 安全</div>
-                      <div className="font-bold">{c1.score}</div>
+                      <div className="font-bold">{c1.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono">
                       <div className="text-[9px] text-amber-400/80">C2 機能</div>
-                      <div className="font-bold">{c2.score}</div>
+                      <div className="font-bold">{c2.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-300 font-mono">
                       <div className="text-[9px] text-sky-400/80">C3 移動</div>
-                      <div className="font-bold">{c3.score}</div>
+                      <div className="font-bold">{c3.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
                       <div className="text-[9px] text-emerald-400/80">C4 綠意</div>
-                      <div className="font-bold">{c4.score}</div>
+                      <div className="font-bold">{c4.score ?? 'N/A'}</div>
                     </div>
                     <div className="p-1 rounded bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
                       <div className="text-[9px] text-purple-400/80">C5 活力</div>
-                      <div className="font-bold">{c5.score}</div>
+                      <div className="font-bold">{c5.score ?? 'N/A'}</div>
                     </div>
                   </div>
                 </div>
@@ -974,7 +952,7 @@ export function AppleBottomSheet({
                     <div>
                       <div className="text-xs font-bold text-slate-200">尚未儲存任何勘查地點</div>
                       <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-1 leading-relaxed">
-                        點選地圖上任何地點或完成現場校正後，點擊上方按鈕即可儲存該位置座標與 5 大面向 CLS 指標，供日後回顧與比對。
+                        點選地圖上任何地點後，點擊上方按鈕即可儲存該位置座標與目前可取得的 5 大面向資料，供日後回顧與比對。
                       </p>
                     </div>
                     <button
@@ -993,7 +971,7 @@ export function AppleBottomSheet({
                 ) : (
                   <div className="space-y-2.5">
                     {filteredSavedLocations.map((loc) => {
-                      const isCurrentActive =
+                      const isCurrentActive = currentCoords != null &&
                         Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
                         Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001;
 
@@ -1124,6 +1102,101 @@ export function AppleBottomSheet({
             </div>
           )}
 
+          {/* TAB: SCORE EVIDENCE */}
+          {sheetTab === 'evidence' && (
+            <div className="space-y-3 pb-6">
+              <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/20">
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                  <Database className="w-4 h-4 text-indigo-400" />
+                  <span>分數證據</span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+                  每個分數只顯示後端已持久化的真實資料，以及實際使用的來源、方法、信心與取得時間。
+                </p>
+              </div>
+              {scoreFactors.length === 0 ? (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-400">
+                  尚無可用的分數證據。
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(['C1', 'C2', 'C3', 'C4', 'C5'] as const).map((category) => {
+                    const factors = scoreFactors.filter((factor) => factor.category === category);
+                    if (!factors.length) return null;
+                    return (
+                      <div key={category} className="rounded-xl bg-white/5 border border-white/5 overflow-hidden">
+                        <div className="px-3 py-2 bg-white/5 flex items-center justify-between">
+                          <span className="text-xs font-bold text-white">{category}</span>
+                          <span className="text-[10px] text-slate-400">{factors.length} 個指標</span>
+                        </div>
+                        <div className="divide-y divide-white/5">
+                          {factors.map((factor, index) => (
+                            <div key={factor.indicator + '-' + index} className="px-3 py-2.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-semibold text-white break-words">{factor.indicator}</div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">
+                                    {factor.direction === 'higher_is_better' ? '數值越高越有利' : '數值越低越有利'}
+                                  </div>
+                                </div>
+                                <span className="shrink-0 text-xs font-mono font-bold text-indigo-300">
+                                  {factor.value == null ? 'N/A' : String(factor.value) + (factor.unit ? ' ' + factor.unit : '')}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-[10px]">
+                                <div><span className="text-slate-500">來源</span><div className="text-slate-200 break-words">{factor.source || 'unavailable'}</div></div>
+                                <div><span className="text-slate-500">方法</span><div className="text-slate-200">{factor.method}</div></div>
+                                <div><span className="text-slate-500">信心</span><div className="text-slate-200">{factor.confidence}</div></div>
+                                <div><span className="text-slate-500">狀態</span><div className="text-slate-200">{factor.status || 'unavailable'}</div></div>
+                                <div className="col-span-2">
+                                  <span className="text-slate-500">Reference</span>
+                                  <div className="text-slate-200">
+                                    {factor.referenceSampleSize != null
+                                      ? factor.referenceSampleSize >= 20
+                                        ? `${factor.referenceSampleSize} 筆真實觀測`
+                                        : `${factor.referenceSampleSize} 筆真實觀測（不足 20，無法計算 percentile）`
+                                      : 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="col-span-2">
+                                  <span className="text-slate-500">評分方式</span>
+                                  <div className="text-slate-200">
+                                    {factor.scoringMethod === 'empirical_percentile'
+                                      ? '實證 percentile（真實觀測分布）'
+                                      : factor.scoringMethod === 'raw_observation'
+                                        ? '原始觀測值（未做 percentile）'
+                                        : '未計分'}
+                                  </div>
+                                </div>
+                                {factor.availabilityReason && (
+                                  <div className="col-span-2">
+                                    <span className="text-slate-500">不可計分原因</span>
+                                    <div className="text-amber-300">
+                                      {factor.availabilityReason === 'insufficient_reference_data'
+                                        ? '真實 reference 觀測不足 20 筆'
+                                        : factor.availabilityReason === 'source_unavailable'
+                                          ? '來源資料不可用'
+                                          : '目前沒有此位置的真實觀測'}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {factor.retrievedAt && (
+                                <div className="text-[10px] text-slate-500 mt-2">
+                                  retrievedAt: {new Date(factor.retrievedAt).toLocaleString('zh-TW')}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB: 8 OFFICIAL DATA SOURCES */}
           {sheetTab === 'sources' && (
             <div className="space-y-3 pb-6">
@@ -1131,7 +1204,7 @@ export function AppleBottomSheet({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
                     <Database className="w-4 h-4 text-indigo-400" />
-                    <span>官方開放資料庫對應 (8大指標)</span>
+                    <span>外部資料來源（7 個來源）</span>
                   </div>
                   <button
                     type="button"
@@ -1140,548 +1213,132 @@ export function AppleBottomSheet({
                     className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3 h-3 ${isLoadingBaseline ? 'animate-spin' : ''}`} />
-                    <span>即時更新</span>
+                    <span>查看快照</span>
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
-                  系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），自動對應抓取以下 8 大中央及地方主管機關之資料庫數值：
+                  系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），顯示以下 7 個外部來源的已持久化快照；外部來源由背景更新流程負責同步：
                 </p>
               </div>
 
-              {/* List of 8 items */}
-              <div className="space-y-2">
-                {/* 1. 犯罪率 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">犯罪率</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">C1 安全</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      每千人犯罪係數: {c1.crimeRate}
-                    </span>
+              {/* Persisted source freshness */}
+              {sourceStatus.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <Database className="w-4 h-4 text-indigo-400" />
+                    <span>已持久化資料快照狀態</span>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">內政部警政署犯罪統計</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-
-                {/* 2. 交通事故 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">交通事故</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">C1 安全</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      事故風險係數: {c1.accidentRate}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">交通部交通事故資料庫</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3. 災害潛勢 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">災害潛勢</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">C1 安全</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      防汛地質潛勢: {c1.hazardLevel}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">經濟部水利署淹水潛勢圖、中央地質調查所</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-
-                {/* 4. POI */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">POI 生活機能</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">C2 機能</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      500m設施: {c2.poiDensityCount}處 · 超商{c2.convenienceDist}m
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">Google Maps API、OpenStreetMap、政府開放資料</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-
-                {/* 5. 公共運輸 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">公共運輸</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">C3 移動</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      軌道: {c3.mrtOrRailDist}m · 公車: {c3.busStopDist}m (班次{c3.busFrequencyScore}分)
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">公車動態 API、捷運營運資料</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-
-                {/* 6. 空氣/噪音 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">空氣 / 噪音</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">C4 環境</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      {weatherData ? `${weatherData.stationName}站 AQI ${weatherData.aqi} (${weatherData.aqiStatus})` : `空品: ${c4.airQualityScore}分`}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">環保署監測站</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 即時監測中
-                    </span>
-                  </div>
-                </div>
-
-                {/* 7. 綠地 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">綠地</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">C4 環境</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      綠覆率: {c4.greenCoveragePct}% · 最近公園: {c4.parkDistance}m
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">國土測繪圖資、都發局綠地資料</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-
-                {/* 8. 社會/活動 */}
-                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-white">社會 / 活動</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">C5 社會</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-300 font-mono font-bold">
-                      活動頻率: {c5.activityFrequency} · 鄰里信任: {c5.neighborhoodTrust}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>資料來源：<strong className="text-slate-200">里辦公室公告、問卷調查</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: CALIBRATE */}
-          {sheetTab === 'calibrate' && (
-
-            <div className="space-y-4 pb-6">
-              {/* Category selector chips */}
-              <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs">
-                {(['C1', 'C2', 'C3', 'C4', 'C5'] as const).map((cat) => {
-                  const names = {
-                    C1: 'C1 安全',
-                    C2: 'C2 機能',
-                    C3: 'C3 移動',
-                    C4: 'C4 綠意',
-                    C5: 'C5 活力',
-                  };
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setSelectedCat(cat)}
-                      className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all ${
-                        selectedCat === cat
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-white/10 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {names[cat]}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Auto Baseline Action */}
-              <div className="flex items-center justify-between p-2.5 bg-white/5 rounded-xl border border-white/10 text-xs">
-                <span className="text-slate-300">目前為現場校正數值</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={onResetToBaseline}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] flex items-center gap-1"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>復原基準</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onAutoFetchBaseline}
-                    disabled={isLoadingBaseline}
-                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <Globe className="w-3 h-3" />
-                    <span>{isLoadingBaseline ? '載入中...' : '帶入網路基準'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sliders for selected category */}
-              {selectedCat === 'C1' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-rose-400">C1 安全指標數值微調</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c1.score}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>犯罪治安率 (越低越好)</span>
-                      <span className="font-mono text-slate-200">{c1.crimeRate} / 100</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={c1.crimeRate}
-                      onChange={(e) =>
-                        onUpdateC1((prev) => ({ ...prev, crimeRate: parseInt(e.target.value, 10) }))
-                      }
-                      className="w-full accent-rose-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>交通事故件數 (越低越好)</span>
-                      <span className="font-mono text-slate-200">{c1.accidentRate} / 100</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={c1.accidentRate}
-                      onChange={(e) =>
-                        onUpdateC1((prev) => ({
-                          ...prev,
-                          accidentRate: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-rose-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>災害潛勢 (1安全 ~ 5高風險)</span>
-                      <span className="font-mono text-slate-200">{c1.hazardLevel} 級</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={5}
-                      value={c1.hazardLevel}
-                      onChange={(e) =>
-                        onUpdateC1((prev) => ({
-                          ...prev,
-                          hazardLevel: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-rose-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C2' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400">C2 機能可及距離 (公尺)</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c2.score}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>生鮮超市距離 (公尺)</span>
-                      <span className="font-mono text-slate-200">{c2.supermarketDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={50}
-                      max={1500}
-                      step={50}
-                      value={c2.supermarketDist}
-                      onChange={(e) =>
-                        onUpdateC2((prev) => ({
-                          ...prev,
-                          supermarketDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>便利商店距離 (公尺)</span>
-                      <span className="font-mono text-slate-200">{c2.convenienceDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={30}
-                      max={1000}
-                      step={20}
-                      value={c2.convenienceDist}
-                      onChange={(e) =>
-                        onUpdateC2((prev) => ({
-                          ...prev,
-                          convenienceDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>診所藥局距離 (公尺)</span>
-                      <span className="font-mono text-slate-200">{c2.clinicDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={50}
-                      max={1500}
-                      step={50}
-                      value={c2.clinicDist}
-                      onChange={(e) =>
-                        onUpdateC2((prev) => ({
-                          ...prev,
-                          clinicDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C3' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-400">C3 移動交通指標</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c3.score}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>捷運／鐵路車站距離</span>
-                      <span className="font-mono text-slate-200">{c3.mrtOrRailDist}m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={100}
-                      max={2000}
-                      step={50}
-                      value={c3.mrtOrRailDist}
-                      onChange={(e) =>
-                        onUpdateC3((prev) => ({
-                          ...prev,
-                          mrtOrRailDist: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-sky-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>人行道完備度 (Walkability)</span>
-                      <span className="font-mono text-slate-200">{c3.walkabilityScore}分</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={c3.walkabilityScore}
-                      onChange={(e) =>
-                        onUpdateC3((prev) => ({
-                          ...prev,
-                          walkabilityScore: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-sky-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C4' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-400">C4 環境綠意微調</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c4.score}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>空氣品質 AQI 評分 (高為優)</span>
-                      <span className="font-mono text-slate-200">{c4.airQualityScore}分</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={20}
-                      max={100}
-                      value={c4.airQualityScore}
-                      onChange={(e) =>
-                        onUpdateC4((prev) => ({
-                          ...prev,
-                          airQualityScore: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-emerald-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>綠覆率 (%)</span>
-                      <span className="font-mono text-slate-200">{c4.greenCoveragePct}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={5}
-                      max={60}
-                      value={c4.greenCoveragePct}
-                      onChange={(e) =>
-                        onUpdateC4((prev) => ({
-                          ...prev,
-                          greenCoveragePct: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-emerald-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedCat === 'C5' && (
-                <div className="space-y-3 p-3 bg-black/40 rounded-2xl border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-400">C5 社會活力微調</span>
-                    <span className="font-mono text-xs font-bold text-white">
-                      得分: {c5.score}分
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>鄰里信任與守望度</span>
-                      <span className="font-mono text-slate-200">{c5.neighborhoodTrust}分</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={20}
-                      max={100}
-                      value={c5.neighborhoodTrust}
-                      onChange={(e) =>
-                        onUpdateC5((prev) => ({
-                          ...prev,
-                          neighborhoodTrust: parseInt(e.target.value, 10),
-                        }))
-                      }
-                      className="w-full accent-purple-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* On-site Checkboxes */}
-              <div className="space-y-2 pt-1">
-                <div className="text-xs font-bold text-slate-300">
-                  {selectedCat} 現場實地觀察項目（勾選直接影響得分）
-                </div>
-                <div className="space-y-1.5">
-                  {fieldChecks
-                    .filter((item) => item.category === selectedCat)
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        onClick={() => onToggleFieldCheck(item.id)}
-                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                          item.checked
-                            ? 'bg-indigo-600/25 border-indigo-500/40 text-white'
-                            : 'bg-white/5 border-white/5 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 text-xs">
-                          <div
-                            className={`w-4 h-4 rounded flex items-center justify-center border ${
-                              item.checked
-                                ? 'bg-indigo-600 border-indigo-400 text-white'
-                                : 'border-slate-500'
-                            }`}
-                          >
-                            {item.checked && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-                          <span>{item.title}</span>
+                  <p className="text-[10px] text-slate-500 mt-1.5">
+                    評分請求只讀取資料庫快照，不會在使用者請求中即時抓取外部資料。
+                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    {sourceStatus.map((item) => (
+                      <div key={item.source} className="rounded-lg bg-black/20 px-2.5 py-2 text-[10px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-200 font-semibold">{item.source}</span>
+                          <span className={item.status === 'available' ? 'text-emerald-400' : 'text-amber-400'}>
+                            {item.status}
+                          </span>
                         </div>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/40 text-slate-300">
-                          {item.scoreImpact > 0 ? `+${item.scoreImpact}` : item.scoreImpact}分
-                        </span>
+                        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-slate-500">
+                          <span>取得：{item.retrievedAt ? new Date(item.retrievedAt).toLocaleString() : 'N/A'}</span>
+                          <span>檢查：{item.checkedAt ? new Date(item.checkedAt).toLocaleString() : 'N/A'}</span>
+                          <span>版本：{item.sourceVersion || 'N/A'}</span>
+                          <span>Freshness：{item.freshnessMethod}</span>
+                        </div>
                       </div>
                     ))}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Data-backed source indicators */}
+              {(() => {
+                const factor = (indicator: string) => scoreFactors.find((item) => item.indicator === indicator);
+                const displayValue = (item?: ScoreFactor) =>
+                  item?.value != null ? `${item.value} ${item.unit}` : 'N/A';
+                const displaySource = (item?: ScoreFactor) => item?.source || 'unavailable';
+                const displayStatus = (item?: ScoreFactor) => item?.status === 'available' ? 'available' : 'unavailable';
+                const cards = [
+                  {
+                    title: '交通事故',
+                    category: 'C1 安全',
+                    indicator: 'trafficAccidentCount500m',
+                    value: factor('trafficAccidentCount500m'),
+                    color: 'rose',
+                  },
+                  {
+                    title: '災害潛勢',
+                    category: 'C1 安全',
+                    indicator: 'floodHazard_100mmh',
+                    value: factor('floodHazard_100mmh') || factor('floodHazard_78.8mmh') || factor('floodHazard_130mmh'),
+                    color: 'rose',
+                  },
+                  {
+                    title: 'POI 生活機能',
+                    category: 'C2 機能',
+                    indicator: 'poiDensityCount',
+                    value: factor('poiDensityCount'),
+                    color: 'amber',
+                  },
+                  {
+                    title: '公共運輸',
+                    category: 'C3 移動',
+                    indicator: 'mrtOrRailDist',
+                    value: factor('mrtOrRailDist'),
+                    color: 'sky',
+                  },
+                  {
+                    title: '空氣品質',
+                    category: 'C4 環境',
+                    indicator: 'airQualityScore',
+                    value: factor('airQualityScore'),
+                    color: 'emerald',
+                  },
+                  {
+                    title: '綠地',
+                    category: 'C4 環境',
+                    indicator: 'nearestParkDist',
+                    value: factor('nearestParkDist') || factor('parkCount800m'),
+                    color: 'emerald',
+                  },
+                  {
+                    title: '社會 / 活動',
+                    category: 'C5 社會',
+                    indicator: 'communityCulturalPoiCount800m',
+                    value: factor('communityCulturalPoiCount800m'),
+                    color: 'purple',
+                  },
+                ];
+
+                return (
+                  <div className="space-y-2">
+                    {cards.map((card) => (
+                      <div key={card.title} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${displayStatus(card.value) === 'available' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                            <span className="text-xs font-bold text-white">{card.title}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10 text-slate-300 border border-white/10">
+                              {card.category}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-indigo-300 font-mono font-bold">
+                            {displayValue(card.value)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1.5 grid grid-cols-1 gap-0.5">
+                          <span>來源：{displaySource(card.value)}</span>
+                          <span>狀態：{displayStatus(card.value)} · 指標：{card.indicator}</span>
+                          {card.value?.retrievedAt && (
+                            <span>取得：{new Date(card.value.retrievedAt).toLocaleString('zh-TW')}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

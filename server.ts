@@ -3,13 +3,22 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
+import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
+import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
+import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json());
+
+// Assessment data is persisted first. User requests never crawl scoring sources.
+ensureDataCacheSchema().catch((error) => console.error("Data cache initialization failed:", error));
+const DATA_REFRESH_TOKEN = process.env.STREETLENS_REFRESH_TOKEN || "";
 
 // Lazy-initialized Gemini client
 let geminiClient: GoogleGenAI | null = null;
@@ -70,7 +79,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 // Geocoding & Maps: Google Maps Platform API (Geocoding, Places New, Routes, Roads)
 // Using authorized provisioned key for high accuracy Taiwan spatial infrastructure.
 // ---------------------------------------------------------------------------
-const GOOGLE_MAPS_API_KEY = "AIzaSyBzAKe3-ZKG1QzmapQgGhnsBdFnwFVoaQM";
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 
 // Small in-memory cache for reverse-geocode lookups so dragging the pin
 // around the same spot doesn't re-hit the geocoding API every time.
@@ -235,118 +244,85 @@ app.get("/api/reverse-geocode", async (req: Request, res: Response) => {
   }
 });
 
-// 台灣環境部 (環保署) 核心空氣品質監測站對照庫
-const TAIWAN_EPA_STATIONS = [
-  { name: '大安', city: '台北市', district: '大安區', lat: 25.033, lng: 121.543, baseAqi: 34, pm25: 8.5 },
-  { name: '古亭', city: '台北市', district: '中正區', lat: 25.020, lng: 121.529, baseAqi: 36, pm25: 9.0 },
-  { name: '萬華', city: '台北市', district: '萬華區', lat: 25.046, lng: 121.507, baseAqi: 42, pm25: 11.2 },
-  { name: '中山', city: '台北市', district: '中山區', lat: 25.063, lng: 121.526, baseAqi: 39, pm25: 10.4 },
-  { name: '松山', city: '台北市', district: '松山區', lat: 25.050, lng: 121.578, baseAqi: 37, pm25: 9.8 },
-  { name: '士林', city: '台北市', district: '士林區', lat: 25.093, lng: 121.525, baseAqi: 31, pm25: 7.6 },
-  { name: '板橋', city: '新北市', district: '板橋區', lat: 25.012, lng: 121.458, baseAqi: 43, pm25: 11.8 },
-  { name: '菜寮', city: '新北市', district: '三重區', lat: 25.061, lng: 121.493, baseAqi: 46, pm25: 12.6 },
-  { name: '新莊', city: '新北市', district: '新莊區', lat: 25.037, lng: 121.450, baseAqi: 44, pm25: 12.0 },
-  { name: '永和', city: '新北市', district: '永和區', lat: 25.006, lng: 121.516, baseAqi: 41, pm25: 10.8 },
-  { name: '淡水', city: '新北市', district: '淡水區', lat: 25.164, lng: 121.448, baseAqi: 28, pm25: 6.8 },
-  { name: '桃園', city: '桃園市', district: '桃園區', lat: 24.998, lng: 121.312, baseAqi: 50, pm25: 14.5 },
-  { name: '中壢', city: '桃園市', district: '中壢區', lat: 24.953, lng: 121.221, baseAqi: 54, pm25: 15.8 },
-  { name: '新竹', city: '新竹市', district: '東區', lat: 24.805, lng: 120.973, baseAqi: 35, pm25: 9.2 },
-  { name: '忠明', city: '台中市', district: '西區', lat: 24.151, lng: 120.665, baseAqi: 58, pm25: 17.2 },
-  { name: '西屯', city: '台中市', district: '西屯區', lat: 24.162, lng: 120.618, baseAqi: 62, pm25: 18.5 },
-  { name: '彰化', city: '彰化縣', district: '彰化市', lat: 24.075, lng: 120.541, baseAqi: 64, pm25: 19.8 },
-  { name: '臺南', city: '台南市', district: '中西區', lat: 22.984, lng: 120.202, baseAqi: 68, pm25: 21.5 },
-  { name: '安南', city: '台南市', district: '安南區', lat: 23.048, lng: 120.183, baseAqi: 71, pm25: 22.8 },
-  { name: '前金', city: '高雄市', district: '前金區', lat: 22.632, lng: 120.288, baseAqi: 74, pm25: 24.5 },
-  { name: '左營', city: '高雄市', district: '左營區', lat: 22.674, lng: 120.297, baseAqi: 77, pm25: 25.8 },
-  { name: '宜蘭', city: '宜蘭縣', district: '宜蘭市', lat: 24.747, lng: 121.756, baseAqi: 22, pm25: 4.8 },
-  { name: '花蓮', city: '花蓮縣', district: '花蓮市', lat: 23.975, lng: 121.599, baseAqi: 20, pm25: 4.2 },
-  { name: '臺東', city: '台東縣', district: '台東市', lat: 22.755, lng: 121.150, baseAqi: 18, pm25: 3.5 },
-];
-
-function getNearestEpaStation(lat: number, lng: number) {
-  let nearest = TAIWAN_EPA_STATIONS[0];
-  let minDist = Infinity;
-  for (const st of TAIWAN_EPA_STATIONS) {
-    const d = Math.hypot(lat - st.lat, lng - st.lng);
-    if (d < minDist) {
-      minDist = d;
-      nearest = st;
-    }
-  }
-  return nearest;
-}
-
-// 實時天氣與環保署空品端點
+// Weather and air-quality data are fetched from Open-Meteo at request time.
+// Missing upstream values remain null; no synthetic fallback values are returned.
 app.get("/api/weather", async (req: Request, res: Response) => {
   try {
-    const lat = parseFloat((req.query.lat as string) || "25.033");
-    const lng = parseFloat((req.query.lng as string) || "121.5654");
-
-    const epaStation = getNearestEpaStation(lat, lng);
-    const stationOffset = (Math.abs(Math.sin(lat * 100)) * 5) - 2.5;
-    const aqi = Math.max(12, Math.round(epaStation.baseAqi + stationOffset));
-    const pm25 = +(epaStation.pm25 + stationOffset * 0.3).toFixed(1);
-
-    let aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' = '良好';
-    if (aqi > 100) aqiStatus = '對敏感族群不健康';
-    else if (aqi > 50) aqiStatus = '普通';
-
-    let temperature = 26;
-    let humidity = 65;
-    let weatherCode = 0;
-    let windSpeed = 2.4;
-
-    try {
-      const weatherResp = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m`,
-        { headers: { "User-Agent": "LivabilityScoutApp/2.0" } }
-      );
-      if (weatherResp.ok) {
-        const wData = await weatherResp.json();
-        if (wData.current) {
-          temperature = Math.round(wData.current.temperature_2m);
-          humidity = Math.round(wData.current.relative_humidity_2m);
-          weatherCode = wData.current.weather_code;
-          windSpeed = +(wData.current.wind_speed_10m || 2.4).toFixed(1);
-        }
-      }
-    } catch (e) {
-      console.warn("Open-Meteo fetch failed, using fallback:", e);
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Valid lat/lng are required" });
     }
 
-    const weatherDescriptions: Record<number, string> = {
-      0: '晴朗',
-      1: '大致晴朗',
-      2: '多雲',
-      3: '陰天',
-      45: '局部有霧',
-      48: '濃霧',
-      51: '毛毛細雨',
-      53: '輕微短暫雨',
-      55: '密降毛雨',
-      61: '小雨',
-      63: '中雨',
-      65: '陣雨',
-      80: '局部短暫陣雨',
-      81: '強陣雨',
-      82: '雷陣雨',
-      95: '雷雨交加',
-    };
+    const [airResult, weatherResult] = await Promise.allSettled([
+      fetch(
+        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,pm2_5&timezone=auto`,
+        { headers: { "User-Agent": "StreetLens/1.0" } }
+      ),
+      fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m`,
+        { headers: { "User-Agent": "StreetLens/1.0" } }
+      ),
+    ]);
 
-    const condition = weatherDescriptions[weatherCode] || (temperature > 28 ? '晴朗高溫' : '多雲時晴');
+    const retrievedAt = new Date().toISOString();
+    let aqi: number | null = null;
+    let pm25: number | null = null;
+    let airQualityTimestamp: string | null = null;
+    let airQualityStatus: "available" | "empty" | "error" = "error";
+
+    if (airResult.status === "fulfilled" && airResult.value.ok) {
+      const data: any = await airResult.value.json();
+      aqi = typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null;
+      pm25 = typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null;
+      airQualityTimestamp = data.current?.time || null;
+      airQualityStatus = aqi !== null || pm25 !== null ? "available" : "empty";
+    }
+
+    let temperature: number | null = null;
+    let humidity: number | null = null;
+    let weatherCode: number | null = null;
+    let windSpeed: number | null = null;
+    let weatherTimestamp: string | null = null;
+    let weatherStatus: "available" | "empty" | "error" = "error";
+
+    if (weatherResult.status === "fulfilled" && weatherResult.value.ok) {
+      const data: any = await weatherResult.value.json();
+      temperature = typeof data.current?.temperature_2m === "number" ? Math.round(data.current.temperature_2m) : null;
+      humidity = typeof data.current?.relative_humidity_2m === "number" ? Math.round(data.current.relative_humidity_2m) : null;
+      weatherCode = typeof data.current?.weather_code === "number" ? data.current.weather_code : null;
+      windSpeed = typeof data.current?.wind_speed_10m === "number" ? +data.current.wind_speed_10m.toFixed(1) : null;
+      weatherTimestamp = data.current?.time || null;
+      weatherStatus = temperature !== null || humidity !== null || weatherCode !== null ? "available" : "empty";
+    }
+
+    const aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' | '未知' =
+      aqi === null ? '未知' : aqi > 150 ? '不健康' : aqi > 100 ? '對敏感族群不健康' : aqi > 50 ? '普通' : '良好';
+
+    const weatherDescriptions: Record<number, string> = {
+      0: '晴朗', 1: '大致晴朗', 2: '多雲', 3: '陰天', 45: '局部有霧', 48: '濃霧',
+      51: '毛毛細雨', 53: '輕微短暫雨', 55: '密降毛雨', 61: '小雨', 63: '中雨',
+      65: '大雨', 80: '局部短暫陣雨', 81: '強陣雨', 82: '雷陣雨', 95: '雷雨交加',
+    };
 
     return res.json({
       temperature,
       humidity,
       weatherCode,
-      condition,
+      condition: weatherCode === null ? null : (weatherDescriptions[weatherCode] || null),
       aqi,
       aqiStatus,
       pm25,
       windSpeed,
-      stationName: epaStation.name,
-      stationDistrict: `${epaStation.city}${epaStation.district}`,
-      source: '環境部(環保署)空氣品質監測站網 & Open-Meteo',
+      airQualityTimestamp,
+      weatherTimestamp,
+      retrievedAt,
+      source: "Open-Meteo",
+      sourceType: "model",
+      airQualitySource: "Open-Meteo Air Quality (CAMS model data)",
+      status: airQualityStatus === "available" || weatherStatus === "available" ? "available" : "error",
+      airQualityStatus,
+      weatherStatus,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to fetch weather data" });
@@ -389,282 +365,469 @@ const GOOGLE_PLACE_TYPE_MAP: Record<string, { category: "C1" | "C2" | "C3" | "C4
   local_government_office: { category: "C5", note: "地方行政與里民服務據點" },
   city_hall: { category: "C5", note: "市政行政便民據點" },
   library: { category: "C5", note: "公共圖書館與文化自修據點" },
-  school: { category: "C5", note: "優質學區教育設施" },
-  primary_school: { category: "C5", note: "國民小學教育設施" },
-  secondary_school: { category: "C5", note: "國民中學教育設施" },
+  school: { category: "C2", note: "學校教育與日常生活機能" },
+  primary_school: { category: "C2", note: "國民小學教育設施" },
+  secondary_school: { category: "C2", note: "國民中學教育設施" },
 };
 
-// Real, accurately-located POIs from the Google Places API (New) "Nearby Search" endpoint.
-async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]> {
-  if (!GOOGLE_MAPS_API_KEY) return [];
+// Real POIs from Google Places (New). Scoring queries are separated by
+// amenity family so the 20-result API cap for one request cannot hide a category.
+type PoiSourceStatus = "available" | "empty" | "timeout" | "error" | "unavailable";
 
-  try {
+interface PoiFetchResult {
+  pois: any[];
+  source: "google_places" | "openstreetmap";
+  status: PoiSourceStatus;
+  retrievedAt: string;
+  error?: string;
+}
+
+function mapGooglePlace(place: any, retrievedAt: string): any | null {
+  if (!place.location?.latitude || !place.location?.longitude) return null;
+  const name = place.displayName?.text || "";
+  let mapping = place.primaryType ? GOOGLE_PLACE_TYPE_MAP[place.primaryType] : undefined;
+  if (!mapping && Array.isArray(place.types)) {
+    mapping = place.types.map((t: string) => GOOGLE_PLACE_TYPE_MAP[t]).find(Boolean);
+  }
+
+  let category: "C1" | "C2" | "C3" | "C4" | "C5" = mapping?.category || "C2";
+  let note = mapping?.note || "日常生活機能據點";
+
+  if (/派出所|分局|警局|警察|消防/.test(name)) { category = "C1"; note = "社區治安防護據點"; }
+  else if (/醫院|診所|門診|藥局/.test(name)) { category = "C2"; note = "醫療照護與健保診所"; }
+  else if (/超商|全家|7-ELEVEN|全聯|美廉社|家樂福|超市|市場/.test(name)) { category = "C2"; note = "生鮮超市與連鎖超商採買"; }
+  else if (/銀行|郵局|ATM|分行|信用合作社/.test(name)) { category = "C2"; note = "金融服務與郵政據點"; }
+  else if (/捷運|公車|轉運|火車/.test(name)) { category = "C3"; note = "大眾運輸通勤路網"; }
+  else if (/公園|綠地|廣場|庭園/.test(name)) { category = "C4"; note = "鄰里休憩綠地公園"; }
+  else if (/圖書館|活動中心|服務中心|分館/.test(name)) { category = "C5"; note = "公共文化與公民活動據點"; }
+  else if (/國小|國中|高中|大學/.test(name)) { category = "C2"; note = "學校教育與日常生活機能"; }
+
+  const primary = place.primaryType || "";
+  const amenityType =
+    /supermarket|grocery_store/.test(primary) ? "supermarket" :
+    /convenience_store/.test(primary) ? "convenience" :
+    /hospital|pharmacy|doctor|dentist|clinic/.test(primary) ? "clinic" :
+    /school|primary_school|secondary_school/.test(primary) ? "school" :
+    /bank|post_office|finance/.test(primary) ? "bank_post" :
+    /subway_station|train_station|light_rail_station/.test(primary) ? "rail" :
+    /transit_station|bus_station|bus_stop/.test(primary) ? "bus" :
+    /park|city_park|garden|playground/.test(primary) ? "park" : "other";
+
+  return {
+    id: `gp_${place.id}`,
+    name,
+    category,
+    amenityType,
+    lat: place.location.latitude,
+    lng: place.location.longitude,
+    note,
+    source: "Google Places (New)",
+    sourceType: "api",
+    retrievedAt,
+  };
+}
+
+async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<PoiFetchResult> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return { pois: [], source: "google_places", status: "unavailable", retrievedAt: new Date().toISOString() };
+  }
+
+  const queryGroups = [
+    ["supermarket", "grocery_store"],
+    ["convenience_store"],
+    ["hospital", "pharmacy", "doctor", "dentist"],
+    ["school", "primary_school", "secondary_school"],
+    ["bank", "post_office"],
+    ["subway_station", "train_station", "light_rail_station"],
+    ["bus_station", "bus_stop", "transit_station"],
+    ["police", "fire_station"],
+    ["park", "city_park", "garden", "playground"],
+    ["community_center", "library"],
+  ];
+
+  const retrievedAt = new Date().toISOString();
+  const settled = await Promise.allSettled(queryGroups.map(async (includedTypes) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
-
-    const resp = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.primaryType,places.types",
-      },
-      body: JSON.stringify({
-        includedTypes: [
-          "convenience_store", "supermarket", "grocery_store",
-          "subway_station", "train_station", "bus_station", "bus_stop",
-          "hospital", "pharmacy", "doctor",
-          "police", "fire_station",
-          "park",
-          "bank", "post_office", "library", "school",
-          "bakery", "community_center"
-        ],
-        maxResultCount: 20,
-        languageCode: "zh-TW",
-        locationRestriction: {
-          circle: { center: { latitude: lat, longitude: lng }, radius: 800 },
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const resp = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+          "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.primaryType,places.types",
         },
-      }),
-    });
-    clearTimeout(timeoutId);
-
-    if (!resp.ok) {
-      console.warn("[Google Places] HTTP", resp.status);
-      return [];
+        body: JSON.stringify({
+          includedTypes,
+          maxResultCount: 20,
+          rankPreference: "DISTANCE",
+          languageCode: "zh-TW",
+          locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 800 } },
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data: any = await resp.json();
+      return Array.isArray(data.places) ? data.places.map((p: any) => mapGooglePlace(p, retrievedAt)).filter(Boolean) : [];
+    } finally {
+      clearTimeout(timeoutId);
     }
+  }));
 
+  const pois = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  const failures = settled.filter((result) => result.status === "rejected");
+  const hasSuccess = settled.some((result) => result.status === "fulfilled");
+  const status: PoiSourceStatus = pois.length ? "available" : !hasSuccess ? "error" : "empty";
+  return { pois, source: "google_places", status, retrievedAt };
+}
+
+async function fetchOsmPoisNearby(lat: number, lng: number): Promise<PoiFetchResult> {
+  const retrievedAt = new Date().toISOString();
+  const query = `[out:json][timeout:8];(
+    node["amenity"](around:800,${lat},${lng});
+    node["shop"](around:800,${lat},${lng});
+    node["public_transport"](around:800,${lat},${lng});
+    node["railway"](around:800,${lat},${lng});
+    node["leisure"="park"](around:800,${lat},${lng});
+  );out 100;`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`, {
+      signal: controller.signal,
+      headers: { "User-Agent": "StreetLens/1.0" },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data: any = await resp.json();
-    if (!Array.isArray(data.places)) return [];
+    const elements = Array.isArray(data.elements) ? data.elements : [];
+    const pois = elements.map((item: any) => {
+      const tags = item.tags || {};
+      const pLat = typeof item.lat === "number" ? item.lat : item.center?.lat;
+      const pLng = typeof item.lon === "number" ? item.lon : item.center?.lon;
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) return null;
+      const name = tags["name:zh"] || tags.name || "";
+      let category: "C1" | "C2" | "C3" | "C4" | "C5" = "C2";
+      if (tags.amenity === "police" || tags.amenity === "fire_station") category = "C1";
+      else if (tags.public_transport || tags.railway) category = "C3";
+      else if (tags.leisure === "park" || tags.leisure === "garden") category = "C4";
+      else if (tags.amenity === "community_centre" || tags.amenity === "townhall" || tags.amenity === "library") category = "C5";
 
-    return data.places
-      .map((p: any) => {
-        if (!p.location?.latitude || !p.location?.longitude) return null;
-        const name = p.displayName?.text || "";
+      const amenityType =
+        /supermarket|grocery|market/.test(tags.shop || "") ? "supermarket" :
+        /convenience/.test(tags.shop || "") ? "convenience" :
+        /clinic|doctors|pharmacy|hospital|dentist/.test(tags.amenity || "") ? "clinic" :
+        /school|kindergarten|college|university/.test(tags.amenity || "") ? "school" :
+        /bank|post_office/.test(tags.amenity || "") ? "bank_post" :
+        /bus_stop|bus_station/.test(tags.public_transport || tags.amenity || "") ? "bus" :
+        /station|subway|tram/.test(tags.railway || tags.public_transport || "") ? "rail" : "other";
 
-        // Check primary type, then all types
-        let mapping = p.primaryType ? GOOGLE_PLACE_TYPE_MAP[p.primaryType] : undefined;
-        if (!mapping && Array.isArray(p.types)) {
-          for (const t of p.types) {
-            if (GOOGLE_PLACE_TYPE_MAP[t]) {
-              mapping = GOOGLE_PLACE_TYPE_MAP[t];
-              break;
-            }
-          }
-        }
+      return {
+        id: `osm_${item.type}_${item.id}`,
+        name,
+        category,
+        amenityType,
+        lat: pLat,
+        lng: pLng,
+        source: "OpenStreetMap (Overpass)",
+        sourceType: "osm",
+        retrievedAt,
+      };
+    }).filter(Boolean);
 
-        // Semantic fallback from place name
-        let category: "C1" | "C2" | "C3" | "C4" | "C5" = mapping?.category || "C2";
-        let note = mapping?.note || "日常生活機能據點";
-
-        if (/派出所|分局|警局|警察|消防/.test(name)) {
-          category = "C1";
-          note = "社區治安防護據點";
-        } else if (/醫院|診所|門診|藥局|長庚|榮總|台大|馬偕|和平|三總/.test(name)) {
-          category = "C2";
-          note = "醫療照護與健保診所";
-        } else if (/超商|全家|7-ELEVEN|全聯|美廉社|家樂福|大創|超市|市場/.test(name)) {
-          category = "C2";
-          note = "生鮮超市與連鎖超商採買";
-        } else if (/銀行|郵局|ATM|分行|信用合作社/.test(name)) {
-          category = "C2";
-          note = "金融服務與郵政據點";
-        } else if (/捷運|公車|轉運|火車|站|小巨蛋/.test(name)) {
-          category = "C3";
-          note = "大眾運輸通勤路網";
-        } else if (/公園|綠地|廣場|庭園/.test(name)) {
-          category = "C4";
-          note = "鄰里休憩綠地公園";
-        } else if (/圖書館|國小|國中|高中|大學|活動中心|服務中心|分館/.test(name)) {
-          category = "C5";
-          note = "公共文化與公民活動據點";
-        }
-
-        return {
-          id: `gp_${p.id}`,
-          name: name || "在地生活機能設施",
-          category,
-          lat: p.location.latitude,
-          lng: p.location.longitude,
-          note,
-        };
-      })
-      .filter(Boolean);
-  } catch (err) {
-    return [];
+    return { pois, source: "openstreetmap", status: pois.length ? "available" : "empty", retrievedAt };
+  } catch (error: any) {
+    return {
+      pois: [],
+      source: "openstreetmap",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
-// 台灣真實生活機能在地空間常模（依據政府開放資料與行政區/路名精確分佈）
-function generateLocalTaiwanPois(lat: number, lng: number, district: string, streetName: string) {
-  const shortStreet = streetName ? streetName.replace(/(台北市|新北市|台中市|高雄市|台南市|桃園市|新竹市|市|區)/g, '').slice(0, 4) : '';
-  const prefix = district || '在地';
-
-  return [
-    {
-      id: `local_711_${Math.round(lat * 1000)}`,
-      name: `7-ELEVEN 便利商店 (${prefix}${shortStreet || '門市'})`,
-      category: 'C2',
-      lat: +(lat + 0.0006).toFixed(6),
-      lng: +(lng + 0.0005).toFixed(6),
-      note: '24小時便利超商 · ATM與生活機能',
-    },
-    {
-      id: `local_fm_${Math.round(lat * 1000)}`,
-      name: `全家便利商店 FamilyMart (${prefix}店)`,
-      category: 'C2',
-      lat: +(lat - 0.0007).toFixed(6),
-      lng: +(lng + 0.0008).toFixed(6),
-      note: '24小時超商 · 快捷物流與生活物資',
-    },
-    {
-      id: `local_px_${Math.round(lat * 1000)}`,
-      name: `全聯福利中心 PX-Mart (${prefix}生鮮店)`,
-      category: 'C2',
-      lat: +(lat + 0.0015).toFixed(6),
-      lng: +(lng - 0.0013).toFixed(6),
-      note: '生鮮超市 · 生鮮蔬果與家庭民生物資',
-    },
-    {
-      id: `local_clinic_${Math.round(lat * 1000)}`,
-      name: `${prefix}社區聯合診所 / 健保特約藥局`,
-      category: 'C2',
-      lat: +(lat - 0.0011).toFixed(6),
-      lng: +(lng - 0.0009).toFixed(6),
-      note: '基層醫療診所 · 慢性病連續處方箋',
-    },
-    {
-      id: `local_mrt_${Math.round(lat * 1000)}`,
-      name: `${prefix}公共運輸軌道/公車轉乘接駁`,
-      category: 'C3',
-      lat: +(lat + 0.0021).toFixed(6),
-      lng: +(lng + 0.0016).toFixed(6),
-      note: '捷運/軌道與幹線公車快速路網',
-    },
-    {
-      id: `local_park_${Math.round(lat * 1000)}`,
-      name: `${prefix}鄰里社區綠地公園`,
-      category: 'C4',
-      lat: +(lat - 0.0016).toFixed(6),
-      lng: +(lng + 0.0014).toFixed(6),
-      note: '林蔭休憩步道、綠覆與親子運動休閒',
-    },
-    {
-      id: `local_police_${Math.round(lat * 1000)}`,
-      name: `轄區警局派出所 (${prefix}警勤區)`,
-      category: 'C1',
-      lat: +(lat + 0.0026).toFixed(6),
-      lng: +(lng - 0.0019).toFixed(6),
-      note: '警政署社區巡邏治安聯防據點',
-    },
-    {
-      id: `local_gov_${Math.round(lat * 1000)}`,
-      name: `${prefix}里民活動中心 / 區公所服務中心`,
-      category: 'C5',
-      lat: +(lat - 0.0023).toFixed(6),
-      lng: +(lng - 0.0017).toFixed(6),
-      note: '里民大會、長照據點與社區自治活動',
-    },
-  ];
+function haversineDistanceMeters(lat: number, lng: number, pLat: number, pLng: number): number {
+  const R = 6371000;
+  const dLat = ((pLat - lat) * Math.PI) / 180;
+  const dLng = ((pLng - lng) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat * Math.PI) / 180) * Math.cos((pLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
+
+function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const result of results) {
+    for (const poi of result.pois) {
+      const key = `${poi.name}|${poi.amenityType}|${poi.lat.toFixed(5)}|${poi.lng.toFixed(5)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({ ...poi, distanceMeters: haversineDistanceMeters(lat, lng, poi.lat, poi.lng) });
+    }
+  }
+  return merged.sort((a, b) => a.distanceMeters - b.distanceMeters);
+}
+
+// Synthetic POIs are intentionally not generated. Nearby POIs must come from
+// an external geospatial source so the map never presents invented businesses
+// or facilities as real-world locations.
+
+// Static official resources can expose HTTP validators. We use them only in the
+// background refresh job; user requests never probe upstream sources.
+const VALIDATOR_RESOURCES: Record<string, string[]> = {
+  taipei_green: Object.values(GREEN_RESOURCE_URLS),
+  taipei_safety: [SAFETY_RESOURCE_URLS.taipeiTrafficAccidentPoints2025],
+  taipei_flood: Object.values(FLOOD_RESOURCE_URLS),
+};
+
+type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
+
+function parseValidatorState(snapshot: any): ValidatorState {
+  if (!snapshot?.sourceVersion) return {};
+  try {
+    const parsed = JSON.parse(snapshot.sourceVersion);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function checkStaticResourceValidators(
+  sourceKey: string,
+  snapshot: any,
+): Promise<{ decision: "unchanged" | "changed" | "unknown"; version: string | null; method: "etag" | "last_modified" | "unknown"; sourceUpdatedAt: string | null }> {
+  const urls = VALIDATOR_RESOURCES[sourceKey];
+  if (!urls?.length) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+
+  const previous = parseValidatorState(snapshot);
+  const state: ValidatorState = {};
+  let sawNotModified = 0;
+  let sawChanged = 0;
+  let sawValidator = false;
+
+  for (const url of urls) {
+    const prior = previous[url] || {};
+    const headers: Record<string, string> = { "User-Agent": "StreetLens/1.0" };
+    if (prior.etag) headers["If-None-Match"] = prior.etag;
+    if (prior.lastModified) headers["If-Modified-Since"] = prior.lastModified;
+
+    try {
+      const response = await fetch(url, { method: "HEAD", headers });
+      if (response.status === 304) {
+        sawNotModified += 1;
+        state[url] = prior;
+        continue;
+      }
+      if (!response.ok) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+
+      const etag = response.headers.get("etag") || undefined;
+      const lastModified = response.headers.get("last-modified") || undefined;
+      if (!etag && !lastModified) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+      sawValidator = true;
+      state[url] = { etag, lastModified };
+
+      const changed = (prior.etag && etag && prior.etag !== etag)
+        || (prior.lastModified && lastModified && prior.lastModified !== lastModified)
+        || (!prior.etag && !prior.lastModified);
+      if (changed) sawChanged += 1;
+    } catch {
+      return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+    }
+  }
+
+  const version = JSON.stringify(state);
+  const modifiedDates = Object.values(state)
+    .map((item) => item.lastModified)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  const sourceUpdatedAt = modifiedDates.length
+    ? new Date(Math.max(...modifiedDates)).toISOString()
+    : null;
+  const method = Object.values(state).some((item) => item.etag) ? "etag" : "last_modified";
+  if (sawNotModified === urls.length) return { decision: "unchanged", version, method, sourceUpdatedAt };
+  if (sawChanged > 0) return { decision: "changed", version, method, sourceUpdatedAt };
+  if (sawValidator) return { decision: "unchanged", version, method, sourceUpdatedAt };
+  return { decision: "unknown", version, method: "unknown", sourceUpdatedAt };
+}
+
+
+const REFRESH_INTERVAL_HOURS: Record<string, number> = {
+  google_places: 24,
+  openstreetmap: 24,
+  tdx_transit: 24,
+  taipei_green: 168,
+  taipei_safety: 168,
+  taipei_flood: 168,
+  open_meteo_air_quality: 24,
+};
+
+function refreshPayloadForSource(sourceKey: string, lat: number, lng: number): Promise<any> {
+  if (sourceKey === "google_places") return fetchGooglePlacesNearby(lat, lng);
+  if (sourceKey === "openstreetmap") return fetchOsmPoisNearby(lat, lng);
+  if (sourceKey === "tdx_transit") return fetchTdxTransitData(lat, lng);
+  if (sourceKey === "taipei_green") return fetchTaipeiGreenData(lat, lng);
+  if (sourceKey === "taipei_safety") return fetchTaipeiSafetyData(lat, lng, 500);
+  if (sourceKey === "taipei_flood") return fetchTaipeiFloodHazardData(lat, lng);
+  if (sourceKey === "open_meteo_air_quality") {
+    return fetch(
+      "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat
+      + "&longitude=" + lng + "&current=us_aqi,pm2_5&timezone=auto",
+      { headers: { "User-Agent": "StreetLens/1.0" } },
+    ).then(async (response) => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const data: any = await response.json();
+      return {
+        aqi: typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null,
+        pm25: typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null,
+        airQualityTimestamp: data.current?.time || null,
+        retrievedAt: new Date().toISOString(),
+        source: "Open-Meteo Air Quality (CAMS model data)",
+        sourceType: "model",
+        status: data.current ? "available" : "empty",
+      };
+    });
+  }
+  throw new Error("Unknown refresh source: " + sourceKey);
+}
+
+// Scheduled refresh is the only place allowed to call scoring data sources.
+// Sources with HTTP validators are checked first; unchanged sources are not rewritten.
+// Sources without validators are refreshed on their configured cadence.
+app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
+  if (!DATA_REFRESH_TOKEN || req.headers.authorization !== "Bearer " + DATA_REFRESH_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    await ensureDataCacheSchema();
+    const targets = await listActiveAssessmentTargets();
+    const results: any[] = [];
+    const now = Date.now();
+
+    for (const target of targets) {
+      const { latitude: lat, longitude: lng, scopeKey } = target;
+
+      for (const sourceKey of Object.keys(REFRESH_INTERVAL_HOURS)) {
+        const existing = await getCachedSnapshot(sourceKey, scopeKey);
+        const due = !existing
+          || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+
+        if (!due) {
+          results.push({
+            scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing.fetchedAt,
+            checkedAt: existing.checkedAt,
+          });
+          continue;
+        }
+
+        const validator = await checkStaticResourceValidators(sourceKey, existing);
+        if (existing && validator.decision === "unchanged") {
+          await markSnapshotChecked(sourceKey, scopeKey, {
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing.fetchedAt,
+            sourceVersion: validator.version,
+          });
+          continue;
+        }
+
+        let payload: any;
+        let fetchError: string | null = null;
+        try {
+          payload = await refreshPayloadForSource(sourceKey, lat, lng);
+        } catch (error: any) {
+          fetchError = error?.message || String(error);
+        }
+
+        // Never replace a previously valid snapshot with a transient upstream error.
+        // A stale real snapshot remains usable until a later scheduled refresh succeeds.
+        if (fetchError) {
+          if (existing) {
+            await markSnapshotChecked(sourceKey, scopeKey, {
+              freshnessMethod: validator.method,
+            });
+          }
+          results.push({
+            scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing?.status || "unavailable",
+            skipped: false,
+            error: fetchError,
+            preservedExisting: Boolean(existing),
+            freshnessMethod: validator.method,
+          });
+          continue;
+        }
+
+        const saved = await saveSnapshot(sourceKey, scopeKey, payload, {
+          status: String(payload?.status || "available"),
+          sourceVersion: validator.version,
+          sourceUpdatedAt: validator.sourceUpdatedAt,
+          freshnessMethod: validator.method,
+        });
+
+        results.push({
+          scopeKey,
+          sourceKey,
+          changed: saved.changed,
+          status: payload?.status || "available",
+          skipped: false,
+          freshnessMethod: validator.method,
+          sourceVersion: validator.version,
+        });
+      }
+    }
+
+    return res.json({
+      refreshedAt: new Date().toISOString(),
+      targetCount: targets.length,
+      snapshots: results,
+    });
+  } catch (error: any) {
+    console.error("Scheduled data refresh failed:", error);
+    return res.status(500).json({ error: error.message || "Failed to refresh persisted data" });
+  }
+});
 
 // 即時附近 POI 端點 — Google Places API (New) 優先，OSM Overpass 其次，
 // 結合在地空間開放常模確保各點位皆有清晰對應的生活機能標記
 app.get("/api/nearby-pois", async (req: Request, res: Response) => {
   try {
-    const lat = parseFloat((req.query.lat as string) || "25.033");
-    const lng = parseFloat((req.query.lng as string) || "121.5654");
-    const district = (req.query.district as string) || "大安區";
-    const streetName = (req.query.streetName as string) || "";
-
-    // Helper for distance
-    const calcDistance = (pLat: number, pLng: number) => {
-      const R = 6371000;
-      const dLat = ((pLat - lat) * Math.PI) / 180;
-      const dLng = ((pLng - lng) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((lat * Math.PI) / 180) *
-          Math.cos((pLat * Math.PI) / 180) *
-          Math.sin(dLng / 2) *
-          Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return Math.round(R * c);
-    };
-
-    const pois: any[] = [];
-
-    // 1) Google Places API (New) — real names & precise coordinates
-    const googleItems = await fetchGooglePlacesNearby(lat, lng);
-    for (const item of googleItems) {
-      if (pois.length >= 24) break;
-      pois.push({ ...item, distanceMeters: calcDistance(item.lat, item.lng) });
-    }
-
-    // 2) OSM Overpass fallback — only runs if Google returned nothing
-    if (pois.length === 0) {
-      try {
-        const overpassQuery = `[out:json][timeout:3];(node["amenity"](around:600,${lat},${lng});node["leisure"="park"](around:600,${lat},${lng}););out 15;`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-        const opResp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`, {
-          signal: controller.signal,
-          headers: { "User-Agent": "LivabilityScoutApp/2.0" },
-        });
-        clearTimeout(timeoutId);
-
-        if (opResp.ok) {
-          const opData = await opResp.json();
-          const osmItems: any[] = Array.isArray(opData.elements)
-            ? opData.elements.filter((el: any) => el.tags && (el.tags.name || el.tags.amenity))
-            : [];
-
-          for (const item of osmItems) {
-            if (pois.length >= 16) break;
-            const tags = item.tags || {};
-            const pLat = item.lat;
-            const pLng = item.lon;
-            const name = tags.name || tags["name:zh"] || tags.amenity;
-            let cat: "C1" | "C2" | "C3" | "C4" | "C5" = "C2";
-            let note = "周邊生活設施";
-
-            if (tags.amenity === "police" || tags.amenity === "fire_station") {
-              cat = "C1";
-              note = "社區治安防護據點";
-            } else if (tags.amenity === "bus_station" || tags.amenity === "bicycle_rental" || tags.railway) {
-              cat = "C3";
-              note = "公共運輸接駁";
-            } else if (tags.leisure === "park" || tags.leisure === "garden") {
-              cat = "C4";
-              note = "鄰里休憩綠地";
-            } else if (tags.amenity === "community_centre" || tags.amenity === "townhall") {
-              cat = "C5";
-              note = "地方社區與公民活動";
-            }
-
-            pois.push({
-              id: `osm_${item.id || pois.length}`,
-              name,
-              category: cat,
-              lat: pLat,
-              lng: pLng,
-              distanceMeters: calcDistance(pLat, pLng),
-              note,
-            });
-          }
-        }
-      } catch (e) {
-        // Overpass timeout or network limit
-      }
-    }
-
-    // Sort by distance from center
-    pois.sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-    return res.json({ pois });
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
+    const scopeKey = await registerAssessmentTarget(lat, lng);
+    if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured" });
+    const [google, osm] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey)]);
+    if (!google && !osm) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
+    const pois = mergePois(lat, lng, [google?.payload, osm?.payload].filter(Boolean));
+    return res.json({ pois, dataStatus: "cached", scopeKey, sources: [
+      google ? { source: google.sourceKey, status: google.status, retrievedAt: google.fetchedAt } : { source: "google_places", status: "unavailable" },
+      osm ? { source: osm.sourceKey, status: osm.status, retrievedAt: osm.fetchedAt } : { source: "openstreetmap", status: "unavailable" },
+    ] });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || "Failed to fetch POIs" });
+    return res.status(500).json({ error: err.message || "Failed to load cached POIs" });
   }
 });
 
@@ -705,8 +868,7 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
   try {
     const lat = parseFloat((req.query.lat as string) || "25.0326");
     const lng = parseFloat((req.query.lng as string) || "121.5298");
-    const baseScore = parseFloat((req.query.baseScore as string) || "80");
-    const streetName = (req.query.streetName as string) || "";
+        const streetName = (req.query.streetName as string) || "";
 
     const delta = 0.0035; // ~350m
     const corridorPairs = [
@@ -759,22 +921,16 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
               if (seenRoads.has(roadName)) continue;
               seenRoads.add(roadName);
 
-              // Calculate differential livability score per street based on position
-              const isMain = roadName.includes(streetName) || roadName.includes("路") || roadName.includes("段") || roadName.includes("大道");
-              const isQuietLane = roadName.includes("街") || roadName.includes("巷");
-              const scoreOffset = isMain ? (Math.random() > 0.5 ? 2 : -2) : (isQuietLane ? 3 : 0);
-              const segScore = Math.max(50, Math.min(98, Math.round(baseScore + scoreOffset)));
-
               segments.push({
                 id: `seg_g_${segments.length}_${roadName}`,
-                name: `${roadName}實測路段`,
+                name: roadName,
                 coords: pts,
-                clsScore: segScore,
-                c1: Math.min(100, segScore + 2),
-                c2: Math.min(100, segScore + (isMain ? 6 : -3)),
-                c3: Math.min(100, segScore + (isMain ? 5 : -4)),
-                c4: Math.max(0, segScore + (isQuietLane ? 5 : -4)),
-                c5: segScore,
+                clsScore: null,
+                c1: null,
+                c2: null,
+                c3: null,
+                c4: null,
+                c5: null,
               });
             }
           }
@@ -807,19 +963,16 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
             if (s.geometry?.coordinates?.length > 1 && s.name && !seenRoads.has(s.name + "_osrm")) {
               seenRoads.add(s.name + "_osrm");
               const coords = s.geometry.coordinates.map(([cLng, cLat]: [number, number]) => [cLat, cLng]);
-              const isMain = s.name.includes("路") || s.name.includes("段");
-              const isQuietLane = s.name.includes("街") || s.name.includes("巷");
-              const segScore = Math.max(50, Math.min(98, Math.round(baseScore + (isQuietLane ? 3 : -1))));
               segments.push({
                 id: `seg_osrm_${segments.length}_${s.name}`,
-                name: `${s.name}實測路段`,
+                name: s.name,
                 coords,
-                clsScore: segScore,
-                c1: Math.min(100, segScore + 2),
-                c2: Math.min(100, segScore + (isMain ? 5 : -2)),
-                c3: Math.min(100, segScore + (isMain ? 4 : -3)),
-                c4: Math.max(0, segScore + (isQuietLane ? 5 : -3)),
-                c5: segScore,
+                clsScore: null,
+                c1: null,
+                c2: null,
+                c3: null,
+                c4: null,
+                c5: null,
               });
               break;
             }
@@ -836,270 +989,281 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
   }
 });
 
-// 台灣各主要行政區在 8 大資料來源下的基準常模庫
-const REGIONAL_BENCHMARKS: Record<string, any> = {
-  大安區: {
-    c1: { crimeRate: 16, accidentRate: 22, hazardLevel: 10 },
-    c2: { supermarketDist: 180, convenienceDist: 65, clinicDist: 120, schoolDist: 340, bankPostDist: 190, poiDensityCount: 68 },
-    c3: { mrtOrRailDist: 260, busStopDist: 85, busFrequencyScore: 96, walkabilityScore: 89, bikeLaneScore: 92 },
-    c4: { airQualityScore: 86, noiseScore: 72, greenCoveragePct: 38, parkDistance: 160 },
-    c5: { activityFrequency: 86, neighborhoodTrust: 88, jobCommercialDensity: 91, governanceParticipation: 85 },
-    summary: '大安生活圈：文教名邸聚集，警政署統計犯罪率特低，捷運路網密布，鄰近大安森林公園綠覆高。',
-  },
-  信義區: {
-    c1: { crimeRate: 20, accidentRate: 28, hazardLevel: 12 },
-    c2: { supermarketDist: 210, convenienceDist: 70, clinicDist: 140, schoolDist: 390, bankPostDist: 180, poiDensityCount: 72 },
-    c3: { mrtOrRailDist: 310, busStopDist: 90, busFrequencyScore: 95, walkabilityScore: 91, bikeLaneScore: 90 },
-    c4: { airQualityScore: 83, noiseScore: 68, greenCoveragePct: 34, parkDistance: 190 },
-    c5: { activityFrequency: 85, neighborhoodTrust: 85, jobCommercialDensity: 96, governanceParticipation: 82 },
-    summary: '信義生活圈：現代都會核心，人行道與綠帶完整，就業商業機能極度發達，防汛水利設施健全。',
-  },
-  萬華區: {
-    c1: { crimeRate: 46, accidentRate: 36, hazardLevel: 24 },
-    c2: { supermarketDist: 260, convenienceDist: 75, clinicDist: 150, schoolDist: 400, bankPostDist: 240, poiDensityCount: 56 },
-    c3: { mrtOrRailDist: 430, busStopDist: 95, busFrequencyScore: 90, walkabilityScore: 72, bikeLaneScore: 74 },
-    c4: { airQualityScore: 76, noiseScore: 62, greenCoveragePct: 22, parkDistance: 280 },
-    c5: { activityFrequency: 76, neighborhoodTrust: 72, jobCommercialDensity: 80, governanceParticipation: 75 },
-    summary: '萬華生活圈：歷史文化商圈，機能成熟便利，但老舊街區狹小、警政刑案率常模較高、防汛潛勢需多留意。',
-  },
-  中山區: {
-    c1: { crimeRate: 38, accidentRate: 34, hazardLevel: 16 },
-    c2: { supermarketDist: 190, convenienceDist: 55, clinicDist: 110, schoolDist: 360, bankPostDist: 170, poiDensityCount: 76 },
-    c3: { mrtOrRailDist: 270, busStopDist: 75, busFrequencyScore: 96, walkabilityScore: 83, bikeLaneScore: 82 },
-    c4: { airQualityScore: 78, noiseScore: 59, greenCoveragePct: 25, parkDistance: 240 },
-    c5: { activityFrequency: 82, neighborhoodTrust: 77, jobCommercialDensity: 93, governanceParticipation: 79 },
-    summary: '中山生活圈：繁華商業與住宅混合，全天候機能超群，夜間商圈活動多，尖峰交通車流量大。',
-  },
-  文山區: {
-    c1: { crimeRate: 14, accidentRate: 19, hazardLevel: 22 },
-    c2: { supermarketDist: 360, convenienceDist: 110, clinicDist: 210, schoolDist: 320, bankPostDist: 290, poiDensityCount: 36 },
-    c3: { mrtOrRailDist: 560, busStopDist: 115, busFrequencyScore: 83, walkabilityScore: 78, bikeLaneScore: 71 },
-    c4: { airQualityScore: 89, noiseScore: 85, greenCoveragePct: 56, parkDistance: 130 },
-    c5: { activityFrequency: 81, neighborhoodTrust: 87, jobCommercialDensity: 58, governanceParticipation: 86 },
-    summary: '文山文教特區：依山傍水，環保署監測空品極佳、環境幽靜治安極佳，但部分近山坡地需注意坡地災害潛勢。',
-  },
-  板橋區: {
-    c1: { crimeRate: 27, accidentRate: 35, hazardLevel: 18 },
-    c2: { supermarketDist: 230, convenienceDist: 70, clinicDist: 135, schoolDist: 350, bankPostDist: 210, poiDensityCount: 62 },
-    c3: { mrtOrRailDist: 360, busStopDist: 90, busFrequencyScore: 93, walkabilityScore: 81, bikeLaneScore: 79 },
-    c4: { airQualityScore: 77, noiseScore: 65, greenCoveragePct: 26, parkDistance: 250 },
-    c5: { activityFrequency: 85, neighborhoodTrust: 81, jobCommercialDensity: 88, governanceParticipation: 81 },
-    summary: '新北板橋核心圈：高鐵捷運五鐵共構，商業消費極便利，人口密度與幹道車流事故率較高。',
-  },
-  西屯區: {
-    c1: { crimeRate: 19, accidentRate: 29, hazardLevel: 11 },
-    c2: { supermarketDist: 310, convenienceDist: 85, clinicDist: 190, schoolDist: 460, bankPostDist: 220, poiDensityCount: 54 },
-    c3: { mrtOrRailDist: 510, busStopDist: 125, busFrequencyScore: 82, walkabilityScore: 86, bikeLaneScore: 76 },
-    c4: { airQualityScore: 69, noiseScore: 71, greenCoveragePct: 41, parkDistance: 170 },
-    c5: { activityFrequency: 81, neighborhoodTrust: 83, jobCommercialDensity: 89, governanceParticipation: 78 },
-    summary: '台中七期市政特區：新興棋盤街廓，道路寬廣棟距大，治安評價好，空品受台中盆地逆溫影響略有波動。',
-  },
-  東區: {
-    c1: { crimeRate: 17, accidentRate: 30, hazardLevel: 12 },
-    c2: { supermarketDist: 290, convenienceDist: 75, clinicDist: 170, schoolDist: 370, bankPostDist: 260, poiDensityCount: 49 },
-    c3: { mrtOrRailDist: 620, busStopDist: 140, busFrequencyScore: 74, walkabilityScore: 82, bikeLaneScore: 72 },
-    c4: { airQualityScore: 81, noiseScore: 73, greenCoveragePct: 37, parkDistance: 190 },
-    c5: { activityFrequency: 86, neighborhoodTrust: 85, jobCommercialDensity: 89, governanceParticipation: 83 },
-    summary: '科技園區生活圈：高科技新貴聚落，社區自覺與管理品質高，尖峰道路車流易壅塞。',
-  },
-  鼓山區: {
-    c1: { crimeRate: 20, accidentRate: 25, hazardLevel: 14 },
-    c2: { supermarketDist: 330, convenienceDist: 90, clinicDist: 200, schoolDist: 450, bankPostDist: 310, poiDensityCount: 44 },
-    c3: { mrtOrRailDist: 440, busStopDist: 135, busFrequencyScore: 81, walkabilityScore: 87, bikeLaneScore: 83 },
-    c4: { airQualityScore: 67, noiseScore: 81, greenCoveragePct: 53, parkDistance: 130 },
-    c5: { activityFrequency: 79, neighborhoodTrust: 83, jobCommercialDensity: 75, governanceParticipation: 79 },
-    summary: '高雄美術館園區：綠意環抱、街道開闊，居住靜謐度高，輕軌捷運便利，冬季空品需留意。',
-  },
-};
+// Taiwan official/public transport source adapters.
+// Distances are calculated from source coordinates; no frequency or accessibility
+// score is invented when the source does not provide it.
+interface TransitSourceResult {
+  stops: any[];
+  source: string;
+  status: "available" | "empty" | "error" | "timeout";
+  retrievedAt: string;
+  error?: string;
+}
 
-// 取得網路基準資料 (8大資料來源真實常模 + Gemini 智慧加持)
-app.get("/api/baseline-data", async (req: Request, res: Response) => {
-  try {
-    const lat = parseFloat((req.query.lat as string) || "25.033");
-    const lng = parseFloat((req.query.lng as string) || "121.5654");
-    const district = (req.query.district as string) || "大安區";
-    const city = (req.query.city as string) || "台北市";
-    const streetName = (req.query.streetName as string) || "";
-
-    const ai = getGeminiClient();
-
-    if (ai) {
-      try {
-        const prompt = `你是一個台灣都市計畫、不動產估價與社區宜居度 (Community Livability Score, CLS) 的專家。
-請依據台灣政府官方開放資料庫的客觀常模：
-1. 犯罪率：內政部警政署犯罪統計
-2. 交通事故：交通部交通事故資料庫
-3. 災害潛勢：經濟部水利署淹水潛勢圖、中央地質調查所
-4. POI：Google Maps API、OpenStreetMap、政府開放資料
-5. 公共運輸：公車動態 API、捷運營運資料
-6. 空氣/噪音：環保署監測站
-7. 綠地：國土測繪圖資、都發局綠地資料
-8. 社會/活動：里辦公室公告、問卷調查
-
-目標地點：台灣 ${city} ${district} ${streetName} (精確座標: ${lat}, ${lng})
-
-請仔細考量該具體地點的真實環境（例如是舊市區或重劃區、離主要道路多近、是否靠近捷運、山邊或河邊），回傳真實合理的基準指標數值（嚴格 JSON 格式，不含 markdown）：
-{
-  "c1": {
-    "crimeRate": 0~100 (警政署每千人犯罪標準化，越低越好),
-    "accidentRate": 0~100 (交通部事故統計標準化，越低越好),
-    "hazardLevel": 0~100 (水利署地調所淹水地質潛勢，越低越好)
-  },
-  "c2": {
-    "supermarketDist": 最近生鮮超市步行公尺,
-    "convenienceDist": 最近便利超商步行公尺,
-    "clinicDist": 最近診所或藥局公尺,
-    "schoolDist": 最近國中小學公尺,
-    "bankPostDist": 最近金融郵局公尺,
-    "poiDensityCount": 500m內重要生活店家數
-  },
-  "c3": {
-    "mrtOrRailDist": 最近捷運或火車站公尺,
-    "busStopDist": 最近公車站公尺,
-    "busFrequencyScore": 0~100 (公車尖峰離峰班次),
-    "walkabilityScore": 0~100 (人行道人行安全),
-    "bikeLaneScore": 0~100 (自行車道與YouBike)
-  },
-  "c4": {
-    "airQualityScore": 0~100 (環保署AQI/PM2.5得分，越高越好),
-    "noiseScore": 0~100 (環境噪音逆向評分，越高越安靜),
-    "greenCoveragePct": 0~100 (綠覆率百分比),
-    "parkDistance": 最近公園綠地距離公尺
-  },
-  "c5": {
-    "activityFrequency": 0~100 (社區活動頻率),
-    "neighborhoodTrust": 0~100 (鄰里信任安心感),
-    "jobCommercialDensity": 0~100 (商圈就業密度),
-    "governanceParticipation": 0~100 (里民自治參與度)
-  },
-  "summary": "一句話總結此處各項數據在政府開放資料中的特徵表現",
-  "sources": "內政部警政署犯罪統計、交通部交通事故資料庫、經濟部水利署淹水潛勢圖、中央地質調查所、Google Maps API、OpenStreetMap、公車動態 API、捷運營運資料、環保署監測站、國土測繪圖資、都發局綠地資料、里辦公室公告"
-}`;
-
-        const textResponse = await generateGeminiContentWithFallback(
-          ai,
-          prompt,
-          "application/json"
-        );
-
-        const parsed = JSON.parse(textResponse || "{}");
-        if (parsed.c1 && parsed.c2 && parsed.c3 && parsed.c4 && parsed.c5) {
-          return res.json({
-            source: "gemini_open_data_grounded",
-            ...parsed,
-          });
-        }
-      } catch (err) {
-        console.warn("Gemini baseline error, fallback to spatial algorithmic benchmarks:", err);
-      }
-    }
-
-    // 地理空間差值演算法 (Spatial Algorithmic Baseline Engine)
-    // 依據經緯度、縣市、行政區產生精確且差異顯著的客觀數值
-    let matchedBench = REGIONAL_BENCHMARKS[district];
-    if (!matchedBench) {
-      for (const [k, v] of Object.entries(REGIONAL_BENCHMARKS)) {
-        if (district.includes(k) || city.includes(k)) {
-          matchedBench = v;
-          break;
-        }
-      }
-    }
-
-    const isTaipei = city.includes('台北');
-    const isNewTaipei = city.includes('新北');
-    const isTaichung = city.includes('台中');
-    const isKaohsiung = city.includes('高雄');
-    const isTainan = city.includes('台南');
-    const isHsinchu = city.includes('新竹');
-    const isMetro = isTaipei || isNewTaipei || isTaichung || isKaohsiung || isTainan || isHsinchu;
-
-    // 依據經緯度產生連續性局部微小擾動 (微氣候與街廓微地形)
-    const latNoise = Math.sin(lat * 800) * 8;
-    const lngNoise = Math.cos(lng * 800) * 8;
-    const microSeed = Math.abs(Math.round(latNoise + lngNoise));
-
-    const defaultBench = {
-      c1: {
-        crimeRate: Math.max(12, Math.min(65, Math.round(isTaipei ? 22 : isMetro ? 28 : 35 + (microSeed % 15)))),
-        accidentRate: Math.max(15, Math.min(65, Math.round(isMetro ? 32 : 25 + ((microSeed * 2) % 18)))),
-        hazardLevel: Math.max(8, Math.min(50, Math.round(18 + ((microSeed * 3) % 14)))),
-      },
-      c2: {
-        supermarketDist: isMetro ? 260 + (microSeed * 15) : 650 + (microSeed * 35),
-        convenienceDist: isMetro ? 75 + (microSeed * 6) : 210 + (microSeed * 18),
-        clinicDist: isMetro ? 160 + (microSeed * 12) : 420 + (microSeed * 25),
-        schoolDist: isMetro ? 380 + (microSeed * 20) : 780 + (microSeed * 40),
-        bankPostDist: isMetro ? 280 + (microSeed * 15) : 590 + (microSeed * 30),
-        poiDensityCount: isMetro ? Math.max(25, Math.round(55 - microSeed * 1.5)) : 18,
-      },
-      c3: {
-        mrtOrRailDist: isTaipei ? 380 + (microSeed * 30) : isMetro ? 850 + (microSeed * 60) : 2400,
-        busStopDist: isMetro ? 95 + (microSeed * 8) : 220 + (microSeed * 15),
-        busFrequencyScore: isMetro ? Math.round(86 - (microSeed % 12)) : 62,
-        walkabilityScore: isMetro ? Math.round(78 - (microSeed % 14)) : 58,
-        bikeLaneScore: isMetro ? Math.round(80 - (microSeed % 15)) : 52,
-      },
-      c4: {
-        airQualityScore: Math.round((isTaipei ? 82 : isKaohsiung ? 68 : isTaichung ? 71 : 84) + (microSeed % 10) - 5),
-        noiseScore: isMetro ? Math.round(68 - (microSeed % 12)) : 82,
-        greenCoveragePct: isMetro ? Math.round(32 + (microSeed % 15)) : 54,
-        parkDistance: isMetro ? 210 + (microSeed * 18) : 380 + (microSeed * 25),
-      },
-      c5: {
-        activityFrequency: isMetro ? Math.round(82 - (microSeed % 10)) : 68,
-        neighborhoodTrust: Math.round(78 + (microSeed % 8) - 4),
-        jobCommercialDensity: isMetro ? Math.round(84 - (microSeed % 12)) : 54,
-        governanceParticipation: Math.round(76 + (microSeed % 10) - 5),
-      },
-      summary: `${city}${district}生活圈具備在地成熟的生活聚落與公眾建設。`,
-    };
-
-    const base = matchedBench || defaultBench;
-
-    return res.json({
-      source: "taiwan_open_data_benchmarks",
-      c1: {
-        crimeRate: Math.max(10, Math.min(80, Math.round(base.c1.crimeRate + (microSeed % 7) - 3))),
-        accidentRate: Math.max(10, Math.min(80, Math.round(base.c1.accidentRate + ((microSeed * 2) % 7) - 3))),
-        hazardLevel: Math.max(5, Math.min(80, Math.round(base.c1.hazardLevel + ((microSeed * 3) % 7) - 3))),
-      },
-      c2: {
-        supermarketDist: Math.round(base.c2.supermarketDist + ((microSeed % 5) * 20)),
-        convenienceDist: Math.round(base.c2.convenienceDist + ((microSeed % 4) * 8)),
-        clinicDist: Math.round(base.c2.clinicDist + ((microSeed % 5) * 15)),
-        schoolDist: Math.round(base.c2.schoolDist + ((microSeed % 6) * 25)),
-        bankPostDist: Math.round(base.c2.bankPostDist + ((microSeed % 5) * 20)),
-        poiDensityCount: Math.round(base.c2.poiDensityCount + (microSeed % 6) - 3),
-      },
-      c3: {
-        mrtOrRailDist: Math.round(base.c3.mrtOrRailDist + ((microSeed % 8) * 35)),
-        busStopDist: Math.round(base.c3.busStopDist + ((microSeed % 4) * 10)),
-        busFrequencyScore: Math.round(base.c3.busFrequencyScore + (microSeed % 5) - 2),
-        walkabilityScore: Math.round(base.c3.walkabilityScore + (microSeed % 6) - 3),
-        bikeLaneScore: Math.round(base.c3.bikeLaneScore + (microSeed % 6) - 3),
-      },
-      c4: {
-        airQualityScore: Math.round(base.c4.airQualityScore + (microSeed % 6) - 3),
-        noiseScore: Math.round(base.c4.noiseScore + (microSeed % 6) - 3),
-        greenCoveragePct: Math.round(base.c4.greenCoveragePct + (microSeed % 6) - 3),
-        parkDistance: Math.round(base.c4.parkDistance + ((microSeed % 5) * 20)),
-      },
-      c5: {
-        activityFrequency: Math.round(base.c5.activityFrequency + (microSeed % 6) - 3),
-        neighborhoodTrust: Math.round(base.c5.neighborhoodTrust + (microSeed % 4) - 2),
-        jobCommercialDensity: Math.round(base.c5.jobCommercialDensity + (microSeed % 6) - 3),
-        governanceParticipation: Math.round(base.c5.governanceParticipation + (microSeed % 5) - 2),
-      },
-      summary: base.summary || `${city}${district} ${streetName || ''} 生活圈依據政府開放資料常模評估。`,
-      sources: "內政部警政署犯罪統計、交通部交通事故資料庫、經濟部水利署淹水潛勢圖、中央地質調查所、Google Maps API、OpenStreetMap、公車動態 API、捷運營運資料、環保署監測站、國土測繪圖資、都發局綠地資料、里辦公室公告",
-    });
-  } catch (error: any) {
-    console.error("Baseline error:", error);
-    return res.status(500).json({ error: error.message || "Failed to get baseline data" });
+async function fetchTaiwanTransitData(lat: number, lng: number): Promise<TransitSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  // Taipei City bus-stop open data is published by Taipei City Transportation Department.
+  // Keep the endpoint configurable because data.gov.tw resource URLs can change.
+  const url = process.env.TAIPEI_BUS_STOPS_URL;
+  if (!url) {
+    return { stops: [], source: "Taipei City Transportation Department bus-stop data", status: "empty", retrievedAt };
   }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "StreetLens/1.0" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data: any = await response.json();
+    const rows = Array.isArray(data) ? data : Array.isArray(data.result) ? data.result : [];
+    const stops = rows.map((row: any) => ({
+      id: String(row.id ?? row.stopLocationId ?? row.BSM_BUSSTO ?? ""),
+      name: row.nameZh ?? row.BSM_CHINES ?? row.name ?? "",
+      lat: Number(row.latitude ?? row.lat ?? row.showLat),
+      lng: Number(row.longitude ?? row.lon ?? row.showLon),
+      type: "bus",
+      source: "Taipei City Transportation Department",
+      retrievedAt,
+    })).filter((x: any) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+
+    const nearby = stops
+      .map((stop: any) => ({ ...stop, distanceMeters: haversineDistanceMeters(lat, lng, stop.lat, stop.lng) }))
+      .filter((stop: any) => stop.distanceMeters <= 1500)
+      .sort((a: any, b: any) => a.distanceMeters - b.distanceMeters);
+
+    return { stops: nearby, source: "Taipei City Transportation Department", status: nearby.length ? "available" : "empty", retrievedAt };
+  } catch (error: any) {
+    return {
+      stops: [],
+      source: "Taipei City Transportation Department",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// 台灣各主要行政區在 8 大資料來源下的基準常模庫
+// No synthetic regional measurements are exposed. Source-backed indicators are added
+// category by category; unavailable indicators remain null.
+app.get("/api/baseline-data", async (_req: Request, res: Response) => {
+  return res.json({
+    source: "unavailable",
+    available: false,
+    c1: null,
+    c2: null,
+    c3: null,
+    c4: null,
+    c5: null,
+  });
 });
 
+
+// Explainable street-level assessment assembled from source-backed inputs.
+// This endpoint intentionally returns provenance and confidence with every score.
+export function getAssessmentSnapshotStatus(
+  sourceKeys: string[],
+  snapshots: Record<string, { status?: string } | null | undefined>,
+): { missingSources: string[]; dataStatus: "pending_refresh" | "cached" } {
+  const missingSources = sourceKeys.filter((key) => !snapshots[key]);
+  return {
+    missingSources,
+    dataStatus: missingSources.length === sourceKeys.length ? "pending_refresh" : "cached",
+  };
+}
+
+app.get("/api/assessment", async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    const district = (req.query.district as string) || "";
+    const city = (req.query.city as string) || "";
+    const streetName = (req.query.streetName as string) || "";
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
+
+    const scopeKey = await registerAssessmentTarget(lat, lng);
+    if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured", dataStatus: "database_required" });
+
+    const sourceKeys = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
+    const cached = await Promise.all(sourceKeys.map((key) => getCachedSnapshot(key, scopeKey)));
+    const snapshots: Record<string, any> = {};
+    sourceKeys.forEach((key, i) => { snapshots[key] = cached[i]; });
+    const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, snapshots);
+    if (dataStatus === "pending_refresh") {
+      return res.status(202).json({
+        location: { lat, lng, city, district, streetName },
+        scopeKey,
+        dataStatus: "pending_refresh",
+        missingSources: missing,
+        scores: null,
+        message: "此座標尚無任何已持久化資料；等待背景排程建立資料快照。",
+      });
+    }
+
+    // A user request never fetches external scoring sources. Existing snapshots are
+    // returned even when stale; only genuinely absent source data is marked unavailable.
+    const google = snapshots.google_places?.payload || { pois: [] };
+    const osm = snapshots.openstreetmap?.payload || { pois: [] };
+    const officialTransit = snapshots.tdx_transit?.payload || { stops: [], railStations: [] };
+    const greenData = snapshots.taipei_green?.payload || { streetTrees: [], parkTrees: [], status: "unavailable" };
+    const safetyData = snapshots.taipei_safety?.payload || { accidents: [], status: "unavailable", source: "unavailable" };
+    const floodData = snapshots.taipei_flood?.payload || { cells: [], status: "unavailable" };
+    const weather = {
+      ...(snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" }),
+      retrievedAt: snapshots.open_meteo_air_quality?.fetchedAt || undefined,
+    };
+    const pois = mergePois(lat, lng, [google, osm]);
+    const nearest = (type: string): number | undefined => {
+      const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
+      return values.length ? Math.min(...values) : undefined;
+    };
+    const sourceNames = [...new Set(pois.map((poi: any) => poi.source).filter(Boolean))];
+    const c2PoiMetrics = {
+      supermarketDist: nearest("supermarket"), convenienceDist: nearest("convenience"), clinicDist: nearest("clinic"), schoolDist: nearest("school"), bankPostDist: nearest("bank_post"),
+      poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length || undefined,
+      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable", method: "calculated" as const,
+      confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
+      status: sourceNames.length ? "available" as const : "empty" as const,
+      retrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt,
+    };
+
+    const railDistances = (officialTransit.railStations || []).map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const busDistances = (officialTransit.stops || []).map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const osmRail = pois.filter((x: any) => x.amenityType === "rail").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const osmBus = pois.filter((x: any) => x.amenityType === "bus").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
+    const railDist = railDistances.length ? Math.min(...railDistances) : (osmRail.length ? Math.min(...osmRail) : undefined);
+    const busDist = busDistances.length ? Math.min(...busDistances) : (osmBus.length ? Math.min(...osmBus) : undefined);
+    const transitSources = [
+      ...(railDistances.length || busDistances.length ? ["TDX / MOTC"] : []),
+      ...(osmRail.length || osmBus.length ? [...new Set(pois.filter((x: any) => x.amenityType === "rail" || x.amenityType === "bus").map((x: any) => x.source).filter(Boolean))] : []),
+    ];
+    const c3RetrievedAt = transitSources.includes("TDX / MOTC")
+      ? snapshots.tdx_transit?.fetchedAt
+      : [...new Set(pois.filter((x: any) => x.amenityType === "rail" || x.amenityType === "bus").map((x: any) => x.retrievedAt).filter(Boolean))].join(" + ") || undefined;
+    const c3TransitMetrics = {
+      mrtOrRailDist: railDist, busStopDist: busDist,
+      source: transitSources.length ? transitSources.join(" + ") : "unavailable", method: "calculated" as const,
+      confidence: railDistances.length && busDistances.length ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,
+      status: railDist != null || busDist != null ? "available" as const : "empty" as const,
+      retrievedAt: c3RetrievedAt,
+    };
+
+    const parkPois = pois.filter((x: any) => x.amenityType === "park" && Number.isFinite(x.distanceMeters));
+    const nearestParkDist = parkPois.length ? Math.min(...parkPois.map((x: any) => x.distanceMeters)) : undefined;
+    const communityPois = pois.filter((x: any) =>
+      (x.category === "C5" || /community|library|活動中心|圖書館|服務中心|公民/.test(String(x.name || "")))
+      && Number.isFinite(x.distanceMeters)
+    );
+    const nearestCommunityCulturalDistance = communityPois.length
+      ? Math.min(...communityPois.map((x: any) => x.distanceMeters))
+      : undefined;
+    const GREEN_RADIUS_METERS = 800;
+    const GREEN_OBSERVATION_AREA_KM2 = Math.PI * (GREEN_RADIUS_METERS / 1000) ** 2;
+    const streetTreeCount800m = greenData.streetTrees?.length;
+    const parkTreeCount800m = greenData.parkTrees?.length;
+    const c4GreenMetrics: C4GreenMetrics = {
+      streetTreeCount800m: Number.isFinite(Number(streetTreeCount800m)) ? Number(streetTreeCount800m) : undefined,
+      parkTreeCount800m: Number.isFinite(Number(parkTreeCount800m)) ? Number(parkTreeCount800m) : undefined,
+      streetTreeDensityPerKm2: Number.isFinite(Number(streetTreeCount800m))
+        ? Number(streetTreeCount800m) / GREEN_OBSERVATION_AREA_KM2
+        : undefined,
+      parkTreeDensityPerKm2: Number.isFinite(Number(parkTreeCount800m))
+        ? Number(parkTreeCount800m) / GREEN_OBSERVATION_AREA_KM2
+        : undefined,
+      nearestParkDist,
+      parkCount800m: parkPois.length || undefined,
+      source: greenData.source || "Taipei City Parks and Street Trees dataset",
+      method: "calculated" as const,
+      confidence: greenData.status === "available" ? "high" as const : "low" as const,
+      status: greenData.status,
+      retrievedAt: greenData.retrievedAt,
+      streetTreeDensityReference: [],
+      parkTreeDensityReference: [],
+    };
+
+    const accidents = safetyData.accidents || [];
+    const c1SafetyMetrics: C1SafetyMetrics = {
+      accidentCount500m: accidents.length,
+      fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
+      injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
+      source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
+      status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
+      accidentCountReference: [], floodDepthReference: [],
+    };
+
+    const greenReference = await getGreenDensityReference();
+    c4GreenMetrics.streetTreeDensityReference = greenReference.street;
+    c4GreenMetrics.parkTreeDensityReference = greenReference.park;
+
+    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference, nearestCommunityReference] = await Promise.all([
+      getSafetyReference(),
+      getPoiDensityReference(),
+      getC5CommunityReference(),
+      getDistanceAndAirQualityReferences(),
+      getNearestParkDistanceReference(scopeKey),
+      getNearestCommunityDistanceReference(scopeKey),
+    ]);
+    c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
+    c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
+    const communityCount = pois.filter((poi: any) =>
+      poi.category === "C5"
+      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
+    ).length;
+    const scores = calculateAssessment(
+      null,
+      {},
+      weather || undefined,
+      c1SafetyMetrics,
+      c2PoiMetrics,
+      c3TransitMetrics,
+      c4GreenMetrics,
+      amenityReference,
+      communityCount,
+      communityReference,
+      nearestCommunityCulturalDistance,
+      {
+        ...normalizationReferences,
+        c4NearestParkDistances: nearestParkReference,
+        c5NearestCommunityDistances: nearestCommunityReference,
+      },
+      {
+        c4NearestParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
+        c4NearestParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+        c4ParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
+        c4ParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+        c5Source: communityPois.length ? [...new Set(communityPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
+        c5RetrievedAt: communityPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+      },
+    );
+    const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
+    return res.json({
+      location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
+      dataSources: sourceNames,
+      sourceStatus: sourceKeys.map((key) => ({
+        source: key,
+        status: snapshots[key]?.status || "unavailable",
+        retrievedAt: snapshots[key]?.fetchedAt || null,
+        checkedAt: snapshots[key]?.checkedAt || null,
+        sourceVersion: snapshots[key]?.sourceVersion || null,
+        freshnessMethod: snapshots[key]?.freshnessMethod || "unknown",
+      })),
+      missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
+      dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key]?.fetchedAt || null])),
+      c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
+      c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.cells || [],
+      parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
+      communityMetrics: {
+        nearestCommunityCulturalDistance: nearestCommunityCulturalDistance ?? null,
+        communityCulturalPoiCount800m: communityPois.length,
+      },
+    });
+  } catch (error: any) {
+    console.error("Assessment error:", error);
+    return res.status(500).json({ error: error.message || "Failed to calculate assessment" });
+  }
+});
 
 // 實勘結果綜合分析與診斷報告
 app.post("/api/analyze-cls", async (req: Request, res: Response) => {
@@ -1123,24 +1287,12 @@ app.post("/api/analyze-cls", async (req: Request, res: Response) => {
 
     if (!ai) {
       return res.json({
-        source: "algorithmic_rule_based",
-        overallScore,
-        strengths: [
-          "各項指標均衡發展，生活與通勤機能完備",
-          "步行範圍內各級 POI 距離衰減效能優良",
-          "社區治安防汛與公共設施常態維護水準良好",
-        ],
-        weaknesses: [
-          "尖峰時段可能有臨路動態車流低頻噪音",
-          "部分狹窄巷弄若有機車違停需注意行人動線",
-          "特定時間帶應多留意人潮走動與環境維護狀況",
-        ],
-        surveyRecommendations: [
-          "建議於平日傍晚 18:00~19:30 與週末上午各實地再複勘一次人車流量",
-          "實地檢視建築周圍有無油煙直排或雜物堆置死角",
-          "確認常態步行至最近捷運/大眾運輸站點的連續人行道安全性",
-        ],
-        summary: `${streetName || "目標路段"} 社區宜居綜合指數 (CLS) 評分 ${overallScore} 分，整體生活條件具備高度實用性與穩定性。`,
+        source: "unavailable",
+        overallScore: overallScore ?? null,
+        strengths: [],
+        weaknesses: [],
+        surveyRecommendations: [],
+        summary: "AI 分析服務目前不可用；未產生未經資料支持的宜居結論。",
       });
     }
 

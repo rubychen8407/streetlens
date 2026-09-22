@@ -1,0 +1,25 @@
+name: Scheduled external data refresh
+
+on:
+  schedule:
+    # Run every 6 hours. Server-side source cadence decides what is actually due.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+
+      - name: Refresh persisted external data
+        env:
+          STREETLENS_REFRESH_URL: ${{ secrets.STREETLENS_REFRESH_URL || secrets.STREETLENS_BASE_URL }}
+          STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}
+        run: npm run refresh:data

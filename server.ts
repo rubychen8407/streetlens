@@ -1180,8 +1180,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getPoiDensityReference(),
       getC5CommunityReference(),
       getDistanceAndAirQualityReferences(),
-      getNearestParkDistanceReference(),
-      getNearestCommunityDistanceReference(),
+      getNearestParkDistanceReference(scopeKey),
+      getNearestCommunityDistanceReference(scopeKey),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;

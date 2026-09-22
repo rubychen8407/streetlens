@@ -41,7 +41,7 @@ function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
 export function AssessmentWorkspace({
   view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, fieldChecks, onToggleFieldCheck, fieldNotes,
-  onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs,
+  onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite,
 }: AssessmentWorkspaceProps) {
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [name, setName] = useState('');

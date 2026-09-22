@@ -205,7 +205,7 @@ export interface SavedLocation {
 export interface ScoreFactor {
   category: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
   indicator: string;
-  value: number;
+  value: number | null;
   unit: string;
   direction: 'higher_is_better' | 'lower_is_better';
   source: string;
@@ -214,7 +214,7 @@ export interface ScoreFactor {
 }
 
 export interface CategoryScore {
-  score: number;
+  score: number | null;
   factors: ScoreFactor[];
 }
 
@@ -224,7 +224,7 @@ export interface StreetAssessmentScores {
   c3: CategoryScore;
   c4: CategoryScore;
   c5: CategoryScore;
-  overall: number;
+  overall: number | null;
   weights: Record<'C1' | 'C2' | 'C3' | 'C4' | 'C5', number>;
   confidence: 'high' | 'medium' | 'low';
 }

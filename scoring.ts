@@ -116,12 +116,13 @@ export function average(values: number[]): number {
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
 }
 
-function empiricalPercentileScore(value: number | undefined, referenceValues: number[] | undefined): number | null {
-  if (!Number.isFinite(value) || !referenceValues || referenceValues.length < 20) return null;
+function empiricalPercentileScore(value: number | undefined, referenceValues: number[] | undefined, direction: "higher_is_better" | "lower_is_better" = "higher_is_better"): number | null {
+  if (!Number.isFinite(value) || !referenceValues) return null;
   const sorted = referenceValues.filter(Number.isFinite).sort((a, b) => a - b);
   if (sorted.length < 20) return null;
   const rank = sorted.filter((candidate) => candidate <= Number(value)).length;
-  return clampScore((rank / sorted.length) * 100);
+  const percentile = (rank / sorted.length) * 100;
+  return clampScore(direction === "lower_is_better" ? 100 - percentile : percentile);
 }
 
 function confidenceRank(value: "high" | "medium" | "low"): number {
@@ -145,11 +146,15 @@ export function calculateAssessment(
   c2PoiDensityReference?: number[],
   c5CommunityCount?: number,
   c5CommunityReference?: number[],
+  normalization?: {
+    c2Distances?: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
+    c3RailDistances?: number[];
+    c3BusDistances?: number[];
+    c4Aqi?: number[];
+  },
 ): AssessmentScores {
 
-  // C1 uses only official, geocoded Taipei traffic accident records.
-  // The category score remains unavailable until crime/hazard sources are also wired in;
-  // we expose the real accident indicators without pretending they represent all safety risk.
+  // C1 uses only source-backed accident and official flood-hazard observations.
   const c1AccidentCount = c1SafetyMetrics?.accidentCount500m;
   const c1FatalCount = c1SafetyMetrics?.fatalAccidentCount500m;
   const c1InjuryCount = c1SafetyMetrics?.injuryAccidentCount500m;
@@ -193,12 +198,10 @@ export function calculateAssessment(
     },
   ];
   const floodCells = c1SafetyMetrics?.floodHazard || [];
-  const maxFloodDepth = floodCells
-    .map((cell) => Number(cell.depthCm))
-    .filter(Number.isFinite)
-    .reduce((max, depth) => Math.max(max, depth), 0);
-  const accidentScore = empiricalPercentileScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference);
-  const floodScore = empiricalPercentileScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference);
+  const floodDepths = floodCells.map((cell) => Number(cell.depthCm)).filter(Number.isFinite);
+  const maxFloodDepth = floodDepths.length ? Math.max(...floodDepths) : undefined;
+  const accidentScore = empiricalPercentileScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference, "lower_is_better");
+  const floodScore = empiricalPercentileScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference, "lower_is_better");
   for (const cell of floodCells) {
     c1Factors.push({
       category: "C1",
@@ -262,7 +265,7 @@ export function calculateAssessment(
   const poiDensityScore = empiricalPercentileScore(poiDensity, c2PoiDensityReference);
   const c2ComponentScores = c2Definitions
     .map(([indicator, value]) => Number.isFinite(Number(value))
-      ? inverseDistanceScore(Number(value), indicator === "clinicDist" || indicator === "schoolDist" ? 500 : 400)
+      ? empiricalPercentileScore(Number(value), normalization?.c2Distances?.[indicator], "lower_is_better")
       : null)
     .filter((value): value is number => value !== null);
   if (poiDensityScore !== null) {
@@ -299,9 +302,10 @@ export function calculateAssessment(
     },
   ];
   const c3ComponentScores = c3Factors
-    .map((factor) => factor.value == null ? null : inverseDistanceScore(
+    .map((factor) => factor.value == null ? null : empiricalPercentileScore(
       factor.value,
-      factor.indicator === "busStopDist" ? 180 : 700,
+      factor.indicator === "busStopDist" ? normalization?.c3BusDistances : normalization?.c3RailDistances,
+      "lower_is_better",
     ))
     .filter((value): value is number => value !== null);
   const c3: number | null = c3ComponentScores.length
@@ -309,7 +313,7 @@ export function calculateAssessment(
     : null;
 
   // C4 combines only source-backed air quality and official green inventory metrics.
-  const airScore = weather?.aqi != null ? clampScore(100 - weather.aqi / 2) : null;
+  const airScore = weather?.aqi != null ? empiricalPercentileScore(weather.aqi, normalization?.c4Aqi, "lower_is_better") : null;
   const c4Factors: ScoreFactor[] = [{
     category: "C4",
     indicator: "airQualityScore",
@@ -364,14 +368,9 @@ export function calculateAssessment(
     },
   );
   // Raw counts are preserved as facts. Density is calculated from the fixed 800m
-  // observation radius (2.0106 km²) so comparisons do not depend on an arbitrary
-  // "count × score" multiplier. We do not turn density into a score until a
-  // source-backed normalization benchmark is available.
-  const greenScores = [
-    Number.isFinite(Number(nearestParkDist)) ? inverseDistanceScore(Number(nearestParkDist), 600) : null,
-    streetTreeDensityScore,
-    parkTreeDensityScore,
-  ].filter((value): value is number => value !== null);
+  // observation radius (2.0106 km²). Nearest-park distance is exposed as a fact;
+  // it is not scored until a real reference distribution is available.
+  const greenScores = [streetTreeDensityScore, parkTreeDensityScore].filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
 

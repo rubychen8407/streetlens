@@ -7,7 +7,7 @@ import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getGreenDensityReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getGreenDensityReference, getSafetyReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -1001,7 +1001,27 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const scores = calculateAssessment(null, {}, weather || undefined, c1SafetyMetrics, c2PoiMetrics, c3TransitMetrics, c4GreenMetrics);
+    const [safetyReference, communityReference] = await Promise.all([
+      getSafetyReference(scopeKey),
+      getC5CommunityReference(scopeKey),
+    ]);
+    c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
+    c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
+    const communityCount = pois.filter((poi: any) =>
+      poi.category === "C5"
+      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
+    ).length;
+    const scores = calculateAssessment(
+      null,
+      {},
+      weather || undefined,
+      c1SafetyMetrics,
+      c2PoiMetrics,
+      c3TransitMetrics,
+      c4GreenMetrics,
+      communityCount,
+      communityReference,
+    );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
     return res.json({
       location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,

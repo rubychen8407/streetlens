@@ -70,7 +70,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 // Geocoding & Maps: Google Maps Platform API (Geocoding, Places New, Routes, Roads)
 // Using authorized provisioned key for high accuracy Taiwan spatial infrastructure.
 // ---------------------------------------------------------------------------
-const GOOGLE_MAPS_API_KEY = "AIzaSyBzAKe3-ZKG1QzmapQgGhnsBdFnwFVoaQM";
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 
 // Small in-memory cache for reverse-geocode lookups so dragging the pin
 // around the same spot doesn't re-hit the geocoding API every time.
@@ -235,61 +235,39 @@ app.get("/api/reverse-geocode", async (req: Request, res: Response) => {
   }
 });
 
-// 台灣環境部 (環保署) 核心空氣品質監測站對照庫
-const TAIWAN_EPA_STATIONS = [
-  { name: '大安', city: '台北市', district: '大安區', lat: 25.033, lng: 121.543, baseAqi: 34, pm25: 8.5 },
-  { name: '古亭', city: '台北市', district: '中正區', lat: 25.020, lng: 121.529, baseAqi: 36, pm25: 9.0 },
-  { name: '萬華', city: '台北市', district: '萬華區', lat: 25.046, lng: 121.507, baseAqi: 42, pm25: 11.2 },
-  { name: '中山', city: '台北市', district: '中山區', lat: 25.063, lng: 121.526, baseAqi: 39, pm25: 10.4 },
-  { name: '松山', city: '台北市', district: '松山區', lat: 25.050, lng: 121.578, baseAqi: 37, pm25: 9.8 },
-  { name: '士林', city: '台北市', district: '士林區', lat: 25.093, lng: 121.525, baseAqi: 31, pm25: 7.6 },
-  { name: '板橋', city: '新北市', district: '板橋區', lat: 25.012, lng: 121.458, baseAqi: 43, pm25: 11.8 },
-  { name: '菜寮', city: '新北市', district: '三重區', lat: 25.061, lng: 121.493, baseAqi: 46, pm25: 12.6 },
-  { name: '新莊', city: '新北市', district: '新莊區', lat: 25.037, lng: 121.450, baseAqi: 44, pm25: 12.0 },
-  { name: '永和', city: '新北市', district: '永和區', lat: 25.006, lng: 121.516, baseAqi: 41, pm25: 10.8 },
-  { name: '淡水', city: '新北市', district: '淡水區', lat: 25.164, lng: 121.448, baseAqi: 28, pm25: 6.8 },
-  { name: '桃園', city: '桃園市', district: '桃園區', lat: 24.998, lng: 121.312, baseAqi: 50, pm25: 14.5 },
-  { name: '中壢', city: '桃園市', district: '中壢區', lat: 24.953, lng: 121.221, baseAqi: 54, pm25: 15.8 },
-  { name: '新竹', city: '新竹市', district: '東區', lat: 24.805, lng: 120.973, baseAqi: 35, pm25: 9.2 },
-  { name: '忠明', city: '台中市', district: '西區', lat: 24.151, lng: 120.665, baseAqi: 58, pm25: 17.2 },
-  { name: '西屯', city: '台中市', district: '西屯區', lat: 24.162, lng: 120.618, baseAqi: 62, pm25: 18.5 },
-  { name: '彰化', city: '彰化縣', district: '彰化市', lat: 24.075, lng: 120.541, baseAqi: 64, pm25: 19.8 },
-  { name: '臺南', city: '台南市', district: '中西區', lat: 22.984, lng: 120.202, baseAqi: 68, pm25: 21.5 },
-  { name: '安南', city: '台南市', district: '安南區', lat: 23.048, lng: 120.183, baseAqi: 71, pm25: 22.8 },
-  { name: '前金', city: '高雄市', district: '前金區', lat: 22.632, lng: 120.288, baseAqi: 74, pm25: 24.5 },
-  { name: '左營', city: '高雄市', district: '左營區', lat: 22.674, lng: 120.297, baseAqi: 77, pm25: 25.8 },
-  { name: '宜蘭', city: '宜蘭縣', district: '宜蘭市', lat: 24.747, lng: 121.756, baseAqi: 22, pm25: 4.8 },
-  { name: '花蓮', city: '花蓮縣', district: '花蓮市', lat: 23.975, lng: 121.599, baseAqi: 20, pm25: 4.2 },
-  { name: '臺東', city: '台東縣', district: '台東市', lat: 22.755, lng: 121.150, baseAqi: 18, pm25: 3.5 },
-];
-
-function getNearestEpaStation(lat: number, lng: number) {
-  let nearest = TAIWAN_EPA_STATIONS[0];
-  let minDist = Infinity;
-  for (const st of TAIWAN_EPA_STATIONS) {
-    const d = Math.hypot(lat - st.lat, lng - st.lng);
-    if (d < minDist) {
-      minDist = d;
-      nearest = st;
-    }
-  }
-  return nearest;
-}
-
-// 實時天氣與環保署空品端點
+// Air-quality data is fetched from Open-Meteo's Air Quality API at request time.
+// Do not use hardcoded or synthetic AQI values: model data must be labeled as such.
 app.get("/api/weather", async (req: Request, res: Response) => {
   try {
     const lat = parseFloat((req.query.lat as string) || "25.033");
     const lng = parseFloat((req.query.lng as string) || "121.5654");
 
-    const epaStation = getNearestEpaStation(lat, lng);
-    const stationOffset = (Math.abs(Math.sin(lat * 100)) * 5) - 2.5;
-    const aqi = Math.max(12, Math.round(epaStation.baseAqi + stationOffset));
-    const pm25 = +(epaStation.pm25 + stationOffset * 0.3).toFixed(1);
+    let aqi: number | null = null;
+    let pm25: number | null = null;
+    let airQualityTimestamp: string | null = null;
 
-    let aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' = '良好';
-    if (aqi > 100) aqiStatus = '對敏感族群不健康';
-    else if (aqi > 50) aqiStatus = '普通';
+    try {
+      const airResp = await fetch(
+        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,pm2_5&timezone=auto`,
+        { headers: { "User-Agent": "StreetLens/1.0" } }
+      );
+      if (airResp.ok) {
+        const airData: any = await airResp.json();
+        aqi = typeof airData.current?.us_aqi === "number" ? Math.round(airData.current.us_aqi) : null;
+        pm25 = typeof airData.current?.pm2_5 === "number" ? +airData.current.pm2_5.toFixed(1) : null;
+        airQualityTimestamp = airData.current?.time || null;
+      }
+    } catch (e) {
+      console.warn("Open-Meteo air-quality fetch failed:", e);
+    }
+
+    let aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' | '未知' = '未知';
+    if (aqi !== null) {
+      if (aqi > 150) aqiStatus = '不健康';
+      else if (aqi > 100) aqiStatus = '對敏感族群不健康';
+      else if (aqi > 50) aqiStatus = '普通';
+      else aqiStatus = '良好';
+    }
 
     let temperature = 26;
     let humidity = 65;
@@ -344,9 +322,9 @@ app.get("/api/weather", async (req: Request, res: Response) => {
       aqiStatus,
       pm25,
       windSpeed,
-      stationName: epaStation.name,
-      stationDistrict: `${epaStation.city}${epaStation.district}`,
-      source: '環境部(環保署)空氣品質監測站網 & Open-Meteo',
+      airQualityTimestamp,
+      source: 'Open-Meteo Air Quality (CAMS model data)',
+      sourceType: 'model',
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to fetch weather data" });
@@ -495,78 +473,9 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]>
   }
 }
 
-// 台灣真實生活機能在地空間常模（依據政府開放資料與行政區/路名精確分佈）
-function generateLocalTaiwanPois(lat: number, lng: number, district: string, streetName: string) {
-  const shortStreet = streetName ? streetName.replace(/(台北市|新北市|台中市|高雄市|台南市|桃園市|新竹市|市|區)/g, '').slice(0, 4) : '';
-  const prefix = district || '在地';
-
-  return [
-    {
-      id: `local_711_${Math.round(lat * 1000)}`,
-      name: `7-ELEVEN 便利商店 (${prefix}${shortStreet || '門市'})`,
-      category: 'C2',
-      lat: +(lat + 0.0006).toFixed(6),
-      lng: +(lng + 0.0005).toFixed(6),
-      note: '24小時便利超商 · ATM與生活機能',
-    },
-    {
-      id: `local_fm_${Math.round(lat * 1000)}`,
-      name: `全家便利商店 FamilyMart (${prefix}店)`,
-      category: 'C2',
-      lat: +(lat - 0.0007).toFixed(6),
-      lng: +(lng + 0.0008).toFixed(6),
-      note: '24小時超商 · 快捷物流與生活物資',
-    },
-    {
-      id: `local_px_${Math.round(lat * 1000)}`,
-      name: `全聯福利中心 PX-Mart (${prefix}生鮮店)`,
-      category: 'C2',
-      lat: +(lat + 0.0015).toFixed(6),
-      lng: +(lng - 0.0013).toFixed(6),
-      note: '生鮮超市 · 生鮮蔬果與家庭民生物資',
-    },
-    {
-      id: `local_clinic_${Math.round(lat * 1000)}`,
-      name: `${prefix}社區聯合診所 / 健保特約藥局`,
-      category: 'C2',
-      lat: +(lat - 0.0011).toFixed(6),
-      lng: +(lng - 0.0009).toFixed(6),
-      note: '基層醫療診所 · 慢性病連續處方箋',
-    },
-    {
-      id: `local_mrt_${Math.round(lat * 1000)}`,
-      name: `${prefix}公共運輸軌道/公車轉乘接駁`,
-      category: 'C3',
-      lat: +(lat + 0.0021).toFixed(6),
-      lng: +(lng + 0.0016).toFixed(6),
-      note: '捷運/軌道與幹線公車快速路網',
-    },
-    {
-      id: `local_park_${Math.round(lat * 1000)}`,
-      name: `${prefix}鄰里社區綠地公園`,
-      category: 'C4',
-      lat: +(lat - 0.0016).toFixed(6),
-      lng: +(lng + 0.0014).toFixed(6),
-      note: '林蔭休憩步道、綠覆與親子運動休閒',
-    },
-    {
-      id: `local_police_${Math.round(lat * 1000)}`,
-      name: `轄區警局派出所 (${prefix}警勤區)`,
-      category: 'C1',
-      lat: +(lat + 0.0026).toFixed(6),
-      lng: +(lng - 0.0019).toFixed(6),
-      note: '警政署社區巡邏治安聯防據點',
-    },
-    {
-      id: `local_gov_${Math.round(lat * 1000)}`,
-      name: `${prefix}里民活動中心 / 區公所服務中心`,
-      category: 'C5',
-      lat: +(lat - 0.0023).toFixed(6),
-      lng: +(lng - 0.0017).toFixed(6),
-      note: '里民大會、長照據點與社區自治活動',
-    },
-  ];
-}
+// Synthetic POIs are intentionally not generated. Nearby POIs must come from
+// an external geospatial source so the map never presents invented businesses
+// or facilities as real-world locations.
 
 // 即時附近 POI 端點 — Google Places API (New) 優先，OSM Overpass 其次，
 // 結合在地空間開放常模確保各點位皆有清晰對應的生活機能標記
@@ -762,7 +671,8 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
               // Calculate differential livability score per street based on position
               const isMain = roadName.includes(streetName) || roadName.includes("路") || roadName.includes("段") || roadName.includes("大道");
               const isQuietLane = roadName.includes("街") || roadName.includes("巷");
-              const scoreOffset = isMain ? (Math.random() > 0.5 ? 2 : -2) : (isQuietLane ? 3 : 0);
+              const roadHash = [...roadName].reduce((hash, char) => ((hash * 31 + char.charCodeAt(0)) >>> 0), 7);
+              const scoreOffset = isMain ? (roadHash % 2 === 0 ? 2 : -2) : (isQuietLane ? 3 : 0);
               const segScore = Math.max(50, Math.min(98, Math.round(baseScore + scoreOffset)));
 
               segments.push({

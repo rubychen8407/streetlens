@@ -253,3 +253,100 @@ export async function getGreenDensityReference(
 export async function closeDataDb(): Promise<void> {
   if (dataDb) await dataDb.end();
 }
+
+
+function distanceMeters(lat: number, lng: number, pLat: number, pLng: number): number {
+  const R = 6371000;
+  const dLat = (pLat - lat) * Math.PI / 180;
+  const dLng = (pLng - lng) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat * Math.PI / 180) * Math.cos(pLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function parseScope(scopeKey: string): { lat: number; lng: number } | null {
+  const [lat, lng] = scopeKey.split(",").map(Number);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+export async function getDistanceAndAirQualityReferences(excludeScopeKey?: string): Promise<{
+  c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
+  c3RailDistances: number[];
+  c3BusDistances: number[];
+  c4Aqi: number[];
+}> {
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c4Aqi: [] };
+
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
+     FROM external_data_snapshots
+     WHERE source_key IN ('google_places', 'openstreetmap', 'tdx_transit', 'open_meteo_air_quality')
+       AND status IN ('available', 'empty')`,
+  );
+
+  const c2ByScope = new Map<string, Map<string, number>>();
+  const c3RailByScope = new Map<string, number>();
+  const c3BusByScope = new Map<string, number>();
+  const c4Aqi: number[] = [];
+
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+
+    if (row.sourceKey === "open_meteo_air_quality") {
+      const aqi = Number(row.payload?.aqi);
+      if (Number.isFinite(aqi)) c4Aqi.push(aqi);
+      continue;
+    }
+
+    if (row.sourceKey === "tdx_transit") {
+      const rail = Array.isArray(row.payload?.railStations) ? row.payload.railStations
+        .map((x: any) => Number(x?.distanceMeters)).filter(Number.isFinite) : [];
+      const bus = Array.isArray(row.payload?.stops) ? row.payload.stops
+        .map((x: any) => Number(x?.distanceMeters)).filter(Number.isFinite) : [];
+      if (rail.length) c3RailByScope.set(row.scopeKey, Math.min(...rail));
+      if (bus.length) c3BusByScope.set(row.scopeKey, Math.min(...bus));
+      continue;
+    }
+
+    const scope = parseScope(row.scopeKey);
+    const pois = Array.isArray(row.payload?.pois) ? row.payload.pois : [];
+    if (!scope) continue;
+    if (!c2ByScope.has(row.scopeKey)) c2ByScope.set(row.scopeKey, new Map());
+    const byType = c2ByScope.get(row.scopeKey)!;
+    for (const poi of pois) {
+      const pLat = Number(poi?.lat);
+      const pLng = Number(poi?.lng);
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) continue;
+      const distance = Number.isFinite(Number(poi?.distanceMeters))
+        ? Number(poi.distanceMeters)
+        : distanceMeters(scope.lat, scope.lng, pLat, pLng);
+      const type = String(poi?.amenityType || "");
+      if (!["supermarket", "convenience", "clinic", "school", "bank_post"].includes(type)) continue;
+      const existing = byType.get(type);
+      if (existing == null || distance < existing) byType.set(type, distance);
+    }
+  }
+
+  const c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>> = {};
+  const typeMap = {
+    supermarket: "supermarketDist",
+    convenience: "convenienceDist",
+    clinic: "clinicDist",
+    school: "schoolDist",
+    bank_post: "bankPostDist",
+  } as const;
+  for (const [scopeKey, byType] of c2ByScope) {
+    for (const [type, distance] of byType) {
+      const indicator = typeMap[type as keyof typeof typeMap];
+      if (!indicator) continue;
+      (c2Distances[indicator] ||= []).push(distance);
+    }
+  }
+
+  return {
+    c2Distances,
+    c3RailDistances: [...c3RailByScope.values()],
+    c3BusDistances: [...c3BusByScope.values()],
+    c4Aqi,
+  };
+}

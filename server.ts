@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
-import { fetchTaipeiSafetyData } from "./safety";
+import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
 
 dotenv.config();
 
@@ -848,6 +848,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       fetchTdxTransitData(lat, lng),
       fetchTaipeiGreenData(lat, lng),
       fetchTaipeiSafetyData(lat, lng, 500),
+      fetchTaipeiFloodHazardData(lat, lng),
       fetch(`http://127.0.0.1:${PORT}/api/weather?lat=${lat}&lng=${lng}`),
     ]);
 

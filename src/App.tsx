@@ -216,12 +216,6 @@ export default function App() {
   }, []);
 
 
-  // Reset to baseline
-  const handleResetToBaseline = () => {
-    // Re-read the persisted assessment instead of restoring synthetic/local baseline data.
-    fetchLocationData(targetLocation, district, city, streetName);
-  };
-
   // Select and load a saved location from the Bottom Sheet
   const handleSelectSavedLocation = (saved: SavedLocation) => {
     setTargetLocation(saved.coords);
@@ -480,11 +474,6 @@ export default function App() {
         c3={c3}
         c4={c4}
         c5={c5}
-        onUpdateC1={setC1}
-        onUpdateC2={setC2}
-        onUpdateC3={setC3}
-        onUpdateC4={setC4}
-        onUpdateC5={setC5}
         weights={weights}
         onUpdateWeights={handleUpdateWeights}
         weightMode={weightMode}
@@ -496,7 +485,6 @@ export default function App() {
         baselineSummary={baselineSummary}
         fieldNotes={fieldNotes}
         onUpdateNotes={setFieldNotes}
-        onResetToBaseline={handleResetToBaseline}
         weatherData={weatherData}
         scoreFactors={assessment?.factors ?? []}
         sourceStatus={assessment?.sourceStatus ?? []}

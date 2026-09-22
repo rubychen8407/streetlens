@@ -12,7 +12,8 @@
     "check:external-data": "tsx scripts/check-external-data.ts",
     "refresh:data": "tsx scripts/refresh-data.ts",
     "test:score-integrity": "tsx scripts/test-score-integrity.ts",
-    "test:assessment-policy": "tsx scripts/test-assessment-snapshot-policy.ts"
+    "test:assessment-policy": "tsx scripts/test-assessment-snapshot-policy.ts",
+    "test:snapshot-preservation": "tsx scripts/test-snapshot-preservation.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -151,6 +151,7 @@ export function calculateAssessment(
     c3RailDistances?: number[];
     c3BusDistances?: number[];
     c4Aqi?: number[];
+    c4NearestParkDistances?: number[];
   },
 ): AssessmentScores {
 
@@ -368,9 +369,24 @@ export function calculateAssessment(
     },
   );
   // Raw counts are preserved as facts. Density is calculated from the fixed 800m
-  // observation radius (2.0106 km²). Nearest-park distance is exposed as a fact;
-  // it is not scored until a real reference distribution is available.
-  const greenScores = [streetTreeDensityScore, parkTreeDensityScore].filter((value): value is number => value !== null);
+  // observation radius (2.0106 km²). Nearest-park distance is scored only when
+  // a real reference distribution contains at least 20 observations.
+  const nearestParkScore = empiricalPercentileScore(nearestParkDist, normalization?.c4NearestParkDistances, "lower_is_better");
+  if (nearestParkScore !== null) {
+    c4Factors.push({
+      category: "C4",
+      indicator: "nearestParkDistanceScore",
+      value: nearestParkScore,
+      unit: "score",
+      direction: "higher_is_better",
+      source: c4GreenMetrics?.source || "unavailable",
+      method: "calculated",
+      confidence: "medium",
+      status: "available",
+      retrievedAt: c4GreenMetrics?.retrievedAt,
+    });
+  }
+  const greenScores = [streetTreeDensityScore, parkTreeDensityScore, nearestParkScore].filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
 

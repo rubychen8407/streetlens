@@ -499,6 +499,7 @@ export default function App() {
         onResetToBaseline={handleResetToBaseline}
         weatherData={weatherData}
         scoreFactors={assessment?.factors ?? []}
+        sourceStatus={assessment?.sourceStatus ?? []}
         targetLocation={targetLocation}
         onSelectSavedLocation={handleSelectSavedLocation}
       />

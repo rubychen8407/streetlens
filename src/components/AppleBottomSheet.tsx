@@ -11,6 +11,7 @@ import {
   IndicatorSourceItem,
   ScoreFactor,
   SavedLocation,
+  AssessmentSourceStatus,
 } from '../types';
 import {
   X,
@@ -96,6 +97,7 @@ interface AppleBottomSheetProps {
   weatherData?: WeatherData | null;
   indicatorSources?: IndicatorSourceItem[];
   scoreFactors?: ScoreFactor[];
+  sourceStatus?: AssessmentSourceStatus[];
   targetLocation?: { lat: number; lng: number };
   onSelectSavedLocation?: (saved: SavedLocation) => void;
 }
@@ -133,6 +135,7 @@ export function AppleBottomSheet({
   weatherData,
   indicatorSources = [],
   scoreFactors = [],
+  sourceStatus = [],
   targetLocation,
   onSelectSavedLocation,
 }: AppleBottomSheetProps) {
@@ -1236,6 +1239,37 @@ export function AppleBottomSheet({
                   系統根據當前地圖所選坐標與生活圈（{city} {district} {streetName || '目標地'}），自動對應抓取以下 8 大中央及地方主管機關之資料庫數值：
                 </p>
               </div>
+
+              {/* Persisted source freshness */}
+              {sourceStatus.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <Database className="w-4 h-4 text-indigo-400" />
+                    <span>已持久化資料快照狀態</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1.5">
+                    評分請求只讀取資料庫快照，不會在使用者請求中即時抓取外部資料。
+                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    {sourceStatus.map((item) => (
+                      <div key={item.source} className="rounded-lg bg-black/20 px-2.5 py-2 text-[10px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-200 font-semibold">{item.source}</span>
+                          <span className={item.status === 'available' ? 'text-emerald-400' : 'text-amber-400'}>
+                            {item.status}
+                          </span>
+                        </div>
+                        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-slate-500">
+                          <span>取得：{item.retrievedAt ? new Date(item.retrievedAt).toLocaleString() : 'N/A'}</span>
+                          <span>檢查：{item.checkedAt ? new Date(item.checkedAt).toLocaleString() : 'N/A'}</span>
+                          <span>版本：{item.sourceVersion || 'N/A'}</span>
+                          <span>Freshness：{item.freshnessMethod}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* List of 8 items */}
               <div className="space-y-2">

@@ -57,6 +57,8 @@ export interface C3TransitMetrics {
 export interface C4GreenMetrics {
   streetTreeCount800m?: number;
   parkTreeCount800m?: number;
+  nearestParkDist?: number;
+  parkCount800m?: number;
   source: string;
   method: "official" | "calculated";
   confidence: "high" | "medium" | "low";
@@ -211,6 +213,8 @@ export function calculateAssessment(
   }];
   const streetTreeCount = c4GreenMetrics?.streetTreeCount800m;
   const parkTreeCount = c4GreenMetrics?.parkTreeCount800m;
+  const nearestParkDist = c4GreenMetrics?.nearestParkDist;
+  const parkCount800m = c4GreenMetrics?.parkCount800m;
   c4Factors.push(
     {
       category: "C4", indicator: "streetTreeCount800m", value: Number.isFinite(Number(streetTreeCount)) ? Number(streetTreeCount) : null,
@@ -223,9 +227,23 @@ export function calculateAssessment(
       method: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
     },
   );
+  c4Factors.push(
+    {
+      category: "C4", indicator: "nearestParkDist", value: Number.isFinite(Number(nearestParkDist)) ? Number(nearestParkDist) : null,
+      unit: "m", direction: "lower_is_better", source: Number.isFinite(Number(nearestParkDist)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
+      method: Number.isFinite(Number(nearestParkDist)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(nearestParkDist)) ? "medium" : "low", status: Number.isFinite(Number(nearestParkDist)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+    },
+    {
+      category: "C4", indicator: "parkCount800m", value: Number.isFinite(Number(parkCount800m)) ? Number(parkCount800m) : null,
+      unit: "parks", direction: "higher_is_better", source: Number.isFinite(Number(parkCount800m)) ? "OpenStreetMap" : "unavailable",
+      method: Number.isFinite(Number(parkCount800m)) ? "osm" : "calculated", confidence: Number.isFinite(Number(parkCount800m)) ? "medium" : "low", status: Number.isFinite(Number(parkCount800m)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+    },
+  );
   const greenScores = [
     Number.isFinite(Number(streetTreeCount)) ? clampScore(Math.min(100, Number(streetTreeCount) * 1.5)) : null,
     Number.isFinite(Number(parkTreeCount)) ? clampScore(Math.min(100, Number(parkTreeCount) * 1.5)) : null,
+    Number.isFinite(Number(nearestParkDist)) ? inverseDistanceScore(Number(nearestParkDist), 600) : null,
+    Number.isFinite(Number(parkCount800m)) ? clampScore(Math.min(100, Number(parkCount800m) * 20)) : null,
   ].filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;

@@ -1185,12 +1185,6 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
-    const communityPois = pois.filter((poi: any) =>
-      poi.category === "C5"
-      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
-    );
-    const communityDistances = communityPois.map((poi: any) => Number(poi.distanceMeters)).filter(Number.isFinite);
-    const nearestCommunityDist = communityDistances.length ? Math.min(...communityDistances) : undefined;
     const communityCount = pois.filter((poi: any) =>
       poi.category === "C5"
       || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
@@ -1206,11 +1200,11 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       amenityReference,
       communityCount,
       communityReference,
+      nearestCommunityCulturalDistance,
       {
         ...normalizationReferences,
         c4NearestParkDistances: nearestParkReference,
-        c5NearestCommunityDistance: nearestCommunityDist,
-        c5NearestCommunityDistanceReference: nearestCommunityReference,
+        c5NearestCommunityDistances: nearestCommunityReference,
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];

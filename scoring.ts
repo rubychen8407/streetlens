@@ -53,6 +53,17 @@ export interface C3TransitMetrics {
   retrievedAt?: string;
 }
 
+
+export interface C4GreenMetrics {
+  streetTreeCount800m?: number;
+  parkTreeCount800m?: number;
+  source: string;
+  method: "official" | "calculated";
+  confidence: "high" | "medium" | "low";
+  status?: "available" | "empty" | "timeout" | "error" | "unavailable";
+  retrievedAt?: string;
+}
+
 const DEFAULT_WEIGHTS: Record<Category, number> = {
   C1: 0.2,
   C2: 0.2,
@@ -91,6 +102,7 @@ export function calculateAssessment(
   weather?: { aqi: number | null; pm25: number | null; source?: string; sourceType?: string },
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
+  c4GreenMetrics?: C4GreenMetrics,
 ): AssessmentScores {
 
   // Do not derive safety from regional estimates. Until a real safety source is wired in,
@@ -184,8 +196,7 @@ export function calculateAssessment(
     ? clampScore(average(c3ComponentScores))
     : null;
 
-  // C4 currently has one source-backed indicator: live/model AQI.
-  // Noise, green coverage and park distance stay unavailable until source-backed.
+  // C4 combines only source-backed air quality and official green inventory metrics.
   const airScore = weather?.aqi != null ? clampScore(100 - weather.aqi / 2) : null;
   const c4Factors: ScoreFactor[] = [{
     category: "C4",
@@ -198,7 +209,26 @@ export function calculateAssessment(
     confidence: airScore != null ? "medium" : "low",
     status: airScore != null ? "available" : "unavailable",
   }];
-  const c4: number | null = airScore;
+  const streetTreeCount = c4GreenMetrics?.streetTreeCount800m;
+  const parkTreeCount = c4GreenMetrics?.parkTreeCount800m;
+  c4Factors.push(
+    {
+      category: "C4", indicator: "streetTreeCount800m", value: Number.isFinite(Number(streetTreeCount)) ? Number(streetTreeCount) : null,
+      unit: "trees", direction: "higher_is_better", source: Number.isFinite(Number(streetTreeCount)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
+      method: Number.isFinite(Number(streetTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(streetTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(streetTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+    },
+    {
+      category: "C4", indicator: "parkTreeCount800m", value: Number.isFinite(Number(parkTreeCount)) ? Number(parkTreeCount) : null,
+      unit: "trees", direction: "higher_is_better", source: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
+      method: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+    },
+  );
+  const greenScores = [
+    Number.isFinite(Number(streetTreeCount)) ? clampScore(Math.min(100, Number(streetTreeCount) * 1.5)) : null,
+    Number.isFinite(Number(parkTreeCount)) ? clampScore(Math.min(100, Number(parkTreeCount) * 1.5)) : null,
+  ].filter((value): value is number => value !== null);
+  const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
+  const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
 
   // C5 is intentionally unavailable. Social trust/governance/activity must not be
   // inferred from POIs or generated estimates.

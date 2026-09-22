@@ -1135,12 +1135,19 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const osmBus = pois.filter((x: any) => x.amenityType === "bus").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
     const railDist = railDistances.length ? Math.min(...railDistances) : (osmRail.length ? Math.min(...osmRail) : undefined);
     const busDist = busDistances.length ? Math.min(...busDistances) : (osmBus.length ? Math.min(...osmBus) : undefined);
+    const transitSources = [
+      ...(railDistances.length || busDistances.length ? ["TDX / MOTC"] : []),
+      ...(osmRail.length || osmBus.length ? [...new Set(pois.filter((x: any) => x.amenityType === "rail" || x.amenityType === "bus").map((x: any) => x.source).filter(Boolean))] : []),
+    ];
+    const c3RetrievedAt = transitSources.includes("TDX / MOTC")
+      ? snapshots.tdx_transit?.fetchedAt
+      : [...new Set(pois.filter((x: any) => x.amenityType === "rail" || x.amenityType === "bus").map((x: any) => x.retrievedAt).filter(Boolean))].join(" + ") || undefined;
     const c3TransitMetrics = {
       mrtOrRailDist: railDist, busStopDist: busDist,
-      source: "TDX / MOTC + cached POIs", method: "calculated" as const,
+      source: transitSources.length ? transitSources.join(" + ") : "unavailable", method: "calculated" as const,
       confidence: railDistances.length && busDistances.length ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,
       status: railDist != null || busDist != null ? "available" as const : "empty" as const,
-      retrievedAt: snapshots.tdx_transit.fetchedAt,
+      retrievedAt: c3RetrievedAt,
     };
 
     const parkPois = pois.filter((x: any) => x.amenityType === "park" && Number.isFinite(x.distanceMeters));

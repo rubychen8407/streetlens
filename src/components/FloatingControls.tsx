@@ -26,8 +26,8 @@ interface FloatingControlsProps {
   currentStreetName: string;
   district: string;
   city: string;
-  clsScore: number;
-  grade: 'S' | 'A' | 'B' | 'C' | 'D';
+  clsScore: number | null;
+  grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   isLocatingGPS: boolean;
   onLocateMe: () => void;
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;

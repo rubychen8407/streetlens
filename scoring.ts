@@ -203,11 +203,12 @@ export function calculateAssessment(
     });
   }
 
-  // C1 remains unavailable as a composite score until the available official
-  // hazard sources cover the intended safety dimensions. Flood and accident
-  // observations are exposed separately rather than turning partial coverage
-  // into a misleading safety score.
-  const c1: number | null = null;
+  const c1ComponentScores = [accidentScore, floodScore]
+    .filter((value): value is number => value !== null);
+  const c1: number | null = c1ComponentScores.length
+    ? clampScore(average(c1ComponentScores))
+    : null;
+
 
   // C2 is calculated only from source-backed POI distances/counts. Missing POI types
   // remain unavailable; they are never replaced by regional benchmark distances.

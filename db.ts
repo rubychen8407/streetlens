@@ -409,6 +409,36 @@ export async function getNearestParkDistanceReference(excludeScopeKey?: string):
   return [...nearestByScope.values()];
 }
 
+export async function getNearestCommunityCulturalDistanceReference(excludeScopeKey?: string): Promise<number[]> {
+  if (!dataDb) return [];
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", payload
+     FROM external_data_snapshots
+     WHERE source_key IN ('google_places', 'openstreetmap')
+       AND status IN ('available', 'empty')`,
+  );
+  const nearestByScope = new Map<string, number>();
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    const scope = parseScope(row.scopeKey);
+    if (!scope) continue;
+    const pois = Array.isArray(row.payload?.pois) ? row.payload.pois : [];
+    for (const poi of pois) {
+      const isCommunity = poi.category === "C5"
+        || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || ""));
+      if (!isCommunity) continue;
+      const pLat = Number(poi?.lat), pLng = Number(poi?.lng);
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) continue;
+      const distance = Number.isFinite(Number(poi?.distanceMeters))
+        ? Number(poi.distanceMeters)
+        : distanceMeters(scope.lat, scope.lng, pLat, pLng);
+      const current = nearestByScope.get(row.scopeKey);
+      if (current == null || distance < current) nearestByScope.set(row.scopeKey, distance);
+    }
+  }
+  return [...nearestByScope.values()];
+}
+
 export async function getDistanceAndAirQualityReferences(excludeScopeKey?: string): Promise<{
   c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
   c3RailDistances: number[];

@@ -213,6 +213,7 @@ export interface ScoreFactor {
   confidence: 'high' | 'medium' | 'low';
   status?: 'available' | 'unavailable';
   retrievedAt?: string;
+  referenceSampleSize?: number;
 }
 
 export interface CategoryScore {

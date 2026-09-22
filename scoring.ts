@@ -27,6 +27,18 @@ export interface AssessmentScores {
   confidence: "high" | "medium" | "low";
 }
 
+export interface C2PoiMetrics {
+  supermarketDist?: number;
+  convenienceDist?: number;
+  clinicDist?: number;
+  schoolDist?: number;
+  bankPostDist?: number;
+  poiDensityCount?: number;
+  source: string;
+  method: "api" | "osm" | "calculated";
+  confidence: "high" | "medium" | "low";
+}
+
 const DEFAULT_WEIGHTS: Record<Category, number> = {
   C1: 0.2,
   C2: 0.2,
@@ -63,6 +75,7 @@ export function calculateAssessment(
   baseline: any,
   poiCounts: Partial<Record<Category, number>>,
   weather?: { aqi: number | null; pm25: number | null; source?: string; sourceType?: string },
+  c2PoiMetrics?: C2PoiMetrics,
 ): AssessmentScores {
   const source = baseline?.source || "regional_benchmark_estimate";
   const baselineMethod = source === "regional_benchmark_estimate" ? "estimated" : "calculated";
@@ -104,38 +117,63 @@ export function calculateAssessment(
 
   const c1 = clampScore(100 - average(c1Factors.map((f) => f.value)));
 
-  const c2Distances = [
-    ["supermarketDist", baseline?.c2?.supermarketDist],
-    ["convenienceDist", baseline?.c2?.convenienceDist],
-    ["clinicDist", baseline?.c2?.clinicDist],
-    ["schoolDist", baseline?.c2?.schoolDist],
-    ["bankPostDist", baseline?.c2?.bankPostDist],
+  const c2Definitions = [
+    ["supermarketDist", c2PoiMetrics?.supermarketDist ?? baseline?.c2?.supermarketDist],
+    ["convenienceDist", c2PoiMetrics?.convenienceDist ?? baseline?.c2?.convenienceDist],
+    ["clinicDist", c2PoiMetrics?.clinicDist ?? baseline?.c2?.clinicDist],
+    ["schoolDist", c2PoiMetrics?.schoolDist ?? baseline?.c2?.schoolDist],
+    ["bankPostDist", c2PoiMetrics?.bankPostDist ?? baseline?.c2?.bankPostDist],
   ] as const;
-  const c2Factors: ScoreFactor[] = c2Distances.map(([indicator, raw]) => ({
-    category: "C2",
-    indicator,
-    value: Number(raw ?? 0),
-    unit: "m",
-    direction: "lower_is_better",
-    source,
-    method: baselineMethod,
-    confidence: baselineConfidence,
-  }));
-  const poiDensity = Number(baseline?.c2?.poiDensityCount ?? poiCounts.C2 ?? 0);
+
+  const c2UsesPoiData = Boolean(c2PoiMetrics);
+  const c2Source = c2PoiMetrics?.source || source;
+  const c2Method = c2PoiMetrics?.method || baselineMethod;
+  const c2Confidence = c2PoiMetrics?.confidence || baselineConfidence;
+
+  const c2Factors: ScoreFactor[] = c2Definitions.map(([indicator, raw]) => {
+    const hasPoiValue = c2UsesPoiData && Number.isFinite(Number(
+      c2PoiMetrics?.[indicator as keyof C2PoiMetrics],
+    ));
+    return {
+      category: "C2" as Category,
+      indicator,
+      value: Number(raw ?? 0),
+      unit: "m",
+      direction: "lower_is_better" as const,
+      source: hasPoiValue ? c2Source : source,
+      method: hasPoiValue ? c2Method : baselineMethod,
+      confidence: hasPoiValue ? c2Confidence : baselineConfidence,
+    };
+  });
+
+  const poiDensity = Number(
+    c2PoiMetrics?.poiDensityCount ??
+    baseline?.c2?.poiDensityCount ??
+    poiCounts.C2 ??
+    0,
+  );
+  const hasRealPoiDensity = c2PoiMetrics?.poiDensityCount != null;
   c2Factors.push({
     category: "C2",
     indicator: "poiDensityCount",
     value: poiDensity,
     unit: "POIs",
     direction: "higher_is_better",
-    source,
-    method: baselineMethod,
-    confidence: baselineConfidence,
+    source: hasRealPoiDensity ? c2Source : source,
+    method: hasRealPoiDensity ? c2Method : baselineMethod,
+    confidence: hasRealPoiDensity ? c2Confidence : baselineConfidence,
   });
+
   const c2 = clampScore(
-    average(c2Distances.map(([, value]) => inverseDistanceScore(Number(value), 400)).concat(
-      clampScore(poiDensity * 2),
-    )),
+    average(c2Definitions.map(([indicator, value]) => {
+      const hasPoiValue = c2UsesPoiData && Number.isFinite(Number(
+        c2PoiMetrics?.[indicator as keyof C2PoiMetrics],
+      ));
+      return inverseDistanceScore(
+        Number(value),
+        indicator === "clinicDist" || indicator === "schoolDist" ? 500 : 400,
+      );
+    }).concat(clampScore(poiDensity * 2))),
   );
 
   const c3Factors: ScoreFactor[] = [

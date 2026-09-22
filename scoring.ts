@@ -140,6 +140,7 @@ export function calculateAssessment(
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
   c4GreenMetrics?: C4GreenMetrics,
+  c5CommunityCount?: number,
   c5CommunityReference?: number[],
 ): AssessmentScores {
 
@@ -366,21 +367,19 @@ export function calculateAssessment(
 
   // C5 measures source-backed community/cultural access only. It does not
   // claim to measure subjective social trust or civic participation.
-  const communityCount = c5CommunityReference && c5CommunityReference.length >= 0
-    ? null
-    : null;
+  const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference);
   const c5Factors: ScoreFactor[] = [{
     category: "C5",
     indicator: "communityCulturalPoiCount800m",
-    value: null,
+    value: Number.isFinite(Number(c5CommunityCount)) ? Number(c5CommunityCount) : null,
     unit: "POIs",
     direction: "higher_is_better",
     source: "Google Places / OpenStreetMap",
     method: "calculated",
-    confidence: "low",
-    status: "unavailable",
+    confidence: communityScore != null ? "medium" : "low",
+    status: Number.isFinite(Number(c5CommunityCount)) ? "available" : "unavailable",
   }];
-  const c5: number | null = null;
+  const c5: number | null = communityScore;
 
   const categories: Record<Category, CategoryScore> = {
     C1: { score: c1, factors: c1Factors },

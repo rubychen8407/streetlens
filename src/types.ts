@@ -214,6 +214,8 @@ export interface ScoreFactor {
   status?: 'available' | 'unavailable';
   retrievedAt?: string;
   referenceSampleSize?: number;
+  scoringMethod?: 'empirical_percentile' | 'raw_observation' | 'not_scored';
+  availabilityReason?: 'insufficient_reference_data' | 'source_unavailable' | 'no_observation';
 }
 
 export interface CategoryScore {

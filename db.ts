@@ -20,6 +20,10 @@ export interface CachedSnapshot {
   lastModified: string | null;
   contentHash: string;
   fetchedAt: string;
+  checkedAt: string;
+  sourceUpdatedAt: string | null;
+  sourceVersion: string | null;
+  freshnessMethod: "source_updated_at" | "etag" | "last_modified" | "scheduled" | "unknown";
   status: string;
 }
 
@@ -50,8 +54,17 @@ export async function ensureDataCacheSchema(): Promise<void> {
       last_modified TEXT,
       status TEXT NOT NULL,
       fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source_updated_at TIMESTAMPTZ,
+      source_version TEXT,
+      freshness_method TEXT NOT NULL DEFAULT 'unknown',
       UNIQUE (source_key, scope_key)
     );
+
+    ALTER TABLE external_data_snapshots ADD COLUMN IF NOT EXISTS checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE external_data_snapshots ADD COLUMN IF NOT EXISTS source_updated_at TIMESTAMPTZ;
+    ALTER TABLE external_data_snapshots ADD COLUMN IF NOT EXISTS source_version TEXT;
+    ALTER TABLE external_data_snapshots ADD COLUMN IF NOT EXISTS freshness_method TEXT NOT NULL DEFAULT 'unknown';
 
     CREATE INDEX IF NOT EXISTS idx_external_data_snapshots_source_scope
       ON external_data_snapshots(source_key, scope_key);
@@ -96,7 +109,9 @@ export async function getCachedSnapshot(sourceKey: string, scopeKey: string): Pr
   const result = await dataDb.query(
     `SELECT source_key AS "sourceKey", scope_key AS "scopeKey", payload,
             etag, last_modified AS "lastModified", content_hash AS "contentHash",
-            fetched_at AS "fetchedAt", status
+            fetched_at AS "fetchedAt", checked_at AS "checkedAt",
+            source_updated_at AS "sourceUpdatedAt", source_version AS "sourceVersion",
+            freshness_method AS "freshnessMethod", status
      FROM external_data_snapshots
      WHERE source_key = $1 AND scope_key = $2`,
     [sourceKey, scopeKey],
@@ -108,7 +123,14 @@ export async function saveSnapshot(
   sourceKey: string,
   scopeKey: string,
   payload: unknown,
-  metadata: { etag?: string | null; lastModified?: string | null; status: string },
+  metadata: {
+    etag?: string | null;
+    lastModified?: string | null;
+    sourceUpdatedAt?: string | null;
+    sourceVersion?: string | null;
+    freshnessMethod?: CachedSnapshot["freshnessMethod"];
+    status: string;
+  },
 ): Promise<{ changed: boolean; contentHash: string }> {
   if (!dataDb) throw new Error("DATABASE_URL is required for persistent external data storage");
   const contentHash = hashPayload(payload);
@@ -120,21 +142,42 @@ export async function saveSnapshot(
     existing.etag === (metadata.etag ?? existing.etag) &&
     existing.lastModified === (metadata.lastModified ?? existing.lastModified)
   ) {
-    // Source content is unchanged. Keep the stored payload and version.
+    // Content is unchanged: record the check, but do not rewrite the snapshot version.
+    await dataDb.query(
+      `UPDATE external_data_snapshots
+       SET checked_at = NOW(), status = $3,
+           etag = COALESCE($4, etag),
+           last_modified = COALESCE($5, last_modified),
+           source_updated_at = COALESCE($6, source_updated_at),
+           source_version = COALESCE($7, source_version),
+           freshness_method = COALESCE($8, freshness_method)
+       WHERE source_key = $1 AND scope_key = $2`,
+      [
+        sourceKey, scopeKey, metadata.status,
+        metadata.etag ?? null, metadata.lastModified ?? null,
+        metadata.sourceUpdatedAt ?? null, metadata.sourceVersion ?? null,
+        metadata.freshnessMethod ?? "unknown",
+      ],
+    );
     return { changed: false, contentHash };
   }
 
   await dataDb.query(
     `INSERT INTO external_data_snapshots
-       (source_key, scope_key, payload, content_hash, etag, last_modified, status, fetched_at)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, NOW())
+       (source_key, scope_key, payload, content_hash, etag, last_modified, status, fetched_at,
+        checked_at, source_updated_at, source_version, freshness_method)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, NOW(), NOW(), $8, $9, $10)
      ON CONFLICT (source_key, scope_key)
      DO UPDATE SET payload = EXCLUDED.payload,
                    content_hash = EXCLUDED.content_hash,
                    etag = EXCLUDED.etag,
                    last_modified = EXCLUDED.last_modified,
                    status = EXCLUDED.status,
-                   fetched_at = NOW()`,
+                   fetched_at = NOW(),
+                   checked_at = NOW(),
+                   source_updated_at = EXCLUDED.source_updated_at,
+                   source_version = EXCLUDED.source_version,
+                   freshness_method = EXCLUDED.freshness_method`,
     [
       sourceKey,
       scopeKey,
@@ -143,10 +186,45 @@ export async function saveSnapshot(
       metadata.etag ?? null,
       metadata.lastModified ?? null,
       metadata.status,
+      metadata.sourceUpdatedAt ?? null,
+      metadata.sourceVersion ?? null,
+      metadata.freshnessMethod ?? "unknown",
     ],
   );
 
   return { changed: true, contentHash };
+}
+
+export async function markSnapshotChecked(
+  sourceKey: string,
+  scopeKey: string,
+  metadata: {
+    etag?: string | null;
+    lastModified?: string | null;
+    sourceUpdatedAt?: string | null;
+    sourceVersion?: string | null;
+    freshnessMethod?: CachedSnapshot["freshnessMethod"];
+    status?: string;
+  } = {},
+): Promise<void> {
+  if (!dataDb) return;
+  await dataDb.query(
+    `UPDATE external_data_snapshots
+     SET checked_at = NOW(),
+         etag = COALESCE($3, etag),
+         last_modified = COALESCE($4, last_modified),
+         source_updated_at = COALESCE($5, source_updated_at),
+         source_version = COALESCE($6, source_version),
+         freshness_method = COALESCE($7, freshness_method),
+         status = COALESCE($8, status)
+     WHERE source_key = $1 AND scope_key = $2`,
+    [
+      sourceKey, scopeKey,
+      metadata.etag ?? null, metadata.lastModified ?? null,
+      metadata.sourceUpdatedAt ?? null, metadata.sourceVersion ?? null,
+      metadata.freshnessMethod ?? null, metadata.status ?? null,
+    ],
+  );
 }
 
 export async function getSafetyReference(excludeScopeKey?: string): Promise<{

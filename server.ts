@@ -843,7 +843,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const [google, osm, officialTransit, weatherResponse] = await Promise.all([
       fetchGooglePlacesNearby(lat, lng),
       fetchOsmPoisNearby(lat, lng),
-      fetchTaiwanTransitData(lat, lng),
+      fetchTdxTransitData(lat, lng),
       fetch(`http://127.0.0.1:${PORT}/api/weather?lat=${lat}&lng=${lng}`),
     ]);
 
@@ -881,7 +881,11 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
     };
 
-    const railDist = googleOsmRail.length ? Math.min(...googleOsmRail) : undefined;
+    const officialRailDistances = officialTransit.railStations
+      .map((station: any) => station.distanceMeters)
+      .filter((value: any) => Number.isFinite(value));
+    const officialRailDist = officialRailDistances.length ? Math.min(...officialRailDistances) : undefined;
+    const railDist = officialRailDist ?? (googleOsmRail.length ? Math.min(...googleOsmRail) : undefined);
     const officialBusDist = officialBusDistances.length ? Math.min(...officialBusDistances) : undefined;
     const busDist = officialBusDist ?? (googleOsmBus.length ? Math.min(...googleOsmBus) : undefined);
 
@@ -889,8 +893,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       mrtOrRailDist: railDist,
       busStopDist: busDist,
       source: [
-        railDist != null ? sourceNames.filter((s) => s.includes("Google") || s.includes("OpenStreetMap")) : "",
-        officialBusDist != null ? "Taipei City Transportation Department" : "",
+        officialRailDist != null ? "TDX / MOTC (Taipei Metro stations)" :
+          railDist != null ? sourceNames.filter((s) => s.includes("Google") || s.includes("OpenStreetMap")) : "",
+        officialBusDist != null ? "TDX / MOTC (Taipei City bus stops)" : "",
       ].filter(Boolean).join(" + ") || "unavailable",
       method: "calculated" as const,
       confidence: officialBusDist != null && railDist != null ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,

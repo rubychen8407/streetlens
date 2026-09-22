@@ -51,8 +51,7 @@ function findCoordinate(value: any): { lat: number; lng: number } | null {
     const [lngWgs84, latWgs84] = proj4(
       "+proj=tmerc +lat_0=0 +lon_0=121 +k=0.9999 +x_0=250000 +y_0=0 +ellps=GRS80 +units=m +no_defs",
       "+proj=longlat +datum=WGS84 +no_defs",
-      x,
-      y
+      [x, y]
     );
     if (Number.isFinite(latWgs84) && Number.isFinite(lngWgs84)) {
       return { lat: latWgs84, lng: lngWgs84 };
@@ -94,3 +93,66 @@ async function fetchDatasetResource(
   }
 }
 
+
+
+export async function fetchTaipeiGreenData(
+  lat: number,
+  lng: number,
+  radiusMeters = 800,
+): Promise<GreenSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const settled = await Promise.allSettled([
+      fetchDatasetResource("streetTrees", controller.signal),
+      fetchDatasetResource("parkTrees", controller.signal),
+    ]);
+
+    const streetRows = settled[0].status === "fulfilled" ? settled[0].value : [];
+    const parkRows = settled[1].status === "fulfilled" ? settled[1].value : [];
+
+    const filterNearby = (rows: any[]) =>
+      rows
+        .map((row) => {
+          const coordinate = findCoordinate(row);
+          if (!coordinate) return null;
+          return {
+            ...row,
+            lat: coordinate.lat,
+            lng: coordinate.lng,
+            distanceMeters: haversineDistanceMeters(lat, lng, coordinate.lat, coordinate.lng),
+          };
+        })
+        .filter((row): row is any => row != null && row.distanceMeters <= radiusMeters)
+        .sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+    const streetTrees = filterNearby(streetRows);
+    const parkTrees = filterNearby(parkRows);
+    const hasSuccessfulResource = settled.some((result) => result.status === "fulfilled");
+
+    return {
+      streetTrees,
+      parkTrees,
+      source: "Taipei City Parks and Street Trees dataset",
+      status: hasSuccessfulResource && (streetTrees.length || parkTrees.length) ? "available" : hasSuccessfulResource ? "empty" : "error",
+      retrievedAt,
+      error: settled
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason))
+        .join("; ") || undefined,
+    };
+  } catch (error: any) {
+    return {
+      streetTrees: [],
+      parkTrees: [],
+      source: "Taipei City Parks and Street Trees dataset",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

@@ -347,6 +347,37 @@ function parseScope(scopeKey: string): { lat: number; lng: number } | null {
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
+export async function getNearestParkDistanceReference(excludeScopeKey?: string): Promise<number[]> {
+  if (!dataDb) return [];
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
+     FROM external_data_snapshots
+     WHERE source_key IN ('google_places', 'openstreetmap')
+       AND status IN ('available', 'empty')`,
+  );
+
+  const nearestByScope = new Map<string, number>();
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    const scope = parseScope(row.scopeKey);
+    if (!scope) continue;
+    const pois = Array.isArray(row.payload?.pois) ? row.payload.pois : [];
+    for (const poi of pois) {
+      if (poi.category !== "C4") continue;
+      const pLat = Number(poi?.lat);
+      const pLng = Number(poi?.lng);
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) continue;
+      const distance = Number.isFinite(Number(poi?.distanceMeters))
+        ? Number(poi.distanceMeters)
+        : distanceMeters(scope.lat, scope.lng, pLat, pLng);
+      const current = nearestByScope.get(row.scopeKey);
+      if (current == null || distance < current) nearestByScope.set(row.scopeKey, distance);
+    }
+  }
+
+  return [...nearestByScope.values()];
+}
+
 export async function getDistanceAndAirQualityReferences(excludeScopeKey?: string): Promise<{
   c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
   c3RailDistances: number[];

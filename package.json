@@ -10,7 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "check:external-data": "tsx scripts/check-external-data.ts",
-    "refresh:data": "tsx scripts/refresh-data.ts"
+    "refresh:data": "tsx scripts/refresh-data.ts",
+    "test:score-integrity": "tsx scripts/test-score-integrity.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

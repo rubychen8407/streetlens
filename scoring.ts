@@ -142,6 +142,7 @@ export function calculateAssessment(
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
   c4GreenMetrics?: C4GreenMetrics,
+  c2PoiDensityReference?: number[],
   c5CommunityCount?: number,
   c5CommunityReference?: number[],
 ): AssessmentScores {
@@ -258,13 +259,14 @@ export function calculateAssessment(
     status: Number.isFinite(Number(poiDensity)) ? "available" : "unavailable",
   });
 
+  const poiDensityScore = empiricalPercentileScore(poiDensity, c2PoiDensityReference);
   const c2ComponentScores = c2Definitions
     .map(([indicator, value]) => Number.isFinite(Number(value))
       ? inverseDistanceScore(Number(value), indicator === "clinicDist" || indicator === "schoolDist" ? 500 : 400)
       : null)
     .filter((value): value is number => value !== null);
-  if (Number.isFinite(Number(poiDensity))) {
-    c2ComponentScores.push(clampScore(Number(poiDensity) * 2));
+  if (poiDensityScore !== null) {
+    c2ComponentScores.push(poiDensityScore);
   }
   const c2: number | null = c2ComponentScores.length
     ? clampScore(average(c2ComponentScores))

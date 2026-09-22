@@ -1,16 +1,36 @@
+import "dotenv/config";
 import pg from "pg";
 import crypto from "node:crypto";
 
 const { Pool } = pg;
 
 const connectionString = process.env.DATABASE_URL || "";
-export const dataDb = connectionString
-  ? new Pool({
+const cloudSqlSocket = process.env.INSTANCE_UNIX_SOCKET
+  || (process.env.CLOUD_SQL_CONNECTION_NAME
+    ? `/cloudsql/${process.env.CLOUD_SQL_CONNECTION_NAME}`
+    : "");
+
+const poolConfig = connectionString
+  ? {
       connectionString,
       max: 5,
       ssl: process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized: false },
-    })
-  : null;
+    }
+  : cloudSqlSocket
+    ? {
+        host: cloudSqlSocket,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD || process.env.DB_PASS,
+        database: process.env.DB_NAME,
+        port: Number(process.env.DB_PORT || 5432),
+        max: 5,
+        // Cloud SQL Unix socket connections are already protected by the
+        // Cloud SQL integration; do not require PostgreSQL SSL on the socket.
+        ssl: false,
+      }
+    : null;
+
+export const dataDb = poolConfig ? new Pool(poolConfig) : null;
 
 export interface CachedSnapshot {
   sourceKey: string;

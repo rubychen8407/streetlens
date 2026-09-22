@@ -38,6 +38,15 @@ export interface C1SafetyMetrics {
   confidence: "high" | "medium" | "low";
   status?: "available" | "empty" | "timeout" | "error" | "unavailable";
   retrievedAt?: string;
+  floodHazard?: Array<{
+    scenarioMmPerHour: 78.8 | 100 | 130;
+    depthCm: number | null;
+    distanceMeters: number;
+    source: string;
+    sourceType: "official_model";
+    retrievedAt: string;
+  }>;
+  floodSource?: string | null;
 }
 
 export interface C2PoiMetrics {
@@ -178,6 +187,26 @@ export function calculateAssessment(
       retrievedAt: c1SafetyMetrics?.retrievedAt,
     },
   ];
+  const floodCells = c1SafetyMetrics?.floodHazard || [];
+  for (const cell of floodCells) {
+    c1Factors.push({
+      category: "C1",
+      indicator: `floodHazard_${cell.scenarioMmPerHour}mmh`,
+      value: cell.depthCm,
+      unit: "cm",
+      direction: "lower_is_better",
+      source: cell.source,
+      method: "official",
+      confidence: "high",
+      status: cell.depthCm != null ? "available" : "unavailable",
+      retrievedAt: cell.retrievedAt,
+    });
+  }
+
+  // C1 remains unavailable as a composite score until the available official
+  // hazard sources cover the intended safety dimensions. Flood and accident
+  // observations are exposed separately rather than turning partial coverage
+  // into a misleading safety score.
   const c1: number | null = null;
 
   // C2 is calculated only from source-backed POI distances/counts. Missing POI types

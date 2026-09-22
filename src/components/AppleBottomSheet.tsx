@@ -1287,8 +1287,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">內政部警政署犯罪統計</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1307,8 +1307,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">交通部交通事故資料庫</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1327,8 +1327,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">經濟部水利署淹水潛勢圖、中央地質調查所</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1347,8 +1347,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">Google Maps API、OpenStreetMap、政府開放資料</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1367,8 +1367,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">公車動態 API、捷運營運資料</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1407,8 +1407,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">國土測繪圖資、都發局綠地資料</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>
@@ -1427,8 +1427,8 @@ export function AppleBottomSheet({
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
                     <span>資料來源：<strong className="text-slate-200">里辦公室公告、問卷調查</strong></span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> 連線正常
+                    <span className="text-[10px] flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 已持久化
                     </span>
                   </div>
                 </div>

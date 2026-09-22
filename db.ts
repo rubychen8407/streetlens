@@ -149,6 +149,57 @@ export async function saveSnapshot(
   return { changed: true, contentHash };
 }
 
+export async function getSafetyReference(excludeScopeKey?: string): Promise<{
+  accidentCounts: number[];
+  floodDepths: number[];
+}> {
+  if (!dataDb) return { accidentCounts: [], floodDepths: [] };
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
+     FROM external_data_snapshots
+     WHERE source_key IN ('taipei_safety', 'taipei_flood')
+       AND status IN ('available', 'empty')`,
+  );
+  const accidentsByScope = new Map<string, number>();
+  const floodByScope = new Map<string, number>();
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    if (row.sourceKey === "taipei_safety") {
+      const count = Array.isArray(row.payload?.accidents) ? row.payload.accidents.length : null;
+      if (Number.isFinite(count)) accidentsByScope.set(row.scopeKey, count);
+    } else {
+      const cells = Array.isArray(row.payload?.cells) ? row.payload.cells : Array.isArray(row.payload?.riskCells) ? row.payload.riskCells : [];
+      const depths = cells.map((cell: any) => Number(cell?.depthCm)).filter(Number.isFinite);
+      floodByScope.set(row.scopeKey, depths.length ? Math.max(...depths) : 0);
+    }
+  }
+  return {
+    accidentCounts: [...accidentsByScope.values()],
+    floodDepths: [...floodByScope.values()],
+  };
+}
+
+export async function getC5CommunityReference(excludeScopeKey?: string): Promise<number[]> {
+  if (!dataDb) return [];
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", payload
+     FROM external_data_snapshots
+     WHERE source_key IN ('google_places', 'openstreetmap')
+       AND status IN ('available', 'empty')`,
+  );
+  const byScope = new Map<string, number>();
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    const pois = Array.isArray(row.payload?.pois) ? row.payload.pois : [];
+    const count = pois.filter((poi: any) =>
+      poi.category === "C5"
+      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
+    ).length;
+    byScope.set(row.scopeKey, (byScope.get(row.scopeKey) || 0) + count);
+  }
+  return [...byScope.values()];
+}
+
 export async function getGreenDensityReference(
   excludeScopeKey?: string,
 ): Promise<{ street: number[]; park: number[] }> {

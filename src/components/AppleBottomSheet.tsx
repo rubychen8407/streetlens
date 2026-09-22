@@ -971,7 +971,7 @@ export function AppleBottomSheet({
                 ) : (
                   <div className="space-y-2.5">
                     {filteredSavedLocations.map((loc) => {
-                      const isCurrentActive =
+                      const isCurrentActive = currentCoords != null &&
                         Math.abs(loc.coords.lat - currentCoords.lat) < 0.0001 &&
                         Math.abs(loc.coords.lng - currentCoords.lng) < 0.0001;
 

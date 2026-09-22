@@ -997,14 +997,14 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
     };
 
-    const greenReference = await getGreenDensityReference(scopeKey);
+    const greenReference = await getGreenDensityReference();
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
     const [safetyReference, amenityReference, communityReference] = await Promise.all([
-      getSafetyReference(scopeKey),
-      getPoiDensityReference(scopeKey),
-      getC5CommunityReference(scopeKey),
+      getSafetyReference(),
+      getPoiDensityReference(),
+      getC5CommunityReference(),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;

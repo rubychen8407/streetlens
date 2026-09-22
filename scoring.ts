@@ -70,6 +70,8 @@ export interface C4GreenMetrics {
   parkTreeCount800m?: number;
   streetTreeDensityPerKm2?: number;
   parkTreeDensityPerKm2?: number;
+  streetTreeDensityScore?: number;
+  parkTreeDensityScore?: number;
   nearestParkDist?: number;
   parkCount800m?: number;
   source: string;
@@ -99,6 +101,14 @@ export function inverseDistanceScore(distanceMeters: number, scaleMeters = 500):
 export function average(values: number[]): number {
   const valid = values.filter(Number.isFinite);
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
+}
+
+function empiricalPercentileScore(value: number | undefined, referenceValues: number[] | undefined): number | null {
+  if (!Number.isFinite(value) || !referenceValues || referenceValues.length < 20) return null;
+  const sorted = referenceValues.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length < 20) return null;
+  const rank = sorted.filter((candidate) => candidate <= Number(value)).length;
+  return clampScore((rank / sorted.length) * 100);
 }
 
 function confidenceRank(value: "high" | "medium" | "low"): number {
@@ -285,16 +295,18 @@ export function calculateAssessment(
       method: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
     },
   );
+  const streetTreeDensityScore = empiricalPercentileScore(streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference);
+  const parkTreeDensityScore = empiricalPercentileScore(parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference);
   c4Factors.push(
     {
       category: "C4", indicator: "streetTreeDensityPerKm2", value: Number.isFinite(Number(streetTreeDensityPerKm2)) ? Number(streetTreeDensityPerKm2) : null,
       unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(streetTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(streetTreeDensityPerKm2)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      method: "calculated", confidence: streetTreeDensityScore != null ? "medium" : "low", status: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
     },
     {
       category: "C4", indicator: "parkTreeDensityPerKm2", value: Number.isFinite(Number(parkTreeDensityPerKm2)) ? Number(parkTreeDensityPerKm2) : null,
       unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(parkTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeDensityPerKm2)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      method: "calculated", confidence: parkTreeDensityScore != null ? "medium" : "low", status: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
     },
     {
       category: "C4", indicator: "nearestParkDist", value: Number.isFinite(Number(nearestParkDist)) ? Number(nearestParkDist) : null,
@@ -313,7 +325,8 @@ export function calculateAssessment(
   // source-backed normalization benchmark is available.
   const greenScores = [
     Number.isFinite(Number(nearestParkDist)) ? inverseDistanceScore(Number(nearestParkDist), 600) : null,
-    // Park count remains a raw indicator until normalized against a real reference distribution.
+    streetTreeDensityScore,
+    parkTreeDensityScore,
   ].filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;

@@ -119,6 +119,13 @@ export async function getCachedSnapshot(sourceKey: string, scopeKey: string): Pr
   return result.rows[0] || null;
 }
 
+export function shouldPreserveExistingSnapshot(
+  existing: Pick<CachedSnapshot, "contentHash"> | null,
+  incomingContentHash: string,
+): boolean {
+  return Boolean(existing && existing.contentHash === incomingContentHash);
+}
+
 export async function saveSnapshot(
   sourceKey: string,
   scopeKey: string,
@@ -136,7 +143,7 @@ export async function saveSnapshot(
   const contentHash = hashPayload(payload);
   const existing = await getCachedSnapshot(sourceKey, scopeKey);
 
-  if (existing && existing.contentHash === contentHash) {
+  if (shouldPreserveExistingSnapshot(existing, contentHash)) {
     // Content is unchanged: record the check, but do not rewrite the snapshot version.
     await dataDb.query(
       `UPDATE external_data_snapshots

@@ -190,6 +190,12 @@ export function calculateAssessment(
     },
   ];
   const floodCells = c1SafetyMetrics?.floodHazard || [];
+  const maxFloodDepth = floodCells
+    .map((cell) => Number(cell.depthCm))
+    .filter(Number.isFinite)
+    .reduce((max, depth) => Math.max(max, depth), 0);
+  const accidentScore = empiricalPercentileScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference);
+  const floodScore = empiricalPercentileScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference);
   for (const cell of floodCells) {
     c1Factors.push({
       category: "C1",

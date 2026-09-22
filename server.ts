@@ -918,24 +918,26 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const snapshots: Record<string, any> = {};
     sourceKeys.forEach((key, i) => { snapshots[key] = cached[i]; });
     const missing = sourceKeys.filter((key) => !snapshots[key]);
-    if (missing.length) {
+    if (missing.length === sourceKeys.length) {
       return res.status(202).json({
         location: { lat, lng, city, district, streetName },
         scopeKey,
         dataStatus: "pending_refresh",
         missingSources: missing,
         scores: null,
-        message: "資料尚未完成排程更新；未使用即時爬取或假資料。",
+        message: "此座標尚無任何已持久化資料；等待背景排程建立資料快照。",
       });
     }
 
-    const google = snapshots.google_places.payload;
-    const osm = snapshots.openstreetmap.payload;
-    const officialTransit = snapshots.tdx_transit.payload;
-    const greenData = snapshots.taipei_green.payload;
-    const safetyData = snapshots.taipei_safety.payload;
-    const floodData = snapshots.taipei_flood.payload;
-    const weather = snapshots.open_meteo_air_quality.payload;
+    // A user request never fetches external scoring sources. Existing snapshots are
+    // returned even when stale; only genuinely absent source data is marked unavailable.
+    const google = snapshots.google_places?.payload || { pois: [] };
+    const osm = snapshots.openstreetmap?.payload || { pois: [] };
+    const officialTransit = snapshots.tdx_transit?.payload || { stops: [], railStations: [] };
+    const greenData = snapshots.taipei_green?.payload || { streetTrees: [], parkTrees: [], status: "unavailable" };
+    const safetyData = snapshots.taipei_safety?.payload || { accidents: [], status: "unavailable", source: "unavailable" };
+    const floodData = snapshots.taipei_flood?.payload || { cells: [], status: "unavailable" };
+    const weather = snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" };
     const pois = mergePois(lat, lng, [google, osm]);
     const nearest = (type: string): number | undefined => {
       const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
@@ -1031,7 +1033,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
       dataSources: sourceNames,
       sourceStatus: sourceKeys.map((key) => ({ source: key, status: snapshots[key].status, retrievedAt: snapshots[key].fetchedAt })),
-      weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
+      missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
       dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key].fetchedAt])),
       c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
       c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.cells || [],

@@ -88,7 +88,7 @@ export interface FieldCheckItem {
   title: string;
   description: string;
   checked: boolean;
-  scoreImpact: number; // 分數加減影響 (例如人行道被佔用 -10, 有夜間巡守隊 +5)
+  scoreImpact: number | null; // 分數加減影響 (例如人行道被佔用 -10, 有夜間巡守隊 +5)
 }
 
 // 地圖上的 POI 標記
@@ -108,12 +108,12 @@ export interface StreetSegmentScore {
   id: string;
   name: string;
   coords: [number, number][];
-  clsScore: number;
-  c1: number;
-  c2: number;
-  c3: number;
-  c4: number;
-  c5: number;
+  clsScore: number | null;
+  c1: number | null;
+  c2: number | null;
+  c3: number | null;
+  c4: number | null;
+  c5: number | null;
 }
 
 // 完整社區宜居度評估結果物件
@@ -124,7 +124,7 @@ export interface CommunityLivabilityAssessment {
   city: string;
   coords: LocationCoord;
   timestamp: number;
-  clsScore: number; // 0~100 (Community Livability Score)
+  clsScore: number | null; // 0~100 (Community Livability Score)
   grade: 'S' | 'A' | 'B' | 'C' | 'D';
   weights: CLSWeights;
   weightMode: 'equal' | 'pca' | 'custom';
@@ -139,11 +139,11 @@ export interface CommunityLivabilityAssessment {
   // 原始基準值 (未經現場校正前)
   baselineScores: {
     cls: number;
-    c1: number;
-    c2: number;
-    c3: number;
-    c4: number;
-    c5: number;
+    c1: number | null;
+    c2: number | null;
+    c3: number | null;
+    c4: number | null;
+    c5: number | null;
   };
 
   fieldNotes: string;
@@ -152,10 +152,10 @@ export interface CommunityLivabilityAssessment {
 }
 
 export interface WeatherData {
-  temperature: number;
-  humidity: number;
-  weatherCode: number;
-  condition: string;
+  temperature: number | null;
+  humidity: number | null;
+  weatherCode: number | null;
+  condition: string | null;
   aqi: number | null;
   aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' | '未知';
   pm25: number | null;
@@ -164,7 +164,7 @@ export interface WeatherData {
   sourceType?: 'model' | 'station' | 'unknown';
   stationName?: string;
   stationDistrict?: string;
-  windSpeed?: number;
+  windSpeed?: number | null;
 }
 
 export interface IndicatorSourceItem {
@@ -172,8 +172,8 @@ export interface IndicatorSourceItem {
   category: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
   source: string;
   currentValue: string;
-  score: number;
-  status: 'active' | 'loading';
+  score: number | null;
+  status: 'active' | 'loading' | 'unavailable';
 }
 
 export interface SavedLocation {
@@ -183,14 +183,14 @@ export interface SavedLocation {
   district: string;
   city: string;
   coords: LocationCoord;
-  clsScore: number;
+  clsScore: number | null;
   grade: 'S' | 'A' | 'B' | 'C' | 'D';
   scores: {
-    c1: number;
-    c2: number;
-    c3: number;
-    c4: number;
-    c5: number;
+    c1: number | null;
+    c2: number | null;
+    c3: number | null;
+    c4: number | null;
+    c5: number | null;
   };
   c1Data?: C1Data;
   c2Data?: C2Data;

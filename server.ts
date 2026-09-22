@@ -236,96 +236,85 @@ app.get("/api/reverse-geocode", async (req: Request, res: Response) => {
   }
 });
 
-// Air-quality data is fetched from Open-Meteo's Air Quality API at request time.
-// Do not use hardcoded or synthetic AQI values: model data must be labeled as such.
+// Weather and air-quality data are fetched from Open-Meteo at request time.
+// Missing upstream values remain null; no synthetic fallback values are returned.
 app.get("/api/weather", async (req: Request, res: Response) => {
   try {
-    const lat = parseFloat((req.query.lat as string) || "25.033");
-    const lng = parseFloat((req.query.lng as string) || "121.5654");
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Valid lat/lng are required" });
+    }
 
+    const [airResult, weatherResult] = await Promise.allSettled([
+      fetch(
+        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,pm2_5&timezone=auto`,
+        { headers: { "User-Agent": "StreetLens/1.0" } }
+      ),
+      fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m`,
+        { headers: { "User-Agent": "StreetLens/1.0" } }
+      ),
+    ]);
+
+    const retrievedAt = new Date().toISOString();
     let aqi: number | null = null;
     let pm25: number | null = null;
     let airQualityTimestamp: string | null = null;
+    let airQualityStatus: "available" | "empty" | "error" = "error";
 
-    try {
-      const airResp = await fetch(
-        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,pm2_5&timezone=auto`,
-        { headers: { "User-Agent": "StreetLens/1.0" } }
-      );
-      if (airResp.ok) {
-        const airData: any = await airResp.json();
-        aqi = typeof airData.current?.us_aqi === "number" ? Math.round(airData.current.us_aqi) : null;
-        pm25 = typeof airData.current?.pm2_5 === "number" ? +airData.current.pm2_5.toFixed(1) : null;
-        airQualityTimestamp = airData.current?.time || null;
-      }
-    } catch (e) {
-      console.warn("Open-Meteo air-quality fetch failed:", e);
+    if (airResult.status === "fulfilled" && airResult.value.ok) {
+      const data: any = await airResult.value.json();
+      aqi = typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null;
+      pm25 = typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null;
+      airQualityTimestamp = data.current?.time || null;
+      airQualityStatus = aqi !== null || pm25 !== null ? "available" : "empty";
     }
 
-    let aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' | '未知' = '未知';
-    if (aqi !== null) {
-      if (aqi > 150) aqiStatus = '不健康';
-      else if (aqi > 100) aqiStatus = '對敏感族群不健康';
-      else if (aqi > 50) aqiStatus = '普通';
-      else aqiStatus = '良好';
+    let temperature: number | null = null;
+    let humidity: number | null = null;
+    let weatherCode: number | null = null;
+    let windSpeed: number | null = null;
+    let weatherTimestamp: string | null = null;
+    let weatherStatus: "available" | "empty" | "error" = "error";
+
+    if (weatherResult.status === "fulfilled" && weatherResult.value.ok) {
+      const data: any = await weatherResult.value.json();
+      temperature = typeof data.current?.temperature_2m === "number" ? Math.round(data.current.temperature_2m) : null;
+      humidity = typeof data.current?.relative_humidity_2m === "number" ? Math.round(data.current.relative_humidity_2m) : null;
+      weatherCode = typeof data.current?.weather_code === "number" ? data.current.weather_code : null;
+      windSpeed = typeof data.current?.wind_speed_10m === "number" ? +data.current.wind_speed_10m.toFixed(1) : null;
+      weatherTimestamp = data.current?.time || null;
+      weatherStatus = temperature !== null || humidity !== null || weatherCode !== null ? "available" : "empty";
     }
 
-    let temperature = 26;
-    let humidity = 65;
-    let weatherCode = 0;
-    let windSpeed = 2.4;
-
-    try {
-      const weatherResp = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m`,
-        { headers: { "User-Agent": "LivabilityScoutApp/2.0" } }
-      );
-      if (weatherResp.ok) {
-        const wData = await weatherResp.json();
-        if (wData.current) {
-          temperature = Math.round(wData.current.temperature_2m);
-          humidity = Math.round(wData.current.relative_humidity_2m);
-          weatherCode = wData.current.weather_code;
-          windSpeed = +(wData.current.wind_speed_10m || 2.4).toFixed(1);
-        }
-      }
-    } catch (e) {
-      console.warn("Open-Meteo fetch failed, using fallback:", e);
-    }
+    const aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' | '未知' =
+      aqi === null ? '未知' : aqi > 150 ? '不健康' : aqi > 100 ? '對敏感族群不健康' : aqi > 50 ? '普通' : '良好';
 
     const weatherDescriptions: Record<number, string> = {
-      0: '晴朗',
-      1: '大致晴朗',
-      2: '多雲',
-      3: '陰天',
-      45: '局部有霧',
-      48: '濃霧',
-      51: '毛毛細雨',
-      53: '輕微短暫雨',
-      55: '密降毛雨',
-      61: '小雨',
-      63: '中雨',
-      65: '陣雨',
-      80: '局部短暫陣雨',
-      81: '強陣雨',
-      82: '雷陣雨',
-      95: '雷雨交加',
+      0: '晴朗', 1: '大致晴朗', 2: '多雲', 3: '陰天', 45: '局部有霧', 48: '濃霧',
+      51: '毛毛細雨', 53: '輕微短暫雨', 55: '密降毛雨', 61: '小雨', 63: '中雨',
+      65: '大雨', 80: '局部短暫陣雨', 81: '強陣雨', 82: '雷陣雨', 95: '雷雨交加',
     };
-
-    const condition = weatherDescriptions[weatherCode] || (temperature > 28 ? '晴朗高溫' : '多雲時晴');
 
     return res.json({
       temperature,
       humidity,
       weatherCode,
-      condition,
+      condition: weatherCode === null ? null : (weatherDescriptions[weatherCode] || null),
       aqi,
       aqiStatus,
       pm25,
       windSpeed,
       airQualityTimestamp,
-      source: 'Open-Meteo Air Quality (CAMS model data)',
-      sourceType: 'model',
+      weatherTimestamp,
+      retrievedAt,
+      source: "Open-Meteo",
+      sourceType: "model",
+      airQualitySource: "Open-Meteo Air Quality (CAMS model data)",
+      status: airQualityStatus === "available" || weatherStatus === "available" ? "available" : "error",
+      airQualityStatus,
+      weatherStatus,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to fetch weather data" });
@@ -373,126 +362,205 @@ const GOOGLE_PLACE_TYPE_MAP: Record<string, { category: "C1" | "C2" | "C3" | "C4
   secondary_school: { category: "C2", note: "國民中學教育設施" },
 };
 
-// Real, accurately-located POIs from the Google Places API (New) "Nearby Search" endpoint.
-async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]> {
-  if (!GOOGLE_MAPS_API_KEY) return [];
+// Real POIs from Google Places (New). Scoring queries are separated by
+// amenity family so the 20-result API cap for one request cannot hide a category.
+type PoiSourceStatus = "available" | "empty" | "timeout" | "error" | "unavailable";
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
+interface PoiFetchResult {
+  pois: any[];
+  source: "google_places" | "openstreetmap";
+  status: PoiSourceStatus;
+  retrievedAt: string;
+  error?: string;
+}
 
-    const resp = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.primaryType,places.types",
-      },
-      body: JSON.stringify({
-        includedTypes: [
-          "convenience_store", "supermarket", "grocery_store",
-          "subway_station", "train_station", "bus_station", "bus_stop",
-          "hospital", "pharmacy", "doctor",
-          "police", "fire_station",
-          "park",
-          "bank", "post_office", "library", "school",
-          "bakery", "community_center"
-        ],
-        maxResultCount: 20,
-        languageCode: "zh-TW",
-        locationRestriction: {
-          circle: { center: { latitude: lat, longitude: lng }, radius: 800 },
-        },
-      }),
-    });
-    clearTimeout(timeoutId);
-
-    if (!resp.ok) {
-      console.warn("[Google Places] HTTP", resp.status);
-      return [];
-    }
-
-    const data: any = await resp.json();
-    if (!Array.isArray(data.places)) return [];
-
-    return data.places
-      .map((p: any) => {
-        if (!p.location?.latitude || !p.location?.longitude) return null;
-        const name = p.displayName?.text || "";
-
-        // Check primary type, then all types
-        let mapping = p.primaryType ? GOOGLE_PLACE_TYPE_MAP[p.primaryType] : undefined;
-        if (!mapping && Array.isArray(p.types)) {
-          for (const t of p.types) {
-            if (GOOGLE_PLACE_TYPE_MAP[t]) {
-              mapping = GOOGLE_PLACE_TYPE_MAP[t];
-              break;
-            }
-          }
-        }
-
-        // Semantic fallback from place name
-        let category: "C1" | "C2" | "C3" | "C4" | "C5" = mapping?.category || "C2";
-        let note = mapping?.note || "日常生活機能據點";
-
-        if (/派出所|分局|警局|警察|消防/.test(name)) {
-          category = "C1";
-          note = "社區治安防護據點";
-        } else if (/醫院|診所|門診|藥局|長庚|榮總|台大|馬偕|和平|三總/.test(name)) {
-          category = "C2";
-          note = "醫療照護與健保診所";
-        } else if (/超商|全家|7-ELEVEN|全聯|美廉社|家樂福|大創|超市|市場/.test(name)) {
-          category = "C2";
-          note = "生鮮超市與連鎖超商採買";
-        } else if (/銀行|郵局|ATM|分行|信用合作社/.test(name)) {
-          category = "C2";
-          note = "金融服務與郵政據點";
-        } else if (/捷運|公車|轉運|火車|站|小巨蛋/.test(name)) {
-          category = "C3";
-          note = "大眾運輸通勤路網";
-        } else if (/公園|綠地|廣場|庭園/.test(name)) {
-          category = "C4";
-          note = "鄰里休憩綠地公園";
-        } else if (/圖書館|活動中心|服務中心|分館/.test(name)) {
-          category = "C5";
-          note = "公共文化與公民活動據點";
-        } else if (/國小|國中|高中|大學/.test(name)) {
-          category = "C2";
-          note = "學校教育與日常生活機能";
-        }
-
-        const amenityType =
-          /supermarket|grocery_store/.test(p.primaryType || "")
-            ? "supermarket"
-            : /convenience_store/.test(p.primaryType || "")
-              ? "convenience"
-              : /hospital|pharmacy|doctor|dentist|clinic/.test(p.primaryType || "")
-                ? "clinic"
-                : /school|primary_school|secondary_school/.test(p.primaryType || "")
-                  ? "school"
-                  : /bank|post_office|finance/.test(p.primaryType || "")
-                    ? "bank_post"
-                    : /subway_station|train_station|light_rail_station/.test(p.primaryType || "")
-                      ? "rail"
-                      : /transit_station|bus_station|bus_stop/.test(p.primaryType || "")
-                        ? "bus"
-                        : "other";
-
-        return {
-          id: `gp_${p.id}`,
-          name: name || "在地生活機能設施",
-          category,
-          amenityType,
-          lat: p.location.latitude,
-          lng: p.location.longitude,
-          note,
-        };
-      })
-      .filter(Boolean);
-  } catch (err) {
-    return [];
+function mapGooglePlace(place: any, retrievedAt: string): any | null {
+  if (!place.location?.latitude || !place.location?.longitude) return null;
+  const name = place.displayName?.text || "";
+  let mapping = place.primaryType ? GOOGLE_PLACE_TYPE_MAP[place.primaryType] : undefined;
+  if (!mapping && Array.isArray(place.types)) {
+    mapping = place.types.map((t: string) => GOOGLE_PLACE_TYPE_MAP[t]).find(Boolean);
   }
+
+  let category: "C1" | "C2" | "C3" | "C4" | "C5" = mapping?.category || "C2";
+  let note = mapping?.note || "日常生活機能據點";
+
+  if (/派出所|分局|警局|警察|消防/.test(name)) { category = "C1"; note = "社區治安防護據點"; }
+  else if (/醫院|診所|門診|藥局/.test(name)) { category = "C2"; note = "醫療照護與健保診所"; }
+  else if (/超商|全家|7-ELEVEN|全聯|美廉社|家樂福|超市|市場/.test(name)) { category = "C2"; note = "生鮮超市與連鎖超商採買"; }
+  else if (/銀行|郵局|ATM|分行|信用合作社/.test(name)) { category = "C2"; note = "金融服務與郵政據點"; }
+  else if (/捷運|公車|轉運|火車/.test(name)) { category = "C3"; note = "大眾運輸通勤路網"; }
+  else if (/公園|綠地|廣場|庭園/.test(name)) { category = "C4"; note = "鄰里休憩綠地公園"; }
+  else if (/圖書館|活動中心|服務中心|分館/.test(name)) { category = "C5"; note = "公共文化與公民活動據點"; }
+  else if (/國小|國中|高中|大學/.test(name)) { category = "C2"; note = "學校教育與日常生活機能"; }
+
+  const primary = place.primaryType || "";
+  const amenityType =
+    /supermarket|grocery_store/.test(primary) ? "supermarket" :
+    /convenience_store/.test(primary) ? "convenience" :
+    /hospital|pharmacy|doctor|dentist|clinic/.test(primary) ? "clinic" :
+    /school|primary_school|secondary_school/.test(primary) ? "school" :
+    /bank|post_office|finance/.test(primary) ? "bank_post" :
+    /subway_station|train_station|light_rail_station/.test(primary) ? "rail" :
+    /transit_station|bus_station|bus_stop/.test(primary) ? "bus" : "other";
+
+  return {
+    id: `gp_${place.id}`,
+    name,
+    category,
+    amenityType,
+    lat: place.location.latitude,
+    lng: place.location.longitude,
+    note,
+    source: "Google Places (New)",
+    sourceType: "api",
+    retrievedAt,
+  };
+}
+
+async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<PoiFetchResult> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return { pois: [], source: "google_places", status: "unavailable", retrievedAt: new Date().toISOString() };
+  }
+
+  const queryGroups = [
+    ["supermarket", "grocery_store"],
+    ["convenience_store"],
+    ["hospital", "pharmacy", "doctor", "dentist"],
+    ["school", "primary_school", "secondary_school"],
+    ["bank", "post_office"],
+    ["subway_station", "train_station", "light_rail_station"],
+    ["bus_station", "bus_stop", "transit_station"],
+    ["police", "fire_station"],
+    ["park", "city_park", "garden", "playground"],
+    ["community_center", "library"],
+  ];
+
+  const retrievedAt = new Date().toISOString();
+  const settled = await Promise.allSettled(queryGroups.map(async (includedTypes) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const resp = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+          "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.primaryType,places.types",
+        },
+        body: JSON.stringify({
+          includedTypes,
+          maxResultCount: 20,
+          rankPreference: "DISTANCE",
+          languageCode: "zh-TW",
+          locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 800 } },
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data: any = await resp.json();
+      return Array.isArray(data.places) ? data.places.map((p: any) => mapGooglePlace(p, retrievedAt)).filter(Boolean) : [];
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }));
+
+  const pois = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  const failures = settled.filter((result) => result.status === "rejected");
+  const hasSuccess = settled.some((result) => result.status === "fulfilled");
+  const status: PoiSourceStatus = pois.length ? "available" : !hasSuccess ? "error" : "empty";
+  return { pois, source: "google_places", status, retrievedAt };
+}
+
+async function fetchOsmPoisNearby(lat: number, lng: number): Promise<PoiFetchResult> {
+  const retrievedAt = new Date().toISOString();
+  const query = `[out:json][timeout:8];(
+    node["amenity"](around:800,${lat},${lng});
+    node["shop"](around:800,${lat},${lng});
+    node["public_transport"](around:800,${lat},${lng});
+    node["railway"](around:800,${lat},${lng});
+    node["leisure"="park"](around:800,${lat},${lng});
+  );out 100;`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`, {
+      signal: controller.signal,
+      headers: { "User-Agent": "StreetLens/1.0" },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data: any = await resp.json();
+    const elements = Array.isArray(data.elements) ? data.elements : [];
+    const pois = elements.map((item: any) => {
+      const tags = item.tags || {};
+      const pLat = typeof item.lat === "number" ? item.lat : item.center?.lat;
+      const pLng = typeof item.lon === "number" ? item.lon : item.center?.lon;
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) return null;
+      const name = tags["name:zh"] || tags.name || "";
+      let category: "C1" | "C2" | "C3" | "C4" | "C5" = "C2";
+      if (tags.amenity === "police" || tags.amenity === "fire_station") category = "C1";
+      else if (tags.public_transport || tags.railway) category = "C3";
+      else if (tags.leisure === "park" || tags.leisure === "garden") category = "C4";
+      else if (tags.amenity === "community_centre" || tags.amenity === "townhall" || tags.amenity === "library") category = "C5";
+
+      const amenityType =
+        /supermarket|grocery|market/.test(tags.shop || "") ? "supermarket" :
+        /convenience/.test(tags.shop || "") ? "convenience" :
+        /clinic|doctors|pharmacy|hospital|dentist/.test(tags.amenity || "") ? "clinic" :
+        /school|kindergarten|college|university/.test(tags.amenity || "") ? "school" :
+        /bank|post_office/.test(tags.amenity || "") ? "bank_post" :
+        /bus_stop|bus_station/.test(tags.public_transport || tags.amenity || "") ? "bus" :
+        /station|subway|tram/.test(tags.railway || tags.public_transport || "") ? "rail" : "other";
+
+      return {
+        id: `osm_${item.type}_${item.id}`,
+        name,
+        category,
+        amenityType,
+        lat: pLat,
+        lng: pLng,
+        source: "OpenStreetMap (Overpass)",
+        sourceType: "osm",
+        retrievedAt,
+      };
+    }).filter(Boolean);
+
+    return { pois, source: "openstreetmap", status: pois.length ? "available" : "empty", retrievedAt };
+  } catch (error: any) {
+    return {
+      pois: [],
+      source: "openstreetmap",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function haversineDistanceMeters(lat: number, lng: number, pLat: number, pLng: number): number {
+  const R = 6371000;
+  const dLat = ((pLat - lat) * Math.PI) / 180;
+  const dLng = ((pLng - lng) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat * Math.PI) / 180) * Math.cos((pLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const result of results) {
+    for (const poi of result.pois) {
+      const key = `${poi.name}|${poi.amenityType}|${poi.lat.toFixed(5)}|${poi.lng.toFixed(5)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({ ...poi, distanceMeters: haversineDistanceMeters(lat, lng, poi.lat, poi.lng) });
+    }
+  }
+  return merged.sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
 // Synthetic POIs are intentionally not generated. Nearby POIs must come from
@@ -503,115 +571,25 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]>
 // 結合在地空間開放常模確保各點位皆有清晰對應的生活機能標記
 app.get("/api/nearby-pois", async (req: Request, res: Response) => {
   try {
-    const lat = parseFloat((req.query.lat as string) || "25.033");
-    const lng = parseFloat((req.query.lng as string) || "121.5654");
-    const district = (req.query.district as string) || "大安區";
-    const streetName = (req.query.streetName as string) || "";
-
-    // Helper for distance
-    const calcDistance = (pLat: number, pLng: number) => {
-      const R = 6371000;
-      const dLat = ((pLat - lat) * Math.PI) / 180;
-      const dLng = ((pLng - lng) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((lat * Math.PI) / 180) *
-          Math.cos((pLat * Math.PI) / 180) *
-          Math.sin(dLng / 2) *
-          Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return Math.round(R * c);
-    };
-
-    const pois: any[] = [];
-
-    // 1) Google Places API (New) — real names & precise coordinates
-    const googleItems = await fetchGooglePlacesNearby(lat, lng);
-    for (const item of googleItems) {
-      if (pois.length >= 24) break;
-      pois.push({ ...item, distanceMeters: calcDistance(item.lat, item.lng) });
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Valid lat/lng are required" });
     }
 
-    // 2) OSM Overpass fallback — only runs if Google returned nothing
-    if (pois.length === 0) {
-      try {
-        const overpassQuery = `[out:json][timeout:3];(node["amenity"](around:600,${lat},${lng});node["shop"](around:600,${lat},${lng});node["public_transport"](around:600,${lat},${lng});node["railway"](around:600,${lat},${lng});node["leisure"="park"](around:600,${lat},${lng}););out 25;`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const [google, osm] = await Promise.all([
+      fetchGooglePlacesNearby(lat, lng),
+      fetchOsmPoisNearby(lat, lng),
+    ]);
+    const pois = mergePois(lat, lng, [google, osm]);
 
-        const opResp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`, {
-          signal: controller.signal,
-          headers: { "User-Agent": "LivabilityScoutApp/2.0" },
-        });
-        clearTimeout(timeoutId);
-
-        if (opResp.ok) {
-          const opData = await opResp.json();
-          const osmItems: any[] = Array.isArray(opData.elements)
-            ? opData.elements.filter((el: any) => el.tags && (el.tags.name || el.tags.amenity))
-            : [];
-
-          for (const item of osmItems) {
-            if (pois.length >= 16) break;
-            const tags = item.tags || {};
-            const pLat = item.lat;
-            const pLng = item.lon;
-            const name = tags.name || tags["name:zh"] || tags.amenity;
-            let cat: "C1" | "C2" | "C3" | "C4" | "C5" = "C2";
-            let note = "周邊生活設施";
-
-            if (tags.amenity === "police" || tags.amenity === "fire_station") {
-              cat = "C1";
-              note = "社區治安防護據點";
-            } else if (tags.amenity === "bus_station" || tags.amenity === "bicycle_rental" || tags.railway) {
-              cat = "C3";
-              note = "公共運輸接駁";
-            } else if (tags.leisure === "park" || tags.leisure === "garden") {
-              cat = "C4";
-              note = "鄰里休憩綠地";
-            } else if (tags.amenity === "community_centre" || tags.amenity === "townhall") {
-              cat = "C5";
-              note = "地方社區與公民活動";
-            }
-
-            const amenityType =
-              /supermarket|grocery|market/.test(tags.shop || "")
-                ? "supermarket"
-                : /convenience/.test(tags.shop || "")
-                  ? "convenience"
-                  : /clinic|doctors|pharmacy|hospital|dentist/.test(tags.amenity || "")
-                ? "clinic"
-                  : /school|kindergarten|college|university/.test(tags.amenity || "")
-                    ? "school"
-                    : /bank|post_office/.test(tags.amenity || "")
-                      ? "bank_post"
-                      : /bus_stop|bus_station/.test(tags.public_transport || tags.amenity || "")
-                        ? "bus"
-                        : /station|subway|tram/.test(tags.railway || tags.public_transport || "")
-                          ? "rail"
-                          : "other";
-
-            pois.push({
-              id: `osm_${item.id || pois.length}`,
-              name,
-              category: cat,
-              amenityType,
-              lat: pLat,
-              lng: pLng,
-              distanceMeters: calcDistance(pLat, pLng),
-              note,
-            });
-          }
-        }
-      } catch (e) {
-        // Overpass timeout or network limit
-      }
-    }
-
-    // Sort by distance from center
-    pois.sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-    return res.json({ pois });
+    return res.json({
+      pois,
+      sources: [
+        { source: google.source, status: google.status, retrievedAt: google.retrievedAt },
+        { source: osm.source, status: osm.status, retrievedAt: osm.retrievedAt },
+      ],
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to fetch POIs" });
   }
@@ -654,8 +632,7 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
   try {
     const lat = parseFloat((req.query.lat as string) || "25.0326");
     const lng = parseFloat((req.query.lng as string) || "121.5298");
-    const baseScore = parseFloat((req.query.baseScore as string) || "80");
-    const streetName = (req.query.streetName as string) || "";
+        const streetName = (req.query.streetName as string) || "";
 
     const delta = 0.0035; // ~350m
     const corridorPairs = [
@@ -708,23 +685,16 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
               if (seenRoads.has(roadName)) continue;
               seenRoads.add(roadName);
 
-              // Calculate differential livability score per street based on position
-              const isMain = roadName.includes(streetName) || roadName.includes("路") || roadName.includes("段") || roadName.includes("大道");
-              const isQuietLane = roadName.includes("街") || roadName.includes("巷");
-              const roadHash = [...roadName].reduce((hash, char) => ((hash * 31 + char.charCodeAt(0)) >>> 0), 7);
-              const scoreOffset = isMain ? (roadHash % 2 === 0 ? 2 : -2) : (isQuietLane ? 3 : 0);
-              const segScore = Math.max(50, Math.min(98, Math.round(baseScore + scoreOffset)));
-
               segments.push({
                 id: `seg_g_${segments.length}_${roadName}`,
-                name: `${roadName}實測路段`,
+                name: roadName,
                 coords: pts,
-                clsScore: segScore,
-                c1: Math.min(100, segScore + 2),
-                c2: Math.min(100, segScore + (isMain ? 6 : -3)),
-                c3: Math.min(100, segScore + (isMain ? 5 : -4)),
-                c4: Math.max(0, segScore + (isQuietLane ? 5 : -4)),
-                c5: segScore,
+                clsScore: null,
+                c1: null,
+                c2: null,
+                c3: null,
+                c4: null,
+                c5: null,
               });
             }
           }
@@ -757,19 +727,16 @@ app.get("/api/street-network", async (req: Request, res: Response) => {
             if (s.geometry?.coordinates?.length > 1 && s.name && !seenRoads.has(s.name + "_osrm")) {
               seenRoads.add(s.name + "_osrm");
               const coords = s.geometry.coordinates.map(([cLng, cLat]: [number, number]) => [cLat, cLng]);
-              const isMain = s.name.includes("路") || s.name.includes("段");
-              const isQuietLane = s.name.includes("街") || s.name.includes("巷");
-              const segScore = Math.max(50, Math.min(98, Math.round(baseScore + (isQuietLane ? 3 : -1))));
               segments.push({
                 id: `seg_osrm_${segments.length}_${s.name}`,
-                name: `${s.name}實測路段`,
+                name: s.name,
                 coords,
-                clsScore: segScore,
-                c1: Math.min(100, segScore + 2),
-                c2: Math.min(100, segScore + (isMain ? 5 : -2)),
-                c3: Math.min(100, segScore + (isMain ? 4 : -3)),
-                c4: Math.max(0, segScore + (isQuietLane ? 5 : -3)),
-                c5: segScore,
+                clsScore: null,
+                c1: null,
+                c2: null,
+                c3: null,
+                c4: null,
+                c5: null,
               });
               break;
             }
@@ -806,46 +773,32 @@ app.get("/api/baseline-data", async (_req: Request, res: Response) => {
 // This endpoint intentionally returns provenance and confidence with every score.
 app.get("/api/assessment", async (req: Request, res: Response) => {
   try {
-    const lat = parseFloat((req.query.lat as string) || "25.033");
-    const lng = parseFloat((req.query.lng as string) || "121.5654");
-    const district = (req.query.district as string) || "大安區";
-    const city = (req.query.city as string) || "台北市";
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    const district = (req.query.district as string) || "";
+    const city = (req.query.city as string) || "";
     const streetName = (req.query.streetName as string) || "";
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return res.status(400).json({ error: "Invalid latitude/longitude" });
+      return res.status(400).json({ error: "Valid lat/lng are required" });
     }
 
-    const query = new URLSearchParams({
-      lat: String(lat),
-      lng: String(lng),
-      district,
-      city,
-      streetName,
-    });
-
-    const [baselineResponse, weatherResponse, pois] = await Promise.all([
-      fetch(`http://127.0.0.1:${PORT}/api/baseline-data?${query.toString()}`),
-      fetch(`http://127.0.0.1:${PORT}/api/weather?${query.toString()}`),
+    const [google, osm, weatherResponse] = await Promise.all([
       fetchGooglePlacesNearby(lat, lng),
+      fetchOsmPoisNearby(lat, lng),
+      fetch(`http://127.0.0.1:${PORT}/api/weather?lat=${lat}&lng=${lng}`),
     ]);
 
-    if (!baselineResponse.ok) {
-      throw new Error(`Baseline request failed: ${baselineResponse.status}`);
-    }
-
-    const baseline = await baselineResponse.json();
+    const pois = mergePois(lat, lng, [google, osm]);
     const weather = weatherResponse.ok ? await weatherResponse.json() : null;
-    const poiCounts = pois.reduce((counts: Record<string, number>, poi: any) => {
-      counts[poi.category] = (counts[poi.category] || 0) + 1;
-      return counts;
-    }, {});
-
     const nearest = (type: string): number | undefined => {
       const matches = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters));
-      if (!matches.length) return undefined;
-      return Math.min(...matches.map((poi: any) => poi.distanceMeters));
+      return matches.length ? Math.min(...matches.map((poi: any) => poi.distanceMeters)) : undefined;
     };
+
+    const sourceNames = [...new Set(
+      pois.map((poi: any) => poi.source).filter(Boolean)
+    )];
 
     const c2PoiMetrics = {
       supermarketDist: nearest("supermarket"),
@@ -853,23 +806,23 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       clinicDist: nearest("clinic"),
       schoolDist: nearest("school"),
       bankPostDist: nearest("bank_post"),
-      poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length,
-      source: "Google Places (New) / OpenStreetMap",
+      poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length || undefined,
+      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable",
       method: "calculated" as const,
-      confidence: "high" as const,
+      confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
     };
 
     const c3TransitMetrics = {
       mrtOrRailDist: nearest("rail"),
       busStopDist: nearest("bus"),
-      source: "Google Places (New) / OpenStreetMap",
+      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable",
       method: "calculated" as const,
-      confidence: "high" as const,
+      confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
     };
 
     const scores = calculateAssessment(
-      baseline,
-      poiCounts,
+      null,
+      {},
       weather || undefined,
       c2PoiMetrics,
       c3TransitMetrics,
@@ -887,7 +840,12 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       scores,
       factors: allFactors,
       poiCount: pois.length,
-      dataSources: [...new Set(allFactors.map((factor) => factor.source))],
+      dataSources: sourceNames,
+      sourceStatus: [
+        { source: google.source, status: google.status, retrievedAt: google.retrievedAt, error: google.error || null },
+        { source: osm.source, status: osm.status, retrievedAt: osm.retrievedAt, error: osm.error || null },
+      ],
+      weatherStatus: weather?.status || "error",
       generatedAt: new Date().toISOString(),
       c2DataMode: "poi-derived",
       c2PoiMetrics,

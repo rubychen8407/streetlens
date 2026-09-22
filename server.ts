@@ -7,7 +7,7 @@ import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring"
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestParkDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -410,7 +410,8 @@ function mapGooglePlace(place: any, retrievedAt: string): any | null {
     /school|primary_school|secondary_school/.test(primary) ? "school" :
     /bank|post_office|finance/.test(primary) ? "bank_post" :
     /subway_station|train_station|light_rail_station/.test(primary) ? "rail" :
-    /transit_station|bus_station|bus_stop/.test(primary) ? "bus" : "other";
+    /transit_station|bus_station|bus_stop/.test(primary) ? "bus" :
+    /park|city_park|garden|playground/.test(primary) ? "park" : "other";
 
   return {
     id: `gp_${place.id}`,
@@ -1167,11 +1168,12 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const [safetyReference, amenityReference, communityReference, normalizationReferences] = await Promise.all([
+    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference] = await Promise.all([
       getSafetyReference(),
       getPoiDensityReference(),
       getC5CommunityReference(),
       getDistanceAndAirQualityReferences(),
+      getNearestParkDistanceReference(),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
@@ -1190,7 +1192,10 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       amenityReference,
       communityCount,
       communityReference,
-      normalizationReferences,
+      {
+        ...normalizationReferences,
+        c4NearestParkDistances: nearestParkReference,
+      },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
     return res.json({

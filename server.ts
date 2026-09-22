@@ -454,9 +454,12 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]>
         } else if (/公園|綠地|廣場|庭園/.test(name)) {
           category = "C4";
           note = "鄰里休憩綠地公園";
-        } else if (/圖書館|國小|國中|高中|大學|活動中心|服務中心|分館/.test(name)) {
+        } else if (/圖書館|活動中心|服務中心|分館/.test(name)) {
           category = "C5";
           note = "公共文化與公民活動據點";
+        } else if (/國小|國中|高中|大學/.test(name)) {
+          category = "C2";
+          note = "學校教育與日常生活機能";
         }
 
         const amenityType =

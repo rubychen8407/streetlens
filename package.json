@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "check:external-data": "tsx scripts/check-external-data.ts",
     "refresh:data": "tsx scripts/refresh-data.ts",
-    "test:score-integrity": "tsx scripts/test-score-integrity.ts"
+    "test:score-integrity": "tsx scripts/test-score-integrity.ts",
+    "test:assessment-policy": "tsx scripts/test-assessment-snapshot-policy.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

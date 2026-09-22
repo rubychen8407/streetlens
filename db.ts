@@ -149,6 +149,29 @@ export async function saveSnapshot(
   return { changed: true, contentHash };
 }
 
+export async function getGreenDensityReference(
+  excludeScopeKey?: string,
+): Promise<{ street: number[]; park: number[] }> {
+  if (!dataDb) return { street: [], park: [] };
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", payload
+     FROM external_data_snapshots
+     WHERE source_key = 'taipei_green' AND status = 'available'`,
+  );
+
+  const street: number[] = [];
+  const park: number[] = [];
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    const streetCount = Array.isArray(row.payload?.streetTrees) ? row.payload.streetTrees.length : null;
+    const parkCount = Array.isArray(row.payload?.parkTrees) ? row.payload.parkTrees.length : null;
+    const areaKm2 = Math.PI * (0.8 ** 2);
+    if (Number.isFinite(streetCount)) street.push(streetCount / areaKm2);
+    if (Number.isFinite(parkCount)) park.push(parkCount / areaKm2);
+  }
+  return { street, park };
+}
+
 export async function closeDataDb(): Promise<void> {
   if (dataDb) await dataDb.end();
 }

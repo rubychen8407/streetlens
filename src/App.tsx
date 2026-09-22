@@ -102,14 +102,7 @@ export default function App() {
         setWeatherData(wData);
         if (wData && typeof wData.aqi === 'number') {
           // Dynamic EPA Air Quality integration into C4
-          const dynamicAqiScore = Math.max(20, Math.min(100, Math.round(100 - (wData.aqi - 15) * 0.8)));
-          setC4((prev) => {
-            const updated = { ...prev, airQualityScore: dynamicAqiScore };
-            return {
-              ...updated,
-              score: calculateC4Score(updated, []),
-            };
-          });
+          // C4 scoring is calculated by the backend from persisted source data.
         }
       }
     } catch (e) {
@@ -224,11 +217,8 @@ export default function App() {
 
   // Reset to baseline
   const handleResetToBaseline = () => {
-    setC1(baselineData.c1);
-    setC2(baselineData.c2);
-    setC3(baselineData.c3);
-    setC4(baselineData.c4);
-    setC5(baselineData.c5);
+    // Re-read the persisted assessment instead of restoring synthetic/local baseline data.
+    fetchLocationData(targetLocation, district, city, streetName);
   };
 
   // Select and load a saved location from the Bottom Sheet

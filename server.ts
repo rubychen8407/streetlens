@@ -7,7 +7,7 @@ import { calculateAssessment } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getGreenDensityReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -1001,10 +1001,11 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const [safetyReference, amenityReference, communityReference] = await Promise.all([
+    const [safetyReference, amenityReference, communityReference, normalizationReferences] = await Promise.all([
       getSafetyReference(),
       getPoiDensityReference(),
       getC5CommunityReference(),
+      getDistanceAndAirQualityReferences(),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
@@ -1023,6 +1024,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       amenityReference,
       communityCount,
       communityReference,
+      normalizationReferences,
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
     return res.json({

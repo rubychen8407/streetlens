@@ -18,6 +18,7 @@ import {
   WeatherData,
   SavedLocation,
   StreetAssessmentResponse,
+  ScoreFactor,
 } from './types';
 import {
   DEFAULT_CLS_WEIGHTS,
@@ -497,6 +498,7 @@ export default function App() {
         onUpdateNotes={setFieldNotes}
         onResetToBaseline={handleResetToBaseline}
         weatherData={weatherData}
+        scoreFactors={assessment?.factors ?? []}
         targetLocation={targetLocation}
         onSelectSavedLocation={handleSelectSavedLocation}
       />

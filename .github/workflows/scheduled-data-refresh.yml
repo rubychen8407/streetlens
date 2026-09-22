@@ -1,0 +1,20 @@
+name: Scheduled external data refresh
+
+on:
+  schedule:
+    # Daily at 03:20 Asia/Taipei (19:20 UTC previous day)
+    - cron: "20 19 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh persisted external data
+        env:
+          STREETLENS_BASE_URL: ${{ secrets.STREETLENS_BASE_URL }}
+          STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}
+        run: |
+          test -n "$STREETLENS_BASE_URL"
+          test -n "$STREETLENS_REFRESH_TOKEN"
+          curl --fail --silent --show-error             --request POST             --header "Authorization: Bearer $STREETLENS_REFRESH_TOKEN"             --header "Content-Type: application/json"             "$STREETLENS_BASE_URL/api/internal/refresh-data"

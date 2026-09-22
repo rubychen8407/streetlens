@@ -26,7 +26,7 @@ import {
 } from './data/fieldIndicators';
 import { ScoutMap } from './components/ScoutMap';
 import { FloatingControls } from './components/FloatingControls';
-import { AppleBottomSheet } from './components/AppleBottomSheet';
+import { AssessmentWorkspace } from './components/AssessmentWorkspace';
 import {
   generateSurroundingStreetSegments,
 } from './utils/scoreCalculator';
@@ -59,6 +59,10 @@ export default function App() {
 
   // Bottom Sheet Visibility
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<'assessment' | 'saved' | 'settings'>('assessment');
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>(() => {
+    try { return JSON.parse(localStorage.getItem('cls_saved_locations') || '[]'); } catch { return []; }
+  });
 
   // Weights
   const [weights, setWeights] = useState<CLSWeights>(DEFAULT_CLS_WEIGHTS);
@@ -370,6 +374,47 @@ export default function App() {
     );
   };
 
+  const handleSaveAssessment = useCallback((name: string, observationRatings: Record<string, number>, notes: string) => {
+    const entry: SavedLocation = {
+      id: `saved_${crypto.randomUUID()}`,
+      name,
+      streetName: streetName || 'Selected street',
+      district,
+      city,
+      coords: targetLocation,
+      clsScore,
+      grade: clsGrade,
+      scores: {
+        c1: assessment?.scores.c1.score ?? null,
+        c2: assessment?.scores.c2.score ?? null,
+        c3: assessment?.scores.c3.score ?? null,
+        c4: assessment?.scores.c4.score ?? null,
+        c5: assessment?.scores.c5.score ?? null,
+      },
+      c1Data: c1,
+      c2Data: c2,
+      c3Data: c3,
+      c4Data: c4,
+      c5Data: c5,
+      weights,
+      fieldNotes: JSON.stringify({ notes, observationRatings }),
+      timestamp: Date.now(),
+    };
+    setSavedLocations(prev => {
+      const next = [entry, ...prev];
+      try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [streetName, district, city, targetLocation, clsScore, clsGrade, assessment, c1, c2, c3, c4, c5, weights]);
+
+  const handleDeleteSaved = useCallback((id: string) => {
+    setSavedLocations(prev => {
+      const next = prev.filter(item => item.id !== id);
+      try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   // Map POIs & Street Segments (100% real Google Routes & OSRM road geometry)
   const streetSegments: StreetSegmentScore[] = useMemo(() => {
     return realStreetSegments || [];
@@ -460,36 +505,30 @@ export default function App() {
         weatherData={weatherData}
       />
 
-      {/* 3. Apple Maps Sliding Bottom Sheet (Hidden by default, triggered by buttons!) */}
-      <AppleBottomSheet
+      <AssessmentWorkspace
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
-        clsScore={clsScore}
-        grade={clsGrade}
+        view={workspaceView}
+        onViewChange={setWorkspaceView}
         streetName={streetName}
         district={district}
         city={city}
-        c1={c1}
-        c2={c2}
-        c3={c3}
-        c4={c4}
-        c5={c5}
-        weights={weights}
-        onUpdateWeights={handleUpdateWeights}
-        weightMode={weightMode}
-        baselineScores={baselineScores}
+        targetLocation={targetLocation}
+        clsScore={clsScore}
+        grade={clsGrade}
+        assessment={assessment}
         fieldChecks={fieldChecks}
         onToggleFieldCheck={handleToggleFieldCheck}
-        onAutoFetchBaseline={handleAutoFetchBaseline}
-        isLoadingBaseline={isLoadingBaseline}
-        baselineSummary={baselineSummary}
         fieldNotes={fieldNotes}
         onUpdateNotes={setFieldNotes}
-        weatherData={weatherData}
-        scoreFactors={assessment?.factors ?? []}
-        sourceStatus={assessment?.sourceStatus ?? []}
-        targetLocation={targetLocation}
-        onSelectSavedLocation={handleSelectSavedLocation}
+        onSave={handleSaveAssessment}
+        savedLocations={savedLocations}
+        onSelectSaved={(saved) => {
+          handleSelectSavedLocation(saved);
+          setWorkspaceView('assessment');
+        }}
+        onDeleteSaved={handleDeleteSaved}
+        onOpenDataLogs={() => setWorkspaceView('settings')}
       />
     </div>
   );

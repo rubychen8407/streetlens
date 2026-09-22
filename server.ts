@@ -830,79 +830,8 @@ app.get("/api/baseline-data", async (req: Request, res: Response) => {
     const district = (req.query.district as string) || "大安區";
     const city = (req.query.city as string) || "台北市";
     const streetName = (req.query.streetName as string) || "";
-
-    const ai = getGeminiClient();
-
-    if (ai) {
-      try {
-        const prompt = `你是一個台灣都市計畫、不動產估價與社區宜居度 (Community Livability Score, CLS) 的專家。
-請依據台灣政府官方開放資料庫的客觀常模：
-1. 犯罪率：內政部警政署犯罪統計
-2. 交通事故：交通部交通事故資料庫
-3. 災害潛勢：經濟部水利署淹水潛勢圖、中央地質調查所
-4. POI：Google Maps API、OpenStreetMap、政府開放資料
-5. 公共運輸：公車動態 API、捷運營運資料
-6. 空氣/噪音：環保署監測站
-7. 綠地：國土測繪圖資、都發局綠地資料
-8. 社會/活動：里辦公室公告、問卷調查
-
-目標地點：台灣 ${city} ${district} ${streetName} (精確座標: ${lat}, ${lng})
-
-請仔細考量該具體地點的真實環境（例如是舊市區或重劃區、離主要道路多近、是否靠近捷運、山邊或河邊），回傳真實合理的基準指標數值（嚴格 JSON 格式，不含 markdown）：
-{
-  "c1": {
-    "crimeRate": 0~100 (警政署每千人犯罪標準化，越低越好),
-    "accidentRate": 0~100 (交通部事故統計標準化，越低越好),
-    "hazardLevel": 0~100 (水利署地調所淹水地質潛勢，越低越好)
-  },
-  "c2": {
-    "supermarketDist": 最近生鮮超市步行公尺,
-    "convenienceDist": 最近便利超商步行公尺,
-    "clinicDist": 最近診所或藥局公尺,
-    "schoolDist": 最近國中小學公尺,
-    "bankPostDist": 最近金融郵局公尺,
-    "poiDensityCount": 500m內重要生活店家數
-  },
-  "c3": {
-    "mrtOrRailDist": 最近捷運或火車站公尺,
-    "busStopDist": 最近公車站公尺,
-    "busFrequencyScore": 0~100 (公車尖峰離峰班次),
-    "walkabilityScore": 0~100 (人行道人行安全),
-    "bikeLaneScore": 0~100 (自行車道與YouBike)
-  },
-  "c4": {
-    "airQualityScore": 0~100 (環保署AQI/PM2.5得分，越高越好),
-    "noiseScore": 0~100 (環境噪音逆向評分，越高越安靜),
-    "greenCoveragePct": 0~100 (綠覆率百分比),
-    "parkDistance": 最近公園綠地距離公尺
-  },
-  "c5": {
-    "activityFrequency": 0~100 (社區活動頻率),
-    "neighborhoodTrust": 0~100 (鄰里信任安心感),
-    "jobCommercialDensity": 0~100 (商圈就業密度),
-    "governanceParticipation": 0~100 (里民自治參與度)
-  },
-  "summary": "一句話總結此處各項數據在政府開放資料中的特徵表現",
-  "sources": "內政部警政署犯罪統計、交通部交通事故資料庫、經濟部水利署淹水潛勢圖、中央地質調查所、Google Maps API、OpenStreetMap、公車動態 API、捷運營運資料、環保署監測站、國土測繪圖資、都發局綠地資料、里辦公室公告"
-}`;
-
-        const textResponse = await generateGeminiContentWithFallback(
-          ai,
-          prompt,
-          "application/json"
-        );
-
-        const parsed = JSON.parse(textResponse || "{}");
-        if (parsed.c1 && parsed.c2 && parsed.c3 && parsed.c4 && parsed.c5) {
-          return res.json({
-            source: "gemini_open_data_grounded",
-            ...parsed,
-          });
-        }
-      } catch (err) {
-        console.warn("Gemini baseline error, fallback to spatial algorithmic benchmarks:", err);
-      }
-    }
+    // Baseline values below are explicitly prototype estimates.
+    // Gemini is not used to invent raw location statistics.
 
     // 地理空間差值演算法 (Spatial Algorithmic Baseline Engine)
     // 依據經緯度、縣市、行政區產生精確且差異顯著的客觀數值
@@ -968,7 +897,7 @@ app.get("/api/baseline-data", async (req: Request, res: Response) => {
     const base = matchedBench || defaultBench;
 
     return res.json({
-      source: "taiwan_open_data_benchmarks",
+      source: "regional_benchmark_estimate",
       c1: {
         crimeRate: Math.max(10, Math.min(80, Math.round(base.c1.crimeRate + (microSeed % 7) - 3))),
         accidentRate: Math.max(10, Math.min(80, Math.round(base.c1.accidentRate + ((microSeed * 2) % 7) - 3))),
@@ -1002,7 +931,7 @@ app.get("/api/baseline-data", async (req: Request, res: Response) => {
         governanceParticipation: Math.round(base.c5.governanceParticipation + (microSeed % 5) - 2),
       },
       summary: base.summary || `${city}${district} ${streetName || ''} 生活圈依據政府開放資料常模評估。`,
-      sources: "內政部警政署犯罪統計、交通部交通事故資料庫、經濟部水利署淹水潛勢圖、中央地質調查所、Google Maps API、OpenStreetMap、公車動態 API、捷運營運資料、環保署監測站、國土測繪圖資、都發局綠地資料、里辦公室公告",
+      sources: "StreetLens regional benchmark estimate; not a direct query of official real-time statistics",
     });
   } catch (error: any) {
     console.error("Baseline error:", error);

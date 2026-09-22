@@ -198,3 +198,44 @@ export interface SavedLocation {
   fieldNotes?: string;
   timestamp: number;
 }
+
+export interface ScoreFactor {
+  category: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
+  indicator: string;
+  value: number;
+  unit: string;
+  direction: 'higher_is_better' | 'lower_is_better';
+  source: string;
+  method: 'official' | 'api' | 'osm' | 'calculated' | 'survey' | 'estimated';
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface CategoryScore {
+  score: number;
+  factors: ScoreFactor[];
+}
+
+export interface StreetAssessmentScores {
+  c1: CategoryScore;
+  c2: CategoryScore;
+  c3: CategoryScore;
+  c4: CategoryScore;
+  c5: CategoryScore;
+  overall: number;
+  weights: Record<'C1' | 'C2' | 'C3' | 'C4' | 'C5', number>;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface StreetAssessmentResponse {
+  location: LocationCoord & {
+    city: string;
+    district: string;
+    streetName: string;
+  };
+  scores: StreetAssessmentScores;
+  factors: ScoreFactor[];
+  poiCount: number;
+  dataSources: string[];
+  generatedAt: string;
+}
+

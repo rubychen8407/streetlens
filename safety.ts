@@ -8,12 +8,26 @@ export interface SafetySourceResult {
   error?: string;
 }
 
+const TAIPEI_RESIDENTIAL_THEFT_URL =
+  "https://data.taipei/api/dataset/7f4e5c5f-2c6e-4f6b-a8e4-4d0b0f8a6b53/resource/download";
+
 const TAIPEI_ACCIDENT_URL =
   "https://data.taipei/api/dataset/2f238b4f-1b27-4085-93e9-d684ef0e2735/resource/83d6d29c-6801-41a2-95c6-47d551646db3/download";
 
 export const SAFETY_RESOURCE_URLS = {
   taipeiFatalInjuryAccidents2025: TAIPEI_ACCIDENT_URL,
+  taipeiResidentialTheft: TAIPEI_RESIDENTIAL_THEFT_URL,
 };
+
+
+
+export interface CrimeSourceResult {
+  thefts: any[];
+  source: string;
+  status: "available" | "empty" | "error" | "timeout";
+  retrievedAt: string;
+  error?: string;
+}
 
 function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -185,6 +199,60 @@ export async function fetchTaipeiSafetyData(
     return {
       accidents: [],
       source: "Taipei City Police Department traffic accident data (2025)",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+
+export async function fetchTaipeiResidentialTheftData(
+  lat: number,
+  lng: number,
+  radiusMeters = 500,
+): Promise<CrimeSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(TAIPEI_RESIDENTIAL_THEFT_URL, {
+      signal: controller.signal,
+      headers: { Accept: "text/csv,*/*", "User-Agent": "StreetLens/1.0" },
+    });
+    if (!response.ok) throw new Error(`Taipei residential theft HTTP ${response.status}`);
+    const text = await response.text();
+    const rows = parseCsv(text);
+    const thefts = rows.map((row) => {
+      const latValue = numberValue(row, ["緯度", "Latitude", "latitude"]);
+      const lngValue = numberValue(row, ["經度", "Longitude", "longitude"]);
+      return {
+        id: firstValue(row, ["編號", "ID", "id"]),
+        type: firstValue(row, ["案類", "案件類別"]),
+        date: firstValue(row, ["發生日期", "日期"]),
+        period: firstValue(row, ["發生時段", "時段"]),
+        location: firstValue(row, ["發生地點", "地點"]),
+        lat: latValue,
+        lng: lngValue,
+        source: "Taipei City Police Department residential theft point data",
+        retrievedAt,
+      };
+    }).filter((x) => x.lat != null && x.lng != null)
+      .map((x) => ({ ...x, distanceMeters: haversineDistanceMeters(lat, lng, x.lat as number, x.lng as number) }))
+      .filter((x) => x.distanceMeters <= radiusMeters)
+      .sort((a, b) => a.distanceMeters - b.distanceMeters);
+    return {
+      thefts,
+      source: "Taipei City Police Department residential theft point data",
+      status: thefts.length ? "available" : "empty",
+      retrievedAt,
+    };
+  } catch (error: any) {
+    return {
+      thefts: [],
+      source: "Taipei City Police Department residential theft point data",
       status: error?.name === "AbortError" ? "timeout" : "error",
       retrievedAt,
       error: error?.message,

@@ -988,6 +988,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       confidence: greenData.status === "available" ? "high" as const : "low" as const,
       status: greenData.status,
       retrievedAt: greenData.retrievedAt,
+      streetTreeDensityReference: [],
+      parkTreeDensityReference: [],
     };
 
     const accidents = safetyData.accidents || [];
@@ -997,6 +999,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
       source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
       status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
+      accidentCountReference: [], floodDepthReference: [],
     };
 
     const greenReference = await getGreenDensityReference();

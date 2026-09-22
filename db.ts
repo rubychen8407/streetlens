@@ -179,6 +179,29 @@ export async function getSafetyReference(excludeScopeKey?: string): Promise<{
   };
 }
 
+export async function getPoiDensityReference(excludeScopeKey?: string): Promise<number[]> {
+  if (!dataDb) return [];
+  const result = await dataDb.query(
+    `SELECT scope_key AS "scopeKey", payload
+     FROM external_data_snapshots
+     WHERE source_key IN ('google_places', 'openstreetmap')
+       AND status IN ('available', 'empty')`,
+  );
+  const byScope = new Map<string, Map<string, any>>();
+  for (const row of result.rows) {
+    if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
+    if (!byScope.has(row.scopeKey)) byScope.set(row.scopeKey, new Map());
+    const scopePois = byScope.get(row.scopeKey)!;
+    const pois = Array.isArray(row.payload?.pois) ? row.payload.pois : [];
+    for (const poi of pois) {
+      if (poi.category !== "C2") continue;
+      const id = String(poi.id || `${poi.name}|${poi.lat}|${poi.lng}`);
+      scopePois.set(id, poi);
+    }
+  }
+  return [...byScope.values()].map((pois) => pois.size);
+}
+
 export async function getC5CommunityReference(excludeScopeKey?: string): Promise<number[]> {
   if (!dataDb) return [];
   const result = await dataDb.query(

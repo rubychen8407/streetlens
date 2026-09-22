@@ -1213,6 +1213,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       {
         c4NearestParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
         c4NearestParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+        c4ParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
+        c4ParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
         c5Source: communityPois.length ? [...new Set(communityPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
         c5RetrievedAt: communityPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
       },

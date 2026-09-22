@@ -72,6 +72,8 @@ export interface C4GreenMetrics {
   parkTreeDensityPerKm2?: number;
   streetTreeDensityScore?: number;
   parkTreeDensityScore?: number;
+  streetTreeDensityReference?: number[];
+  parkTreeDensityReference?: number[];
   nearestParkDist?: number;
   parkCount800m?: number;
   source: string;

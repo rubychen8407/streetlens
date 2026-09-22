@@ -160,7 +160,7 @@ export async function fetchTaipeiSafetyData(
 ): Promise<SafetySourceResult> {
   const retrievedAt = new Date().toISOString();
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
     const response = await fetch(TAIPEI_ACCIDENT_URL, {

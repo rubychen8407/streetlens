@@ -576,6 +576,18 @@ function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
 // or facilities as real-world locations.
 
 // Scheduled refresh only: external scoring sources are fetched here, then persisted.
+const REFRESH_INTERVAL_HOURS: Record<string, number> = {
+  google_places: 24,
+  openstreetmap: 24,
+  tdx_transit: 24,
+  taipei_green: 168,
+  taipei_safety: 168,
+  taipei_flood: 168,
+  open_meteo_air_quality: 24,
+};
+
+// Scheduled refresh only: external scoring sources are fetched here, then persisted.
+// Each source has its own cadence. The source is fetched only when its cached copy is due.
 app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
   if (!DATA_REFRESH_TOKEN || req.headers.authorization !== "Bearer " + DATA_REFRESH_TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -584,50 +596,49 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     await ensureDataCacheSchema();
     const targets = await listActiveAssessmentTargets();
     const results: any[] = [];
+    const now = Date.now();
+
     for (const target of targets) {
       const lat = target.latitude;
       const lng = target.longitude;
       const scopeKey = target.scopeKey;
-      const retrievedAt = new Date().toISOString();
-      const settled = await Promise.allSettled([
-        fetchGooglePlacesNearby(lat, lng),
-        fetchOsmPoisNearby(lat, lng),
-        fetchTdxTransitData(lat, lng),
-        fetchTaipeiGreenData(lat, lng),
-        fetchTaipeiSafetyData(lat, lng, 500),
-        fetchTaipeiFloodHazardData(lat, lng),
-        fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat + "&longitude=" + lng + "&current=us_aqi,pm2_5&timezone=auto", { headers: { "User-Agent": "StreetLens/1.0" } }),
-      ]);
+      const jobs: Record<string, Promise<any>> = {};
 
-      const names = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
-      for (let i = 0; i < names.length; i++) {
-        const result = settled[i];
-        let payload: any;
-        if (result.status === "fulfilled") {
-          if (i === 6) {
-            try {
-              if (!result.value.ok) throw new Error("HTTP " + result.value.status);
-              const data: any = await result.value.json();
-              payload = {
-                aqi: typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null,
-                pm25: typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null,
-                airQualityTimestamp: data.current?.time || null,
-                retrievedAt,
-                source: "Open-Meteo Air Quality (CAMS model data)",
-                sourceType: "model",
-                status: data.current ? "available" : "empty",
-              };
-            } catch (error: any) {
-              payload = { status: "error", error: error?.message || String(error), retrievedAt };
-            }
-          } else {
-            payload = result.value;
-          }
-        } else {
-          payload = { status: "error", error: result.reason?.message || String(result.reason), retrievedAt };
+      for (const sourceKey of Object.keys(REFRESH_INTERVAL_HOURS)) {
+        const existing = await getCachedSnapshot(sourceKey, scopeKey);
+        const due = !existing || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+        if (!due) {
+          results.push({ scopeKey, sourceKey, changed: false, status: existing?.status || "cached", skipped: true });
+          continue;
         }
-        const saved = await saveSnapshot(names[i], scopeKey, payload, { status: String(payload?.status || "available") });
-        results.push({ scopeKey, sourceKey: names[i], changed: saved.changed, status: payload?.status || "available" });
+        if (sourceKey === "google_places") jobs[sourceKey] = fetchGooglePlacesNearby(lat, lng);
+        else if (sourceKey === "openstreetmap") jobs[sourceKey] = fetchOsmPoisNearby(lat, lng);
+        else if (sourceKey === "tdx_transit") jobs[sourceKey] = fetchTdxTransitData(lat, lng);
+        else if (sourceKey === "taipei_green") jobs[sourceKey] = fetchTaipeiGreenData(lat, lng);
+        else if (sourceKey === "taipei_safety") jobs[sourceKey] = fetchTaipeiSafetyData(lat, lng, 500);
+        else if (sourceKey === "taipei_flood") jobs[sourceKey] = fetchTaipeiFloodHazardData(lat, lng);
+        else if (sourceKey === "open_meteo_air_quality") jobs[sourceKey] = fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat + "&longitude=" + lng + "&current=us_aqi,pm2_5&timezone=auto").then(async (response) => {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          const data: any = await response.json();
+          return {
+            aqi: typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null,
+            pm25: typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null,
+            airQualityTimestamp: data.current?.time || null,
+            retrievedAt: new Date().toISOString(), source: "Open-Meteo Air Quality (CAMS model data)", sourceType: "model",
+            status: data.current ? "available" : "empty",
+          };
+        });
+      }
+
+      for (const [sourceKey, job] of Object.entries(jobs)) {
+        let payload: any;
+        try {
+          payload = await job;
+        } catch (error: any) {
+          payload = { status: "error", error: error?.message || String(error), retrievedAt: new Date().toISOString() };
+        }
+        const saved = await saveSnapshot(sourceKey, scopeKey, payload, { status: String(payload?.status || "available") });
+        results.push({ scopeKey, sourceKey, changed: saved.changed, status: payload?.status || "available", skipped: false });
       }
     }
     return res.json({ refreshedAt: new Date().toISOString(), targetCount: targets.length, snapshots: results });

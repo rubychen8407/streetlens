@@ -177,6 +177,7 @@ export function calculateAssessment(
       confidence: Number.isFinite(Number(c1AccidentCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
       status: Number.isFinite(Number(c1AccidentCount)) ? "available" : "unavailable",
       retrievedAt: c1SafetyMetrics?.retrievedAt,
+      referenceSampleSize: c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
       scoringMethod: "raw_observation",
     },
     {
@@ -190,6 +191,7 @@ export function calculateAssessment(
       confidence: Number.isFinite(Number(c1FatalCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
       status: Number.isFinite(Number(c1FatalCount)) ? "available" : "unavailable",
       retrievedAt: c1SafetyMetrics?.retrievedAt,
+      referenceSampleSize: c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
       scoringMethod: "raw_observation",
     },
     {
@@ -203,6 +205,7 @@ export function calculateAssessment(
       confidence: Number.isFinite(Number(c1InjuryCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
       status: Number.isFinite(Number(c1InjuryCount)) ? "available" : "unavailable",
       retrievedAt: c1SafetyMetrics?.retrievedAt,
+      referenceSampleSize: c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
       scoringMethod: "raw_observation",
     },
   ];
@@ -223,6 +226,7 @@ export function calculateAssessment(
       confidence: "high",
       status: cell.depthCm != null ? "available" : "unavailable",
       retrievedAt: cell.retrievedAt,
+      referenceSampleSize: c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0,
       scoringMethod: "raw_observation",
     });
   }
@@ -275,6 +279,17 @@ export function calculateAssessment(
     scoringMethod: poiDensityScore !== null ? "empirical_percentile" : "not_scored",
     availabilityReason: Number.isFinite(Number(poiDensity)) ? undefined : "no_observation",
   });
+
+  for (const factor of c2Factors) {
+    const reference = normalization?.c2Distances?.[factor.indicator as keyof NonNullable<typeof normalization.c2Distances>];
+    factor.referenceSampleSize = reference?.filter(Number.isFinite).length ?? 0;
+    factor.scoringMethod = factor.value != null && factor.referenceSampleSize >= 20
+      ? "empirical_percentile"
+      : "not_scored";
+    if (factor.value != null && factor.referenceSampleSize < 20) {
+      factor.availabilityReason = "insufficient_reference_data";
+    }
+  }
 
   const poiDensityScore = empiricalPercentileScore(poiDensity, c2PoiDensityReference);
   const c2ComponentScores = c2Definitions

@@ -363,7 +363,9 @@ export function ScoutMap({
     if (activeLayers.streetScores) {
       streetSegments.forEach((segment) => {
         const color =
-          segment.clsScore >= 85
+          segment.clsScore == null
+            ? '#64748b'
+            : segment.clsScore >= 85
             ? '#10b981'
             : segment.clsScore >= 75
             ? '#6366f1'
@@ -379,7 +381,7 @@ export function ScoutMap({
         });
 
         poly.bindTooltip(
-          `<div class="text-xs font-bold px-1.5 py-0.5 bg-slate-900 text-white rounded">${segment.name} · ${segment.clsScore}分</div>`,
+          `<div class="text-xs font-bold px-1.5 py-0.5 bg-slate-900 text-white rounded">${segment.name} · ${segment.clsScore == null ? "N/A" : `${segment.clsScore}分`}</div>`,
           { permanent: false, sticky: true, className: 'street-custom-tooltip' }
         );
 

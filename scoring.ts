@@ -140,6 +140,7 @@ export function calculateAssessment(
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
   c4GreenMetrics?: C4GreenMetrics,
+  c5CommunityReference?: number[],
 ): AssessmentScores {
 
   // C1 uses only official, geocoded Taipei traffic accident records.
@@ -363,9 +364,22 @@ export function calculateAssessment(
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
 
-  // C5 is intentionally unavailable. Social trust/governance/activity must not be
-  // inferred from POIs or generated estimates.
-  const c5Factors: ScoreFactor[] = [];
+  // C5 measures source-backed community/cultural access only. It does not
+  // claim to measure subjective social trust or civic participation.
+  const communityCount = c5CommunityReference && c5CommunityReference.length >= 0
+    ? null
+    : null;
+  const c5Factors: ScoreFactor[] = [{
+    category: "C5",
+    indicator: "communityCulturalPoiCount800m",
+    value: null,
+    unit: "POIs",
+    direction: "higher_is_better",
+    source: "Google Places / OpenStreetMap",
+    method: "calculated",
+    confidence: "low",
+    status: "unavailable",
+  }];
   const c5: number | null = null;
 
   const categories: Record<Category, CategoryScore> = {

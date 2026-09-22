@@ -468,17 +468,16 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<any[]>
             : /convenience_store/.test(p.primaryType || "")
               ? "convenience"
               : /hospital|pharmacy|doctor|dentist|clinic/.test(p.primaryType || "")
-              ? "clinic"
-              : /school|primary_school|secondary_school/.test(p.primaryType || "")
-                ? "school"
-                : /bank|post_office|finance/.test(p.primaryType || "")
-                  ? "bank_post"
-                  : /subway_station|train_station|light_rail_station/.test(p.primaryType || "")
-                    ? "rail"
-                    : /transit_station|bus_station|bus_stop/.test(p.primaryType || "")
-                      ? "bus"
-                      : /bank|post_office|finance/.test(p.primaryType || "")
-                    : "other";
+                ? "clinic"
+                : /school|primary_school|secondary_school/.test(p.primaryType || "")
+                  ? "school"
+                  : /bank|post_office|finance/.test(p.primaryType || "")
+                    ? "bank_post"
+                    : /subway_station|train_station|light_rail_station/.test(p.primaryType || "")
+                      ? "rail"
+                      : /transit_station|bus_station|bus_stop/.test(p.primaryType || "")
+                        ? "bus"
+                        : "other";
 
         return {
           id: `gp_${p.id}`,
@@ -1039,8 +1038,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     };
 
     const c3TransitMetrics = {
-      mrtOrRailDist: nearest("transit"),
-      busStopDist: nearest("transit"),
+      mrtOrRailDist: nearest("rail"),
+      busStopDist: nearest("bus"),
       source: "Google Places (New) / OpenStreetMap",
       method: "calculated" as const,
       confidence: "high" as const,

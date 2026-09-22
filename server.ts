@@ -1006,24 +1006,12 @@ app.post("/api/analyze-cls", async (req: Request, res: Response) => {
 
     if (!ai) {
       return res.json({
-        source: "algorithmic_rule_based",
-        overallScore,
-        strengths: [
-          "各項指標均衡發展，生活與通勤機能完備",
-          "步行範圍內各級 POI 距離衰減效能優良",
-          "社區治安防汛與公共設施常態維護水準良好",
-        ],
-        weaknesses: [
-          "尖峰時段可能有臨路動態車流低頻噪音",
-          "部分狹窄巷弄若有機車違停需注意行人動線",
-          "特定時間帶應多留意人潮走動與環境維護狀況",
-        ],
-        surveyRecommendations: [
-          "建議於平日傍晚 18:00~19:30 與週末上午各實地再複勘一次人車流量",
-          "實地檢視建築周圍有無油煙直排或雜物堆置死角",
-          "確認常態步行至最近捷運/大眾運輸站點的連續人行道安全性",
-        ],
-        summary: `${streetName || "目標路段"} 社區宜居綜合指數 (CLS) 評分 ${overallScore} 分，整體生活條件具備高度實用性與穩定性。`,
+        source: "unavailable",
+        overallScore: overallScore ?? null,
+        strengths: [],
+        weaknesses: [],
+        surveyRecommendations: [],
+        summary: "AI 分析服務目前不可用；未產生未經資料支持的宜居結論。",
       });
     }
 

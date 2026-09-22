@@ -263,48 +263,124 @@ export async function fetchTaipeiResidentialTheftData(
 }
 
 
+export interface FloodHazardCell {
+  scenarioMmPerHour: 78.8 | 100 | 130;
+  depthCm: number | null;
+  distanceMeters: number;
+  source: string;
+  sourceType: "official_model";
+  retrievedAt: string;
+}
+
 export interface FloodSourceResult {
-  riskCells: any[];
+  riskCells: FloodHazardCell[];
   source: string;
   status: "available" | "empty" | "error" | "timeout";
   retrievedAt: string;
   error?: string;
 }
 
+const FLOOD_RESOURCES = [
+  { scenario: 78.8 as const, url: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=173adcbe-0f2e-4941-b2bc-127c09db0391" },
+  { scenario: 100 as const, url: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=4b14c3a0-fcf2-48d4-9c93-e27784cae29d" },
+  { scenario: 130 as const, url: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=2954e8d4-cb67-40c9-8ab8-019ad10b758e" },
+];
+
+export const FLOOD_RESOURCE_URLS = Object.fromEntries(
+  FLOOD_RESOURCES.map((item) => [`taipeiFlood${String(item.scenario).replace(".", "_")}mmh`, item.url]),
+);
+
+type Polygon = [number, number][];
+
+const floodCache = new Map<string, { expiresAt: number; polygons: { scenario: FloodHazardCell["scenarioMmPerHour"]; polygon: Polygon; depthCm: number | null }[] }>();
+
+function pointInPolygon(lng: number, lat: number, polygon: Polygon): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersects = ((yi > lat) !== (yj > lat))
+      && (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function parseDepthCm(placemark: string): number | null {
+  const match = placemark.match(/<SimpleData[^>]*name=["']depth["'][^>]*>([^<]+)</i)
+    || placemark.match(/<Data[^>]*name=["']depth["'][^>]*>\s*<value>([^<]+)</i);
+  if (!match) return null;
+  const value = Number(match[1].trim());
+  return Number.isFinite(value) ? value : null;
+}
+
+function parsePolygons(kml: string, scenario: FloodHazardCell["scenarioMmPerHour"]) {
+  const polygons: { scenario: FloodHazardCell["scenarioMmPerHour"]; polygon: Polygon; depthCm: number | null }[] = [];
+  const placemarks = kml.match(/<Placemark[\s\S]*?<\/Placemark>/gi) || [];
+  for (const placemark of placemarks) {
+    const depthCm = parseDepthCm(placemark);
+    const coordinateBlocks = placemark.match(/<coordinates[^>]*>[\s\S]*?<\/coordinates>/gi) || [];
+    for (const block of coordinateBlocks) {
+      const raw = block.replace(/<\/?coordinates[^>]*>/gi, "").trim();
+      const polygon = raw.split(/\s+/).map((token) => {
+        const [lng, lat] = token.split(",").map(Number);
+        return [lng, lat] as [number, number];
+      }).filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+      if (polygon.length >= 3) polygons.push({ scenario, polygon, depthCm });
+    }
+  }
+  return polygons;
+}
+
+async function loadFloodPolygons(): Promise<typeof floodCache extends Map<any, infer V> ? V["polygons"] : never> {
+  const cached = floodCache.get("all");
+  if (cached && cached.expiresAt > Date.now()) return cached.polygons;
+
+  const settled = await Promise.allSettled(FLOOD_RESOURCES.map(async (resource) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(resource.url, {
+        signal: controller.signal,
+        headers: { Accept: "application/vnd.google-earth.kml+xml,application/xml,text/xml,*/*", "User-Agent": "StreetLens/1.0" },
+      });
+      if (!response.ok) throw new Error(`Taipei flood KML HTTP ${response.status}`);
+      const text = await response.text();
+      if (!text.trim()) throw new Error("Taipei flood KML returned empty content");
+      return parsePolygons(text, resource.scenario);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }));
+  const polygons = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  if (!polygons.length) throw new Error("No flood polygons were parsed from official KML resources");
+  floodCache.set("all", { expiresAt: Date.now() + 60 * 60 * 1000, polygons });
+  return polygons;
+}
+
 export async function fetchTaipeiFloodHazardData(
   lat: number,
   lng: number,
-  radiusMeters = 500,
 ): Promise<FloodSourceResult> {
   const retrievedAt = new Date().toISOString();
-  // The official dataset publishes scenario KML resources. We do not invent a
-  // flood probability from them; this adapter is intentionally left unavailable
-  // until a verified resource URL is configured.
-  const url = process.env.TAIPEI_FLOOD_KML_URL;
-  if (!url) {
-    return {
-      riskCells: [],
-      source: "Taipei City official rainfall inundation simulation (112 revision)",
-      status: "empty",
-      retrievedAt,
-    };
-  }
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: "application/vnd.google-earth.kml+xml,application/xml,text/xml,*/*", "User-Agent": "StreetLens/1.0" },
-    });
-    if (!response.ok) throw new Error(`Taipei flood KML HTTP ${response.status}`);
-    const text = await response.text();
-    if (!text.trim()) throw new Error("Taipei flood KML returned empty content");
-    // Keep the raw official resource available to a future polygon/KML parser.
-    // No score is derived until the geometry is parsed and spatially intersected.
+    const polygons = await loadFloodPolygons();
+    const matches = polygons
+      .filter((item) => pointInPolygon(lng, lat, item.polygon))
+      .map((item) => ({
+        scenarioMmPerHour: item.scenario,
+        depthCm: item.depthCm,
+        distanceMeters: 0,
+        source: "Taipei City official rainfall inundation simulation (112 revision)",
+        sourceType: "official_model" as const,
+        retrievedAt,
+      }))
+      .sort((a, b) => a.scenarioMmPerHour - b.scenarioMmPerHour);
+
     return {
-      riskCells: [{ lat, lng, resourceLength: text.length }],
+      riskCells: matches,
       source: "Taipei City official rainfall inundation simulation (112 revision)",
-      status: "available",
+      status: matches.length ? "available" : "empty",
       retrievedAt,
     };
   } catch (error: any) {
@@ -315,7 +391,5 @@ export async function fetchTaipeiFloodHazardData(
       retrievedAt,
       error: error?.message,
     };
-  } finally {
-    clearTimeout(timeoutId);
   }
 }

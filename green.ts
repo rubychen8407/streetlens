@@ -69,10 +69,61 @@ function extractRows(data: any): any[] {
   return [];
 }
 
+function parseCsv(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (quoted && next === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      row.push(field);
+      field = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(field);
+      field = "";
+      if (row.some((value) => value.trim() !== "")) rows.push(row);
+      row = [];
+    } else {
+      field += char;
+    }
+  }
+
+  if (field.length || row.length) {
+    row.push(field);
+    if (row.some((value) => value.trim() !== "")) rows.push(row);
+  }
+
+  if (!rows.length) return [];
+  const headers = rows[0].map((header) => header.replace(/^\uFEFF/, "").trim());
+  return rows.slice(1).map((values) =>
+    Object.fromEntries(headers.map((header, index) => [header, (values[index] ?? "").trim()]))
+  );
+}
+
+interface DatasetRowsResult {
+  rows: any[];
+  format: "json" | "csv";
+  rowCount: number;
+  coordinateRowCount: number;
+  coordinateColumns: string[];
+}
+
 async function fetchDatasetResource(
   resource: "streetTrees" | "parkTrees",
   signal: AbortSignal
-): Promise<any[]> {
+): Promise<DatasetRowsResult> {
   const url = resource === "streetTrees" ? STREET_TREE_URL : PARK_TREE_URL;
   const response = await fetch(url, {
     signal,
@@ -80,19 +131,24 @@ async function fetchDatasetResource(
   });
   if (!response.ok) throw new Error(`${resource} resource HTTP ${response.status}`);
   const text = await response.text();
-  try {
-    return extractRows(JSON.parse(text));
-  } catch {
-    const lines = text.split(/\\r?\\n/).filter(Boolean);
-    if (!lines.length) return [];
-    const headers = lines[0].split(",").map((value) => value.trim().replace(/^"|"$/g, ""));
-    return lines.slice(1).map((line) => {
-      const values = line.split(",").map((value) => value.trim().replace(/^"|"$/g, ""));
-      return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-    });
-  }
-}
 
+  let rows: any[];
+  let format: "json" | "csv";
+  try {
+    rows = extractRows(JSON.parse(text));
+    format = "json";
+  } catch {
+    rows = parseCsv(text);
+    format = "csv";
+  }
+
+  const coordinateColumns = rows.length
+    ? Object.keys(rows[0]).filter((key) => /^(TWD97X|TWD97Y|lat|latitude|lng|longitude)$/i.test(key))
+    : [];
+  const coordinateRowCount = rows.filter((row) => findCoordinate(row) != null).length;
+
+  return { rows, format, rowCount: rows.length, coordinateRowCount, coordinateColumns };
+}
 
 
 export async function fetchTaipeiGreenData(
@@ -110,8 +166,10 @@ export async function fetchTaipeiGreenData(
       fetchDatasetResource("parkTrees", controller.signal),
     ]);
 
-    const streetRows = settled[0].status === "fulfilled" ? settled[0].value : [];
-    const parkRows = settled[1].status === "fulfilled" ? settled[1].value : [];
+    const streetResult = settled[0].status === "fulfilled" ? settled[0].value : null;
+    const parkResult = settled[1].status === "fulfilled" ? settled[1].value : null;
+    const streetRows = streetResult?.rows ?? [];
+    const parkRows = parkResult?.rows ?? [];
 
     const filterNearby = (rows: any[]) =>
       rows
@@ -130,6 +188,29 @@ export async function fetchTaipeiGreenData(
 
     const streetTrees = filterNearby(streetRows);
     const parkTrees = filterNearby(parkRows);
+
+    console.log(JSON.stringify({
+      greenParser: {
+        streetTrees: streetResult
+          ? {
+              format: streetResult.format,
+              rowCount: streetResult.rowCount,
+              coordinateRowCount: streetResult.coordinateRowCount,
+              coordinateColumns: streetResult.coordinateColumns,
+              nearbyCount: streetTrees.length,
+            }
+          : null,
+        parkTrees: parkResult
+          ? {
+              format: parkResult.format,
+              rowCount: parkResult.rowCount,
+              coordinateRowCount: parkResult.coordinateRowCount,
+              coordinateColumns: parkResult.coordinateColumns,
+              nearbyCount: parkTrees.length,
+            }
+          : null,
+      },
+    }, null, 2));
     const hasSuccessfulResource = settled.some((result) => result.status === "fulfilled");
 
     return {

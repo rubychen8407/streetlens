@@ -234,6 +234,15 @@ export interface StreetAssessmentScores {
   retrievedAt?: string;
 }
 
+export interface AssessmentSourceStatus {
+  source: string;
+  status: string;
+  retrievedAt: string | null;
+  checkedAt: string | null;
+  sourceVersion: string | null;
+  freshnessMethod: string;
+}
+
 export interface StreetAssessmentResponse {
   location: LocationCoord & {
     city: string;
@@ -246,5 +255,7 @@ export interface StreetAssessmentResponse {
   dataSources: string[];
   generatedAt: string;
   missingSources?: string[];
+  sourceStatus?: AssessmentSourceStatus[];
+  dataStatus?: 'cached' | 'pending_refresh' | 'database_required';
 }
 

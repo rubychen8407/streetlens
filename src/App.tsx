@@ -17,6 +17,7 @@ import {
   StreetSegmentScore,
   WeatherData,
   SavedLocation,
+  StreetAssessmentResponse,
 } from './types';
 import {
   DEFAULT_CLS_WEIGHTS,
@@ -26,14 +27,6 @@ import { ScoutMap } from './components/ScoutMap';
 import { FloatingControls } from './components/FloatingControls';
 import { AppleBottomSheet } from './components/AppleBottomSheet';
 import {
-  calculateC1Score,
-  calculateC2Score,
-  calculateC3Score,
-  calculateC4Score,
-  calculateC5Score,
-  calculateOverallCLS,
-  getCLSGrade,
-  generateDefaultBaselineData,
   generateSurroundingStreetSegments,
 } from './utils/scoreCalculator';
 
@@ -74,17 +67,15 @@ export default function App() {
   const [fieldChecks, setFieldChecks] = useState<FieldCheckItem[]>(INITIAL_FIELD_CHECKS);
   const [fieldNotes, setFieldNotes] = useState<string>('');
 
-  // Baseline & live survey data
-  const initialBase = generateDefaultBaselineData(defaultLocation, '大安區', '台北市');
-  const [baselineData, setBaselineData] = useState(initialBase);
-  const [c1, setC1] = useState<C1Data>(initialBase.c1);
-  const [c2, setC2] = useState<C2Data>(initialBase.c2);
-  const [c3, setC3] = useState<C3Data>(initialBase.c3);
-  const [c4, setC4] = useState<C4Data>(initialBase.c4);
-  const [c5, setC5] = useState<C5Data>(initialBase.c5);
-
+  // Source-backed assessment state. Scores are returned by the backend only.
+  const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
+  const [c1, setC1] = useState<C1Data>({ crimeRate: null, accidentRate: null, hazardLevel: null, wCrime: 0.333, wAccident: 0.333, wHazard: 0.333, score: null });
+  const [c2, setC2] = useState<C2Data>({ supermarketDist: null, convenienceDist: null, clinicDist: null, schoolDist: null, bankPostDist: null, decayBeta: null, poiDensityCount: null, score: null });
+  const [c3, setC3] = useState<C3Data>({ mrtOrRailDist: null, busStopDist: null, busFrequencyScore: null, walkabilityScore: null, bikeLaneScore: null, wTransit: 0.4, wWalk: 0.35, wBike: 0.25, score: null });
+  const [c4, setC4] = useState<C4Data>({ airQualityScore: null, noiseScore: null, greenCoveragePct: null, parkDistance: null, parkAccessScore: null, wAir: 0.25, wNoise: 0.25, wGreen: 0.25, wPark: 0.25, score: null });
+  const [c5, setC5] = useState<C5Data>({ activityFrequency: null, neighborhoodTrust: null, jobCommercialDensity: null, governanceParticipation: null, wActivity: 0.25, wTrust: 0.25, wJobs: 0.25, wGovernance: 0.25, score: null });
   const [isLoadingBaseline, setIsLoadingBaseline] = useState<boolean>(false);
-  const [baselineSummary, setBaselineSummary] = useState<string>(initialBase.dataSourceSummary);
+  const [baselineSummary, setBaselineSummary] = useState<string>('等待已儲存資料…');
 
   // Map active layers
   const [activeLayers, setActiveLayers] = useState({
@@ -97,61 +88,10 @@ export default function App() {
     walkingRadius: true,
   });
 
-  // Calculate live scores
-  const currentC1Score = calculateC1Score(c1, fieldChecks);
-  const currentC2Score = calculateC2Score(c2, fieldChecks);
-  const currentC3Score = calculateC3Score(c3, fieldChecks);
-  const currentC4Score = calculateC4Score(c4, fieldChecks);
-  const currentC5Score = calculateC5Score(c5, fieldChecks);
-
-  useEffect(() => {
-    setC1((prev) => (prev.score !== currentC1Score ? { ...prev, score: currentC1Score } : prev));
-  }, [currentC1Score]);
-
-  useEffect(() => {
-    setC2((prev) => (prev.score !== currentC2Score ? { ...prev, score: currentC2Score } : prev));
-  }, [currentC2Score]);
-
-  useEffect(() => {
-    setC3((prev) => (prev.score !== currentC3Score ? { ...prev, score: currentC3Score } : prev));
-  }, [currentC3Score]);
-
-  useEffect(() => {
-    setC4((prev) => (prev.score !== currentC4Score ? { ...prev, score: currentC4Score } : prev));
-  }, [currentC4Score]);
-
-  useEffect(() => {
-    setC5((prev) => (prev.score !== currentC5Score ? { ...prev, score: currentC5Score } : prev));
-  }, [currentC5Score]);
-
-  // Overall CLS Score & Grade
-  const clsScore = calculateOverallCLS(
-    currentC1Score,
-    currentC2Score,
-    currentC3Score,
-    currentC4Score,
-    currentC5Score,
-    weights
-  );
-  const clsGrade = getCLSGrade(clsScore);
-
-  const baselineCLS = calculateOverallCLS(
-    baselineData.c1.score,
-    baselineData.c2.score,
-    baselineData.c3.score,
-    baselineData.c4.score,
-    baselineData.c5.score,
-    weights
-  );
-
-  const baselineScores = {
-    cls: baselineCLS,
-    c1: baselineData.c1.score,
-    c2: baselineData.c2.score,
-    c3: baselineData.c3.score,
-    c4: baselineData.c4.score,
-    c5: baselineData.c5.score,
-  };
+  // Never calculate scores in the browser. The backend is the single source of truth.
+  const clsScore = assessment?.scores.overall ?? null;
+  const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
+  const baselineScores = { cls: clsScore, c1: assessment?.scores.c1.score ?? null, c2: assessment?.scores.c2.score ?? null, c3: assessment?.scores.c3.score ?? null, c4: assessment?.scores.c4.score ?? null, c5: assessment?.scores.c5.score ?? null };
 
   // Fetch real-time weather & air quality for coordinate
   const fetchWeather = async (coord: LocationCoord) => {
@@ -213,104 +153,28 @@ export default function App() {
     }
   };
 
-  // Central data fetcher for any coordinate
-  const fetchLocationData = useCallback(
-    async (
-      coord: LocationCoord,
-      targetDist: string = district,
-      targetCity: string = city,
-      targetStreet: string = streetName
-    ) => {
-      try {
-        setIsLoadingBaseline(true);
-
-        // Run weather, POIs, street network, and 8-source baseline concurrently
-        fetchWeather(coord);
-        fetchNearbyPois(coord, targetDist, targetCity, targetStreet);
-        fetchStreetNetwork(coord, targetStreet);
-
-        const url = `/api/baseline-data?lat=${coord.lat}&lng=${coord.lng}&district=${encodeURIComponent(
-          targetDist
-        )}&city=${encodeURIComponent(targetCity)}&streetName=${encodeURIComponent(targetStreet)}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.c1 && data.c2 && data.c3 && data.c4 && data.c5) {
-            const newC1: C1Data = {
-              ...c1,
-              crimeRate: data.c1.crimeRate ?? c1.crimeRate,
-              accidentRate: data.c1.accidentRate ?? c1.accidentRate,
-              hazardLevel: data.c1.hazardLevel ?? c1.hazardLevel,
-            };
-            newC1.score = calculateC1Score(newC1, []);
-
-            const newC2: C2Data = {
-              ...c2,
-              supermarketDist: data.c2.supermarketDist ?? c2.supermarketDist,
-              convenienceDist: data.c2.convenienceDist ?? c2.convenienceDist,
-              clinicDist: data.c2.clinicDist ?? c2.clinicDist,
-              schoolDist: data.c2.schoolDist ?? c2.schoolDist,
-              bankPostDist: data.c2.bankPostDist ?? c2.bankPostDist,
-              poiDensityCount: data.c2.poiDensityCount ?? c2.poiDensityCount,
-            };
-            newC2.score = calculateC2Score(newC2, []);
-
-            const newC3: C3Data = {
-              ...c3,
-              mrtOrRailDist: data.c3.mrtOrRailDist ?? c3.mrtOrRailDist,
-              busStopDist: data.c3.busStopDist ?? c3.busStopDist,
-              busFrequencyScore: data.c3.busFrequencyScore ?? c3.busFrequencyScore,
-              walkabilityScore: data.c3.walkabilityScore ?? c3.walkabilityScore,
-              bikeLaneScore: data.c3.bikeLaneScore ?? c3.bikeLaneScore,
-            };
-            newC3.score = calculateC3Score(newC3, []);
-
-            const newC4: C4Data = {
-              ...c4,
-              airQualityScore: data.c4.airQualityScore ?? c4.airQualityScore,
-              noiseScore: data.c4.noiseScore ?? c4.noiseScore,
-              greenCoveragePct: data.c4.greenCoveragePct ?? c4.greenCoveragePct,
-              parkDistance: data.c4.parkDistance ?? c4.parkDistance,
-            };
-            newC4.score = calculateC4Score(newC4, []);
-
-            const newC5: C5Data = {
-              ...c5,
-              activityFrequency: data.c5.activityFrequency ?? c5.activityFrequency,
-              neighborhoodTrust: data.c5.neighborhoodTrust ?? c5.neighborhoodTrust,
-              jobCommercialDensity: data.c5.jobCommercialDensity ?? c5.jobCommercialDensity,
-              governanceParticipation: data.c5.governanceParticipation ?? c5.governanceParticipation,
-            };
-            newC5.score = calculateC5Score(newC5, []);
-
-            setBaselineData({
-              c1: newC1,
-              c2: newC2,
-              c3: newC3,
-              c4: newC4,
-              c5: newC5,
-              dataSourceSummary: data.sources || data.summary || baselineSummary,
-            });
-
-            setC1(newC1);
-            setC2(newC2);
-            setC3(newC3);
-            setC4(newC4);
-            setC5(newC5);
-            if (data.summary || data.sources) {
-              setBaselineSummary(`${data.summary || ''} 來源：${data.sources || ''}`);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Baseline auto-fetch error', err);
-      } finally {
-        setIsLoadingBaseline(false);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [c1, c2, c3, c4, c5, baselineSummary]
-  );
+  // Read persisted assessment data. This request never fetches external sources.
+  const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName) => {
+    setIsLoadingBaseline(true);
+    try {
+      await Promise.all([fetchWeather(coord), fetchNearbyPois(coord, targetDist, targetCity, targetStreet), fetchStreetNetwork(coord, targetStreet)]);
+      const url = '/api/assessment?lat=' + coord.lat + '&lng=' + coord.lng + '&district=' + encodeURIComponent(targetDist) + '&city=' + encodeURIComponent(targetCity) + '&streetName=' + encodeURIComponent(targetStreet);
+      const res = await fetch(url);
+      if (res.status === 202) { setAssessment(null); setBaselineSummary('此座標尚未有已儲存資料；背景更新後即可取得評估。'); return; }
+      if (!res.ok) throw new Error('assessment request failed: ' + res.status);
+      const data: StreetAssessmentResponse = await res.json();
+      setAssessment(data);
+      setBaselineSummary(data.dataSources.length ? '資料來源：' + data.dataSources.join('、') : '資料來源資訊不足');
+      const factor = (name: string) => data.factors.find((item) => item.indicator === name)?.value ?? null;
+      setC1((prev) => ({ ...prev, accidentRate: factor('trafficAccidentCount500m'), score: data.scores.c1.score }));
+      setC2((prev) => ({ ...prev, supermarketDist: factor('supermarketDist'), convenienceDist: factor('convenienceDist'), clinicDist: factor('clinicDist'), schoolDist: factor('schoolDist'), bankPostDist: factor('bankPostDist'), poiDensityCount: factor('poiDensityCount'), score: data.scores.c2.score }));
+      setC3((prev) => ({ ...prev, mrtOrRailDist: factor('mrtOrRailDist'), busStopDist: factor('busStopDist'), score: data.scores.c3.score }));
+      setC4((prev) => ({ ...prev, airQualityScore: factor('airQualityScore'), score: data.scores.c4.score }));
+      setC5((prev) => ({ ...prev, activityFrequency: factor('communityCulturalPoiCount800m'), score: data.scores.c5.score }));
+      setStreetName(data.location.streetName || targetStreet); setDistrict(data.location.district || targetDist); setCity(data.location.city || targetCity);
+    } catch (err) { console.warn('Assessment load error', err); setAssessment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
+    finally { setIsLoadingBaseline(false); }
+  }, [district, city, streetName]);
 
   // Auto-fetch baseline data
   const handleAutoFetchBaseline = useCallback(() => {

@@ -197,138 +197,18 @@ export function getCLSGrade(score: number): 'S' | 'A' | 'B' | 'C' | 'D' {
 }
 
 /**
- * 依據經緯度與行政區，生成符合台灣政府 8 大公開資料常模的「網路基準值」
+ * Legacy baseline generator intentionally disabled.
+ *
+ * StreetLens must never manufacture regional or coordinate-based values.
+ * Real source-backed assessments are produced by the backend cache/scoring
+ * pipeline; missing observations remain null/unavailable.
  */
 export function generateDefaultBaselineData(
-  coords: LocationCoord,
-  district: string = '',
-  city: string = ''
-): {
-  c1: C1Data;
-  c2: C2Data;
-  c3: C3Data;
-  c4: C4Data;
-  c5: C5Data;
-  dataSourceSummary: string;
-} {
-  const isTaipei = city.includes('台北') || district.includes('大安') || district.includes('信義') || district.includes('中山');
-  const isNewTaipei = city.includes('新北') || district.includes('板橋') || district.includes('新店') || district.includes('中和');
-  const isTaichung = city.includes('台中') || district.includes('西屯') || district.includes('西區');
-  const isKaohsiung = city.includes('高雄') || district.includes('鼓山') || district.includes('苓雅');
-  const isHsinchu = city.includes('新竹') || district.includes('東區');
-  const isMetro = isTaipei || isNewTaipei || isTaichung || isKaohsiung || isHsinchu;
-
-  const latNoise = Math.sin(coords.lat * 800) * 8;
-  const lngNoise = Math.cos(coords.lng * 800) * 8;
-  const microSeed = Math.abs(Math.round(latNoise + lngNoise));
-
-  // C1 安全基準 (內政部警政署犯罪統計、交通部交通事故資料庫、經濟部水利署淹水潛勢圖、中央地質調查所)
-  let crimeRate = isTaipei ? 18 : isMetro ? 26 : 35;
-  if (district.includes('萬華') || district.includes('三民')) crimeRate += 16;
-  if (district.includes('大安') || district.includes('文山')) crimeRate -= 6;
-  crimeRate = Math.max(10, Math.min(75, Math.round(crimeRate + (microSeed % 5))));
-
-  let accidentRate = isMetro ? 30 : 24;
-  if (district.includes('中正') || district.includes('西屯')) accidentRate += 6;
-  accidentRate = Math.max(12, Math.min(65, Math.round(accidentRate + ((microSeed * 2) % 6))));
-
-  let hazardLevel = district.includes('汐止') || district.includes('淡水') ? 25 : 14;
-  hazardLevel = Math.max(8, Math.min(50, Math.round(hazardLevel + ((microSeed * 3) % 5))));
-
-  const c1Data: C1Data = {
-    crimeRate,
-    accidentRate,
-    hazardLevel,
-    wCrime: 0.333,
-    wAccident: 0.333,
-    wHazard: 0.333,
-    score: 0,
-  };
-  c1Data.score = calculateC1Score(c1Data, []);
-
-  // C2 機能基準 (Google Maps / OpenStreetMap 15分鐘生活圈衰減)
-  const supermarketDist = isMetro ? 220 + (microSeed * 12) : 620 + (microSeed * 25);
-  const convenienceDist = isMetro ? 70 + (microSeed * 5) : 210 + (microSeed * 12);
-  const clinicDist = isMetro ? 150 + (microSeed * 10) : 390 + (microSeed * 20);
-  const schoolDist = isMetro ? 370 + (microSeed * 15) : 720 + (microSeed * 30);
-  const bankPostDist = isMetro ? 260 + (microSeed * 12) : 550 + (microSeed * 25);
-  const c2Data: C2Data = {
-    supermarketDist,
-    convenienceDist,
-    clinicDist,
-    schoolDist,
-    bankPostDist,
-    decayBeta: 1.5,
-    poiDensityCount: isMetro ? Math.max(25, Math.round(62 - microSeed)) : 18,
-    score: 0,
-  };
-  c2Data.score = calculateC2Score(c2Data, []);
-
-  // C3 移動基準 (公車動態 API、捷運營運資料)
-  const mrtDist = isTaipei ? 320 + (microSeed * 25) : isMetro ? 780 + (microSeed * 45) : 2200;
-  const busDist = isMetro ? 90 + (microSeed * 6) : 210 + (microSeed * 12);
-  const busFreq = isMetro ? Math.round(92 - (microSeed % 8)) : 64;
-  const walkScore = isMetro ? Math.round(85 - (microSeed % 10)) : 62;
-  const bikeScore = isMetro ? Math.round(84 - (microSeed % 10)) : 56;
-  const c3Data: C3Data = {
-    mrtOrRailDist: mrtDist,
-    busStopDist: busDist,
-    busFrequencyScore: busFreq,
-    walkabilityScore: walkScore,
-    bikeLaneScore: bikeScore,
-    wTransit: 0.4,
-    wWalk: 0.35,
-    wBike: 0.25,
-    score: 0,
-  };
-  c3Data.score = calculateC3Score(c3Data, []);
-
-  // C4 綠意環境基準 (環保署監測站、國土測繪圖資、都發局綠地資料)
-  const airQuality = Math.round((isTaipei ? 84 : isKaohsiung ? 68 : isTaichung ? 71 : 82) + (microSeed % 8) - 4);
-  const noiseScore = isMetro ? Math.round(70 - (microSeed % 10)) : 84;
-  const greenPct = district.includes('文山') || district.includes('鼓山') ? 52 : isMetro ? 34 : 50;
-  const parkDist = isMetro ? 190 + (microSeed * 15) : 360 + (microSeed * 22);
-  const c4Data: C4Data = {
-    airQualityScore: airQuality,
-    noiseScore,
-    greenCoveragePct: greenPct,
-    parkDistance: parkDist,
-    parkAccessScore: 0,
-    wAir: 0.25,
-    wNoise: 0.25,
-    wGreen: 0.25,
-    wPark: 0.25,
-    score: 0,
-  };
-  c4Data.score = calculateC4Score(c4Data, []);
-
-  // C5 社會活力基準 (里辦公室公告、問卷調查)
-  const activityFreq = isMetro ? Math.round(84 - (microSeed % 8)) : 68;
-  const neighborhoodTrust = Math.round(82 + (microSeed % 6) - 3);
-  const jobDensity = isMetro ? Math.round(86 - (microSeed % 10)) : 54;
-  const governanceParticipation = Math.round(80 + (microSeed % 6) - 3);
-  const c5Data: C5Data = {
-    activityFrequency: activityFreq,
-    neighborhoodTrust,
-    jobCommercialDensity: jobDensity,
-    governanceParticipation,
-    wActivity: 0.25,
-    wTrust: 0.25,
-    wJobs: 0.25,
-    wGovernance: 0.25,
-    score: 0,
-  };
-  c5Data.score = calculateC5Score(c5Data, []);
-
-  return {
-    c1: c1Data,
-    c2: c2Data,
-    c3: c3Data,
-    c4: c4Data,
-    c5: c5Data,
-    dataSourceSummary:
-      '內政部警政署犯罪統計、交通部交通事故資料庫、經濟部水利署淹水潛勢圖、中央地質調查所、Google Maps API、OpenStreetMap、公車動態 API、捷運營運資料、環保署監測站、國土測繪圖資、都發局綠地資料、里辦公室公告。',
-  };
+  _coords: LocationCoord,
+  _district: string = '',
+  _city: string = ''
+): null {
+  return null;
 }
 
 /**

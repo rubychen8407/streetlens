@@ -156,10 +156,13 @@ export interface WeatherData {
   humidity: number;
   weatherCode: number;
   condition: string;
-  aqi: number;
-  aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康';
-  pm25: number;
-  stationName: string;
+  aqi: number | null;
+  aqiStatus: '良好' | '普通' | '對敏感族群不健康' | '不健康' | '未知';
+  pm25: number | null;
+  airQualityTimestamp?: string | null;
+  source?: string;
+  sourceType?: 'model' | 'station' | 'unknown';
+  stationName?: string;
   stationDistrict?: string;
   windSpeed?: number;
 }

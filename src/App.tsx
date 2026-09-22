@@ -60,6 +60,7 @@ export default function App() {
   // Bottom Sheet Visibility
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<'assessment' | 'saved' | 'settings'>('assessment');
+  const [isFavorite, setIsFavorite] = useState(false);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_saved_locations') || '[]'); } catch { return []; }
   });
@@ -494,6 +495,8 @@ export default function App() {
           fetchLocationData(coord, newDist, newCity, name);
         }}
         onOpenSheet={() => setIsSheetOpen(true)}
+        onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
+        onOpenSettings={() => { setWorkspaceView('settings'); setIsSheetOpen(true); }}
         isSheetOpen={isSheetOpen}
         activeLayers={activeLayers}
         onToggleLayer={(key) => setActiveLayers((prev) => ({ ...prev, [key]: !prev[key] }))}
@@ -529,6 +532,8 @@ export default function App() {
         }}
         onDeleteSaved={handleDeleteSaved}
         onOpenDataLogs={() => setWorkspaceView('settings')}
+        isFavorite={isFavorite}
+        onToggleFavorite={() => setIsFavorite(v => !v)}
       />
     </div>
   );

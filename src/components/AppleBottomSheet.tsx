@@ -126,7 +126,6 @@ export function AppleBottomSheet({
   onSelectSavedLocation,
 }: AppleBottomSheetProps) {
   const [sheetTab, setSheetTab] = useState<'overview' | 'saved' | 'evidence' | 'sources' | 'report'>('overview');
-  const [selectedCat, setSelectedCat] = useState<'C1' | 'C2' | 'C3' | 'C4' | 'C5'>('C1');
   const [sheetHeight, setSheetHeight] = useState<'half' | 'full'>('half');
   const [copied, setCopied] = useState(false);
 
@@ -572,14 +571,14 @@ export function AppleBottomSheet({
                 </div>
               )}
 
-              {/* Quick 8 Data Sources Banner */}
+              {/* Quick 7 Data Sources Banner */}
               <div
                 onClick={() => setSheetTab('sources')}
                 className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <div className="flex items-center gap-2 text-xs text-slate-300">
                   <Database className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>已載入 8 大來源的持久化快照</span>
+                  <span>已載入 7 大來源的持久化快照</span>
                 </div>
                 <div className="text-[11px] text-indigo-300 font-semibold flex items-center gap-1">
                   <span>查看詳情</span>
@@ -591,15 +590,12 @@ export function AppleBottomSheet({
               <div className="space-y-2">
                 <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
                   <span>5 大核心面向得分</span>
-                  <span className="text-[11px] text-slate-500">點擊切換校正</span>
+                  <span className="text-[11px] text-slate-500">點擊查看證據</span>
                 </div>
 
                 {/* C1 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C1');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -627,10 +623,7 @@ export function AppleBottomSheet({
 
                 {/* C2 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C2');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -658,10 +651,7 @@ export function AppleBottomSheet({
 
                 {/* C3 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C3');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -689,10 +679,7 @@ export function AppleBottomSheet({
 
                 {/* C4 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C4');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -720,10 +707,7 @@ export function AppleBottomSheet({
 
                 {/* C5 */}
                 <div
-                  onClick={() => {
-                    setSelectedCat('C5');
-                    setSheetTab('calibrate');
-                  }}
+                  onClick={() => setSheetTab('evidence')}
                   className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-[120px]">
@@ -968,7 +952,7 @@ export function AppleBottomSheet({
                     <div>
                       <div className="text-xs font-bold text-slate-200">尚未儲存任何勘查地點</div>
                       <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-1 leading-relaxed">
-                        點選地圖上任何地點或完成現場校正後，點擊上方按鈕即可儲存該位置座標與 5 大面向 CLS 指標，供日後回顧與比對。
+                        點選地圖上任何地點後，點擊上方按鈕即可儲存該位置座標與目前可取得的 5 大面向資料，供日後回顧與比對。
                       </p>
                     </div>
                     <button

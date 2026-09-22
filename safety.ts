@@ -261,3 +261,61 @@ export async function fetchTaipeiResidentialTheftData(
     clearTimeout(timeoutId);
   }
 }
+
+
+export interface FloodSourceResult {
+  riskCells: any[];
+  source: string;
+  status: "available" | "empty" | "error" | "timeout";
+  retrievedAt: string;
+  error?: string;
+}
+
+export async function fetchTaipeiFloodHazardData(
+  lat: number,
+  lng: number,
+  radiusMeters = 500,
+): Promise<FloodSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  // The official dataset publishes scenario KML resources. We do not invent a
+  // flood probability from them; this adapter is intentionally left unavailable
+  // until a verified resource URL is configured.
+  const url = process.env.TAIPEI_FLOOD_KML_URL;
+  if (!url) {
+    return {
+      riskCells: [],
+      source: "Taipei City official rainfall inundation simulation (112 revision)",
+      status: "empty",
+      retrievedAt,
+    };
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/vnd.google-earth.kml+xml,application/xml,text/xml,*/*", "User-Agent": "StreetLens/1.0" },
+    });
+    if (!response.ok) throw new Error(`Taipei flood KML HTTP ${response.status}`);
+    const text = await response.text();
+    if (!text.trim()) throw new Error("Taipei flood KML returned empty content");
+    // Keep the raw official resource available to a future polygon/KML parser.
+    // No score is derived until the geometry is parsed and spatially intersected.
+    return {
+      riskCells: [{ lat, lng, resourceLength: text.length }],
+      source: "Taipei City official rainfall inundation simulation (112 revision)",
+      status: "available",
+      retrievedAt,
+    };
+  } catch (error: any) {
+    return {
+      riskCells: [],
+      source: "Taipei City official rainfall inundation simulation (112 revision)",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

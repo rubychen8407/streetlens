@@ -409,7 +409,21 @@ export function calculateAssessment(
     confidence: communityScore != null ? "medium" : "low",
     status: Number.isFinite(Number(c5CommunityCount)) ? "available" : "unavailable",
   }];
-  const c5: number | null = communityScore;
+  const c5Components = [communityScore, c5NearestDistanceScore].filter((value): value is number => value !== null);
+  if (c5NearestDistanceScore !== null) {
+    c5Factors.push({
+      category: "C5",
+      indicator: "nearestCommunityCulturalFacilityDistanceScore",
+      value: c5NearestDistanceScore,
+      unit: "score",
+      direction: "higher_is_better",
+      source: "Google Places / OpenStreetMap",
+      method: "calculated",
+      confidence: "medium",
+      status: "available",
+    });
+  }
+  const c5: number | null = c5Components.length ? clampScore(average(c5Components)) : null;
 
   const categories: Record<Category, CategoryScore> = {
     C1: { score: c1, factors: c1Factors },

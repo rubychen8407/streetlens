@@ -12,6 +12,8 @@ export interface ScoreFactor {
   status?: "available" | "unavailable";
   retrievedAt?: string;
   referenceSampleSize?: number;
+  scoringMethod?: "empirical_percentile" | "raw_observation" | "not_scored";
+  availabilityReason?: "insufficient_reference_data" | "source_unavailable" | "no_observation";
 }
 
 export interface CategoryScore {
@@ -139,7 +141,7 @@ function overallConfidence(factors: ScoreFactor[]): "high" | "medium" | "low" {
 export function calculateAssessment(
   baseline: any,
   poiCounts: Partial<Record<Category, number>>,
-  weather?: { aqi: number | null; pm25: number | null; source?: string; sourceType?: string },
+  weather?: { aqi: number | null; pm25: number | null; source?: string; sourceType?: string; retrievedAt?: string },
   c1SafetyMetrics?: C1SafetyMetrics,
   c2PoiMetrics?: C2PoiMetrics,
   c3TransitMetrics?: C3TransitMetrics,
@@ -175,6 +177,7 @@ export function calculateAssessment(
       confidence: Number.isFinite(Number(c1AccidentCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
       status: Number.isFinite(Number(c1AccidentCount)) ? "available" : "unavailable",
       retrievedAt: c1SafetyMetrics?.retrievedAt,
+      scoringMethod: "raw_observation",
     },
     {
       category: "C1",
@@ -187,6 +190,7 @@ export function calculateAssessment(
       confidence: Number.isFinite(Number(c1FatalCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
       status: Number.isFinite(Number(c1FatalCount)) ? "available" : "unavailable",
       retrievedAt: c1SafetyMetrics?.retrievedAt,
+      scoringMethod: "raw_observation",
     },
     {
       category: "C1",
@@ -199,6 +203,7 @@ export function calculateAssessment(
       confidence: Number.isFinite(Number(c1InjuryCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
       status: Number.isFinite(Number(c1InjuryCount)) ? "available" : "unavailable",
       retrievedAt: c1SafetyMetrics?.retrievedAt,
+      scoringMethod: "raw_observation",
     },
   ];
   const floodCells = c1SafetyMetrics?.floodHazard || [];
@@ -218,6 +223,7 @@ export function calculateAssessment(
       confidence: "high",
       status: cell.depthCm != null ? "available" : "unavailable",
       retrievedAt: cell.retrievedAt,
+      scoringMethod: "raw_observation",
     });
   }
 
@@ -264,6 +270,10 @@ export function calculateAssessment(
     method: Number.isFinite(Number(poiDensity)) ? c2Method : "calculated",
     confidence: Number.isFinite(Number(poiDensity)) ? c2Confidence : "low",
     status: Number.isFinite(Number(poiDensity)) ? "available" : "unavailable",
+    retrievedAt: c2PoiMetrics?.retrievedAt,
+    referenceSampleSize: c2PoiDensityReference?.filter(Number.isFinite).length ?? 0,
+    scoringMethod: poiDensityScore !== null ? "empirical_percentile" : "not_scored",
+    availabilityReason: Number.isFinite(Number(poiDensity)) ? undefined : "no_observation",
   });
 
   const poiDensityScore = empiricalPercentileScore(poiDensity, c2PoiDensityReference);
@@ -272,6 +282,9 @@ export function calculateAssessment(
       ? empiricalPercentileScore(Number(value), normalization?.c2Distances?.[indicator], "lower_is_better")
       : null)
     .filter((value): value is number => value !== null);
+  c2Factors.forEach((factor) => {
+    if (factor.value == null) factor.availabilityReason = "no_observation";
+  });
   if (poiDensityScore !== null) {
     c2ComponentScores.push(poiDensityScore);
   }
@@ -292,6 +305,10 @@ export function calculateAssessment(
       method: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
       confidence: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
       status: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      referenceSampleSize: normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) && (normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? undefined : "no_observation",
     },
     {
       category: "C3",
@@ -303,6 +320,10 @@ export function calculateAssessment(
       method: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
       confidence: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
       status: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      referenceSampleSize: normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) && (normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? undefined : "no_observation",
     },
   ];
   const c3ComponentScores = c3Factors
@@ -328,6 +349,10 @@ export function calculateAssessment(
     method: airScore != null ? "api" : "calculated",
     confidence: airScore != null ? "medium" : "low",
     status: airScore != null ? "available" : "unavailable",
+    retrievedAt: weather?.retrievedAt,
+    referenceSampleSize: normalization?.c4Aqi?.filter(Number.isFinite).length ?? 0,
+    scoringMethod: airScore != null ? "empirical_percentile" : (weather?.aqi != null ? "not_scored" : "not_scored"),
+    availabilityReason: weather?.aqi == null ? "no_observation" : (airScore == null ? "insufficient_reference_data" : undefined),
   }];
   const streetTreeCount = c4GreenMetrics?.streetTreeCount800m;
   const parkTreeCount = c4GreenMetrics?.parkTreeCount800m;
@@ -354,21 +379,32 @@ export function calculateAssessment(
       category: "C4", indicator: "streetTreeDensityPerKm2", value: Number.isFinite(Number(streetTreeDensityPerKm2)) ? Number(streetTreeDensityPerKm2) : null,
       unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(streetTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
       method: "calculated", confidence: streetTreeDensityScore != null ? "medium" : "low", status: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      referenceSampleSize: c4GreenMetrics?.streetTreeDensityReference?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: streetTreeDensityScore != null ? "empirical_percentile" : "not_scored",
+      availabilityReason: Number.isFinite(Number(streetTreeDensityPerKm2)) ? (streetTreeDensityScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
     },
     {
       category: "C4", indicator: "parkTreeDensityPerKm2", value: Number.isFinite(Number(parkTreeDensityPerKm2)) ? Number(parkTreeDensityPerKm2) : null,
       unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(parkTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
       method: "calculated", confidence: parkTreeDensityScore != null ? "medium" : "low", status: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      referenceSampleSize: c4GreenMetrics?.parkTreeDensityReference?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: parkTreeDensityScore != null ? "empirical_percentile" : "not_scored",
+      availabilityReason: Number.isFinite(Number(parkTreeDensityPerKm2)) ? (parkTreeDensityScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
     },
     {
       category: "C4", indicator: "nearestParkDist", value: Number.isFinite(Number(nearestParkDist)) ? Number(nearestParkDist) : null,
       unit: "m", direction: "lower_is_better", source: Number.isFinite(Number(nearestParkDist)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: Number.isFinite(Number(nearestParkDist)) ? "calculated" : "calculated", confidence: Number.isFinite(Number(nearestParkDist)) ? "medium" : "low", status: Number.isFinite(Number(nearestParkDist)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      method: "calculated", confidence: Number.isFinite(Number(nearestParkDist)) ? "medium" : "low", status: Number.isFinite(Number(nearestParkDist)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      referenceSampleSize: normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: nearestParkScore != null ? "empirical_percentile" : "not_scored",
+      availabilityReason: Number.isFinite(Number(nearestParkDist)) ? (nearestParkScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
     },
     {
       category: "C4", indicator: "parkCount800m", value: Number.isFinite(Number(parkCount800m)) ? Number(parkCount800m) : null,
       unit: "parks", direction: "higher_is_better", source: Number.isFinite(Number(parkCount800m)) ? "OpenStreetMap" : "unavailable",
       method: Number.isFinite(Number(parkCount800m)) ? "osm" : "calculated", confidence: Number.isFinite(Number(parkCount800m)) ? "medium" : "low", status: Number.isFinite(Number(parkCount800m)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
+      scoringMethod: "raw_observation",
+      availabilityReason: Number.isFinite(Number(parkCount800m)) ? undefined : "no_observation",
     },
   );
   // Raw counts are preserved as facts. Density is calculated from the fixed 800m
@@ -387,6 +423,8 @@ export function calculateAssessment(
       confidence: "medium",
       status: "available",
       retrievedAt: c4GreenMetrics?.retrievedAt,
+      referenceSampleSize: normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: "empirical_percentile",
     });
   }
   const greenScores = [streetTreeDensityScore, parkTreeDensityScore, nearestParkScore].filter((value): value is number => value !== null);
@@ -414,6 +452,8 @@ export function calculateAssessment(
     confidence: communityScore != null ? "medium" : "low",
     status: Number.isFinite(Number(c5CommunityCount)) ? "available" : "unavailable",
     referenceSampleSize: communityReferenceSize,
+    scoringMethod: communityScore != null ? "empirical_percentile" : "not_scored",
+    availabilityReason: Number.isFinite(Number(c5CommunityCount)) ? (communityScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
   }];
   const c5Components = [communityScore, c5NearestDistanceScore].filter((value): value is number => value !== null);
   if (c5NearestDistanceScore !== null) {
@@ -428,6 +468,7 @@ export function calculateAssessment(
       confidence: "medium",
       status: "available",
       referenceSampleSize: c5NearestDistanceReferenceSize,
+      scoringMethod: "empirical_percentile",
     });
   }
   const c5: number | null = c5Components.length ? clampScore(average(c5Components)) : null;

@@ -1063,6 +1063,17 @@ app.get("/api/baseline-data", async (_req: Request, res: Response) => {
 
 // Explainable street-level assessment assembled from source-backed inputs.
 // This endpoint intentionally returns provenance and confidence with every score.
+export function getAssessmentSnapshotStatus(
+  sourceKeys: string[],
+  snapshots: Record<string, { status?: string } | null | undefined>,
+): { missingSources: string[]; dataStatus: "pending_refresh" | "cached" } {
+  const missingSources = sourceKeys.filter((key) => !snapshots[key]);
+  return {
+    missingSources,
+    dataStatus: missingSources.length === sourceKeys.length ? "pending_refresh" : "cached",
+  };
+}
+
 app.get("/api/assessment", async (req: Request, res: Response) => {
   try {
     const lat = parseFloat(req.query.lat as string);
@@ -1079,8 +1090,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const cached = await Promise.all(sourceKeys.map((key) => getCachedSnapshot(key, scopeKey)));
     const snapshots: Record<string, any> = {};
     sourceKeys.forEach((key, i) => { snapshots[key] = cached[i]; });
-    const missing = sourceKeys.filter((key) => !snapshots[key]);
-    if (missing.length === sourceKeys.length) {
+    const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, snapshots);
+    if (dataStatus === "pending_refresh") {
       return res.status(202).json({
         location: { lat, lng, city, district, streetName },
         scopeKey,

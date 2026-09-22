@@ -1,0 +1,24 @@
+name: External data health
+
+on:
+  push:
+    branches:
+      - refactor/data-integrity-and-security
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Type check
+        run: npm run lint
+      - name: Check official external resources
+        run: npm run check:external-data

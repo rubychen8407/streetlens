@@ -3,7 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import { calculateAssessment } from "./scoring";
+import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
@@ -972,7 +972,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const GREEN_OBSERVATION_AREA_KM2 = Math.PI * (GREEN_RADIUS_METERS / 1000) ** 2;
     const streetTreeCount800m = greenData.streetTrees?.length;
     const parkTreeCount800m = greenData.parkTrees?.length;
-    const c4GreenMetrics = {
+    const c4GreenMetrics: C4GreenMetrics = {
       streetTreeCount800m: Number.isFinite(Number(streetTreeCount800m)) ? Number(streetTreeCount800m) : undefined,
       parkTreeCount800m: Number.isFinite(Number(parkTreeCount800m)) ? Number(parkTreeCount800m) : undefined,
       streetTreeDensityPerKm2: Number.isFinite(Number(streetTreeCount800m))
@@ -993,7 +993,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     };
 
     const accidents = safetyData.accidents || [];
-    const c1SafetyMetrics = {
+    const c1SafetyMetrics: C1SafetyMetrics = {
       accidentCount500m: accidents.length,
       fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
       injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,

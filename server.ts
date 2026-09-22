@@ -990,10 +990,10 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     const accidents = safetyData.accidents || [];
     const c1SafetyMetrics = {
-      accidentCount500m: accidents.length || undefined,
-      fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length || undefined,
-      injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length || undefined,
-      source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" ? "high" as const : "low" as const,
+      accidentCount500m: accidents.length,
+      fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
+      injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
+      source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
       status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
     };
 

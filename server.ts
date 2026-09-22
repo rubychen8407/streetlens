@@ -5,9 +5,9 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
-import { fetchTaipeiGreenData } from "./green";
-import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, registerAssessmentTarget, saveSnapshot } from "./db";
+import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
+import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
+import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
 
 dotenv.config();
 
@@ -575,7 +575,77 @@ function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
 // an external geospatial source so the map never presents invented businesses
 // or facilities as real-world locations.
 
-// Scheduled refresh only: external scoring sources are fetched here, then persisted.
+// Static official resources can expose HTTP validators. We use them only in the
+// background refresh job; user requests never probe upstream sources.
+const VALIDATOR_RESOURCES: Record<string, string[]> = {
+  taipei_green: Object.values(GREEN_RESOURCE_URLS),
+  taipei_safety: [SAFETY_RESOURCE_URLS.taipeiFatalInjuryAccidents2025],
+  taipei_flood: Object.values(FLOOD_RESOURCE_URLS),
+};
+
+type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
+
+function parseValidatorState(snapshot: any): ValidatorState {
+  if (!snapshot?.sourceVersion) return {};
+  try {
+    const parsed = JSON.parse(snapshot.sourceVersion);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function checkStaticResourceValidators(
+  sourceKey: string,
+  snapshot: any,
+): Promise<{ decision: "unchanged" | "changed" | "unknown"; version: string | null; method: "etag" | "last_modified" | "unknown" }> {
+  const urls = VALIDATOR_RESOURCES[sourceKey];
+  if (!urls?.length) return { decision: "unknown", version: null, method: "unknown" };
+
+  const previous = parseValidatorState(snapshot);
+  const state: ValidatorState = {};
+  let sawNotModified = 0;
+  let sawChanged = 0;
+  let sawValidator = false;
+
+  for (const url of urls) {
+    const prior = previous[url] || {};
+    const headers: Record<string, string> = { "User-Agent": "StreetLens/1.0" };
+    if (prior.etag) headers["If-None-Match"] = prior.etag;
+    if (prior.lastModified) headers["If-Modified-Since"] = prior.lastModified;
+
+    try {
+      const response = await fetch(url, { method: "HEAD", headers });
+      if (response.status === 304) {
+        sawNotModified += 1;
+        state[url] = prior;
+        continue;
+      }
+      if (!response.ok) return { decision: "unknown", version: null, method: "unknown" };
+
+      const etag = response.headers.get("etag") || undefined;
+      const lastModified = response.headers.get("last-modified") || undefined;
+      if (!etag && !lastModified) return { decision: "unknown", version: null, method: "unknown" };
+      sawValidator = true;
+      state[url] = { etag, lastModified };
+
+      const changed = (prior.etag && etag && prior.etag !== etag)
+        || (prior.lastModified && lastModified && prior.lastModified !== lastModified)
+        || (!prior.etag && !prior.lastModified);
+      if (changed) sawChanged += 1;
+    } catch {
+      return { decision: "unknown", version: null, method: "unknown" };
+    }
+  }
+
+  const version = JSON.stringify(state);
+  if (sawNotModified === urls.length) return { decision: "unchanged", version, method: "etag" };
+  if (sawChanged > 0) return { decision: "changed", version, method: "etag" };
+  if (sawValidator) return { decision: "unchanged", version, method: "etag" };
+  return { decision: "unknown", version, method: "unknown" };
+}
+
+
 const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   google_places: 24,
   openstreetmap: 24,

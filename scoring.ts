@@ -146,12 +146,14 @@ export function calculateAssessment(
   c2PoiDensityReference?: number[],
   c5CommunityCount?: number,
   c5CommunityReference?: number[],
+  c5NearestCommunityDistance?: number,
   normalization?: {
     c2Distances?: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
     c3RailDistances?: number[];
     c3BusDistances?: number[];
     c4Aqi?: number[];
     c4NearestParkDistances?: number[];
+    c5NearestCommunityDistances?: number[];
   },
 ): AssessmentScores {
 
@@ -395,7 +397,7 @@ export function calculateAssessment(
   const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference);
   const c5NearestDistanceScore = empiricalPercentileScore(
     c5NearestCommunityDistance,
-    c5NearestCommunityDistanceReference,
+    normalization?.c5NearestCommunityDistances,
     "lower_is_better",
   );
   const c5Factors: ScoreFactor[] = [{

@@ -417,8 +417,8 @@ export function calculateAssessment(
       unit: "m", direction: "lower_is_better", source: Number.isFinite(Number(nearestParkDist)) ? provenance?.c4NearestParkSource || c4GreenMetrics?.source || "unavailable" : "unavailable",
       method: "calculated", confidence: Number.isFinite(Number(nearestParkDist)) ? "medium" : "low", status: Number.isFinite(Number(nearestParkDist)) ? "available" : "unavailable", retrievedAt: provenance?.c4NearestParkRetrievedAt || c4GreenMetrics?.retrievedAt,
       referenceSampleSize: normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: nearestParkScore != null ? "empirical_percentile" : "not_scored",
-      availabilityReason: Number.isFinite(Number(nearestParkDist)) ? (nearestParkScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
+      scoringMethod: Number.isFinite(Number(nearestParkDist)) && (normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+      availabilityReason: Number.isFinite(Number(nearestParkDist)) ? ((normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0) < 20 ? "insufficient_reference_data" : undefined) : "no_observation",
     },
     {
       category: "C4", indicator: "parkCount800m", value: Number.isFinite(Number(parkCount800m)) ? Number(parkCount800m) : null,

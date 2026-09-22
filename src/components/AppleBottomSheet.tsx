@@ -551,7 +551,7 @@ export function AppleBottomSheet({
                         <span>環保署【{weatherData.stationName}】測站 AQI {weatherData.aqi}</span>
                         <span
                           className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
-                            weatherData.aqi <= 50
+                            weatherData.aqi != null && weatherData.aqi <= 50
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                           }`}
@@ -1676,7 +1676,7 @@ export function AppleBottomSheet({
                           <span>{item.title}</span>
                         </div>
                         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/40 text-slate-300">
-                          {item.scoreImpact > 0 ? `+${item.scoreImpact}` : item.scoreImpact}分
+                          {item.scoreImpact == null ? 'N/A' : item.scoreImpact > 0 ? `+${item.scoreImpact}` : item.scoreImpact}分
                         </span>
                       </div>
                     ))}

@@ -1182,9 +1182,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       poi.category === "C5"
       || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
     );
-    const nearestCommunityDist = communityPois.length
-      ? Math.min(...communityPois.map((poi: any) => Number(poi.distanceMeters)).filter(Number.isFinite))
-      : undefined;
+    const communityDistances = communityPois.map((poi: any) => Number(poi.distanceMeters)).filter(Number.isFinite);
+    const nearestCommunityDist = communityDistances.length ? Math.min(...communityDistances) : undefined;
     const communityCount = pois.filter((poi: any) =>
       poi.category === "C5"
       || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),

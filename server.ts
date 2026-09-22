@@ -656,12 +656,43 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   open_meteo_air_quality: 24,
 };
 
-// Scheduled refresh only: external scoring sources are fetched here, then persisted.
-// Each source has its own cadence. The source is fetched only when its cached copy is due.
+function refreshPayloadForSource(sourceKey: string, lat: number, lng: number): Promise<any> {
+  if (sourceKey === "google_places") return fetchGooglePlacesNearby(lat, lng);
+  if (sourceKey === "openstreetmap") return fetchOsmPoisNearby(lat, lng);
+  if (sourceKey === "tdx_transit") return fetchTdxTransitData(lat, lng);
+  if (sourceKey === "taipei_green") return fetchTaipeiGreenData(lat, lng);
+  if (sourceKey === "taipei_safety") return fetchTaipeiSafetyData(lat, lng, 500);
+  if (sourceKey === "taipei_flood") return fetchTaipeiFloodHazardData(lat, lng);
+  if (sourceKey === "open_meteo_air_quality") {
+    return fetch(
+      "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat
+      + "&longitude=" + lng + "&current=us_aqi,pm2_5&timezone=auto",
+      { headers: { "User-Agent": "StreetLens/1.0" } },
+    ).then(async (response) => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const data: any = await response.json();
+      return {
+        aqi: typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null,
+        pm25: typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null,
+        airQualityTimestamp: data.current?.time || null,
+        retrievedAt: new Date().toISOString(),
+        source: "Open-Meteo Air Quality (CAMS model data)",
+        sourceType: "model",
+        status: data.current ? "available" : "empty",
+      };
+    });
+  }
+  throw new Error("Unknown refresh source: " + sourceKey);
+}
+
+// Scheduled refresh is the only place allowed to call scoring data sources.
+// Sources with HTTP validators are checked first; unchanged sources are not rewritten.
+// Sources without validators are refreshed on their configured cadence.
 app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
   if (!DATA_REFRESH_TOKEN || req.headers.authorization !== "Bearer " + DATA_REFRESH_TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
+
   try {
     await ensureDataCacheSchema();
     const targets = await listActiveAssessmentTargets();
@@ -669,49 +700,80 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     const now = Date.now();
 
     for (const target of targets) {
-      const lat = target.latitude;
-      const lng = target.longitude;
-      const scopeKey = target.scopeKey;
-      const jobs: Record<string, Promise<any>> = {};
+      const { latitude: lat, longitude: lng, scopeKey } = target;
 
       for (const sourceKey of Object.keys(REFRESH_INTERVAL_HOURS)) {
         const existing = await getCachedSnapshot(sourceKey, scopeKey);
-        const due = !existing || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+        const due = !existing
+          || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+
         if (!due) {
-          results.push({ scopeKey, sourceKey, changed: false, status: existing?.status || "cached", skipped: true });
+          results.push({
+            scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing.fetchedAt,
+            checkedAt: existing.checkedAt,
+          });
           continue;
         }
-        if (sourceKey === "google_places") jobs[sourceKey] = fetchGooglePlacesNearby(lat, lng);
-        else if (sourceKey === "openstreetmap") jobs[sourceKey] = fetchOsmPoisNearby(lat, lng);
-        else if (sourceKey === "tdx_transit") jobs[sourceKey] = fetchTdxTransitData(lat, lng);
-        else if (sourceKey === "taipei_green") jobs[sourceKey] = fetchTaipeiGreenData(lat, lng);
-        else if (sourceKey === "taipei_safety") jobs[sourceKey] = fetchTaipeiSafetyData(lat, lng, 500);
-        else if (sourceKey === "taipei_flood") jobs[sourceKey] = fetchTaipeiFloodHazardData(lat, lng);
-        else if (sourceKey === "open_meteo_air_quality") jobs[sourceKey] = fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat + "&longitude=" + lng + "&current=us_aqi,pm2_5&timezone=auto").then(async (response) => {
-          if (!response.ok) throw new Error("HTTP " + response.status);
-          const data: any = await response.json();
-          return {
-            aqi: typeof data.current?.us_aqi === "number" ? Math.round(data.current.us_aqi) : null,
-            pm25: typeof data.current?.pm2_5 === "number" ? +data.current.pm2_5.toFixed(1) : null,
-            airQualityTimestamp: data.current?.time || null,
-            retrievedAt: new Date().toISOString(), source: "Open-Meteo Air Quality (CAMS model data)", sourceType: "model",
-            status: data.current ? "available" : "empty",
-          };
-        });
-      }
 
-      for (const [sourceKey, job] of Object.entries(jobs)) {
+        const validator = await checkStaticResourceValidators(sourceKey, existing);
+        if (existing && validator.decision === "unchanged") {
+          await markSnapshotChecked(sourceKey, scopeKey, {
+            sourceVersion: validator.version,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing.fetchedAt,
+            sourceVersion: validator.version,
+          });
+          continue;
+        }
+
         let payload: any;
         try {
-          payload = await job;
+          payload = await refreshPayloadForSource(sourceKey, lat, lng);
         } catch (error: any) {
-          payload = { status: "error", error: error?.message || String(error), retrievedAt: new Date().toISOString() };
+          payload = {
+            status: "error",
+            error: error?.message || String(error),
+            retrievedAt: new Date().toISOString(),
+          };
         }
-        const saved = await saveSnapshot(sourceKey, scopeKey, payload, { status: String(payload?.status || "available") });
-        results.push({ scopeKey, sourceKey, changed: saved.changed, status: payload?.status || "available", skipped: false });
+
+        const saved = await saveSnapshot(sourceKey, scopeKey, payload, {
+          status: String(payload?.status || "available"),
+          sourceVersion: validator.version,
+          freshnessMethod: validator.method,
+        });
+
+        results.push({
+          scopeKey,
+          sourceKey,
+          changed: saved.changed,
+          status: payload?.status || "available",
+          skipped: false,
+          freshnessMethod: validator.method,
+          sourceVersion: validator.version,
+        });
       }
     }
-    return res.json({ refreshedAt: new Date().toISOString(), targetCount: targets.length, snapshots: results });
+
+    return res.json({
+      refreshedAt: new Date().toISOString(),
+      targetCount: targets.length,
+      snapshots: results,
+    });
   } catch (error: any) {
     console.error("Scheduled data refresh failed:", error);
     return res.status(500).json({ error: error.message || "Failed to refresh persisted data" });

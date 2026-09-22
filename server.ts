@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { calculateAssessment } from "./scoring";
 
 dotenv.config();
 
@@ -939,6 +940,68 @@ app.get("/api/baseline-data", async (req: Request, res: Response) => {
   }
 });
 
+
+// Explainable street-level assessment assembled from source-backed inputs.
+// This endpoint intentionally returns provenance and confidence with every score.
+app.get("/api/assessment", async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat((req.query.lat as string) || "25.033");
+    const lng = parseFloat((req.query.lng as string) || "121.5654");
+    const district = (req.query.district as string) || "大安區";
+    const city = (req.query.city as string) || "台北市";
+    const streetName = (req.query.streetName as string) || "";
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Invalid latitude/longitude" });
+    }
+
+    const query = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+      district,
+      city,
+      streetName,
+    });
+
+    const [baselineResponse, weatherResponse, pois] = await Promise.all([
+      fetch(`http://127.0.0.1:${PORT}/api/baseline-data?${query.toString()}`),
+      fetch(`http://127.0.0.1:${PORT}/api/weather?${query.toString()}`),
+      fetchGooglePlacesNearby(lat, lng),
+    ]);
+
+    if (!baselineResponse.ok) {
+      throw new Error(`Baseline request failed: ${baselineResponse.status}`);
+    }
+
+    const baseline = await baselineResponse.json();
+    const weather = weatherResponse.ok ? await weatherResponse.json() : null;
+    const poiCounts = pois.reduce((counts: Record<string, number>, poi: any) => {
+      counts[poi.category] = (counts[poi.category] || 0) + 1;
+      return counts;
+    }, {});
+
+    const scores = calculateAssessment(baseline, poiCounts, weather || undefined);
+    const allFactors = [
+      ...scores.c1.factors,
+      ...scores.c2.factors,
+      ...scores.c3.factors,
+      ...scores.c4.factors,
+      ...scores.c5.factors,
+    ];
+
+    return res.json({
+      location: { lat, lng, city, district, streetName },
+      scores,
+      factors: allFactors,
+      poiCount: pois.length,
+      dataSources: [...new Set(allFactors.map((factor) => factor.source))],
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Assessment error:", error);
+    return res.status(500).json({ error: error.message || "Failed to calculate assessment" });
+  }
+});
 
 // 實勘結果綜合分析與診斷報告
 app.post("/api/analyze-cls", async (req: Request, res: Response) => {

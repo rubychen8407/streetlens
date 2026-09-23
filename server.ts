@@ -1621,6 +1621,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
       return values.length ? Math.min(...values) : undefined;
     };
+    const sourceNames = [...new Set(pois.map((poi: any) => poi.source).filter(Boolean))];
     const c2GoogleOsmSourceNames = [...new Set(
       pois.filter((poi: any) => poi.category === "C2").map((poi: any) => poi.source).filter(Boolean),
     )];
@@ -1840,14 +1841,18 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           ["taipei_youbike", youBikeSnapshot],
           ["taipei_medical", medicalSnapshot],
           ["taipei_street_lights", streetLightSnapshot],
-        ].map(([source, snapshot]: [string, any]) => ({
-          source,
-          status: snapshot?.status || "unavailable",
-          retrievedAt: snapshot?.fetchedAt || null,
-          checkedAt: snapshot?.checkedAt || null,
-          sourceVersion: snapshot?.sourceVersion || null,
-          freshnessMethod: snapshot?.freshnessMethod || "scheduled",
-        })),
+        ].map((entry) => {
+          const source = String(entry[0]);
+          const snapshot = entry[1] as any;
+          return {
+            source,
+            status: snapshot?.status || "unavailable",
+            retrievedAt: snapshot?.fetchedAt || null,
+            checkedAt: snapshot?.checkedAt || null,
+            sourceVersion: snapshot?.sourceVersion || null,
+            freshnessMethod: snapshot?.freshnessMethod || "scheduled",
+          };
+        }),
       ],
       missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
       dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key]?.fetchedAt || null])),

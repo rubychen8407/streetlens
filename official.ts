@@ -22,6 +22,9 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiClinics: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=3a02af7d-8c33-46c1-8226-c12a11610f6b",
   taipeiHospitals: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=04a3d195-ee97-467a-b066-e471ff99d15d",
   taipeiStreetLights: "https://tppkl.blob.core.windows.net/blobfs/TaipeiLight.json",
+  taipeiBusStops: "https://tcgbusfs.blob.core.windows.net/blobbus/TstStop.json",
+  taipeiLibraries: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=fb6cc268-e2b8-43a7-86f2-e79702291a2b",
+  taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
 };
 
 const USER_AGENT = "StreetLens/1.0";
@@ -234,6 +237,136 @@ export async function fetchTaipeiMedicalFacilities(): Promise<OfficialCitywideSo
         .sort()
         .pop() || null,
     };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+
+function findSpatialRows(value: any, depth = 0): any[] {
+  if (depth > 5 || value == null) return [];
+  if (Array.isArray(value)) {
+    const hasSpatialRows = value.some((row) => {
+      const lat = row?.latitude ?? row?.lat ?? row?.Latitude ?? row?.緯度;
+      const lng = row?.longitude ?? row?.lng ?? row?.lon ?? row?.Longitude ?? row?.經度;
+      return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    });
+    if (hasSpatialRows) return value;
+    for (const item of value) {
+      const found = findSpatialRows(item, depth + 1);
+      if (found.length) return found;
+    }
+    return [];
+  }
+  if (typeof value === "object") {
+    for (const item of Object.values(value)) {
+      const found = findSpatialRows(item, depth + 1);
+      if (found.length) return found;
+    }
+  }
+  return [];
+}
+
+export async function fetchTaipeiBusStops(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Public Transportation Office official bus stops";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiBusStops);
+    const rows = findSpatialRows(JSON.parse(text));
+    const points: OfficialSpatialPoint[] = rows.map((row: any, index) => {
+      const lat = Number(row.latitude ?? row.lat ?? row.Latitude ?? row.緯度);
+      const lng = Number(row.longitude ?? row.lng ?? row.lon ?? row.Longitude ?? row.經度);
+      const id = String(row.StopUID ?? row.stopUID ?? row.StopID ?? row.stopId ?? row.id ?? row.BSM_BUSSTO ?? `bus-${index}`).trim();
+      const name = String(row.StopName?.Zh_tw ?? row.StopName?.zh_tw ?? row.nameZh ?? row.name ?? row.BSM_CHINES ?? id);
+      return {
+        id,
+        name,
+        lat,
+        lng,
+        properties: { stopId: row.StopID ?? row.stopId ?? row.BSM_BUSSTO ?? null },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng) && point.id);
+
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+export async function fetchTaipeiLibraries(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei Public Library official branch and reading room data";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiLibraries);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
+      const name = firstValue(row, ["閱覽單位", "單位名稱", "館舍名稱", "名稱", "name"]) || `library-${index}`;
+      return {
+        id: [name, firstValue(row, ["地址", "館舍地址"]), lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
+        name,
+        lat: lat ?? Number.NaN,
+        lng: lng ?? Number.NaN,
+        properties: {
+          address: firstValue(row, ["地址", "館舍地址"]) || null,
+          district: firstValue(row, ["行政區", "行政區域"]) || null,
+          zipcode: firstValue(row, ["郵遞區號"]) || null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+export async function fetchTaipeiPublicToilets(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Environmental Protection Department public toilet points";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiPublicToilets);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
+      const name = firstValue(row, ["公廁名稱", "名稱", "name"]) || `public-toilet-${index}`;
+      return {
+        id: [firstValue(row, ["公廁編號", "編號", "id"]), name, lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
+        name,
+        lat: lat ?? Number.NaN,
+        lng: lng ?? Number.NaN,
+        properties: {
+          address: firstValue(row, ["公廁地址", "地址"]) || null,
+          district: firstValue(row, ["行政區"]) || null,
+          category: firstValue(row, ["公廁類別"]) || null,
+          accessibilitySeats: numberValue(row, ["無障礙廁座數"]),
+          familySeats: numberValue(row, ["親子廁座數"]),
+          topGradeSeats: numberValue(row, ["特優級"]),
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
   } catch (error: any) {
     return {
       points: [],

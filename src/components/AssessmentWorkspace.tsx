@@ -280,6 +280,7 @@ export function AssessmentWorkspace({
                     {[
                       ['YouBike', assessment.officialServiceMetrics.youBikeNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.youBikeNearestDistance) + ' m'],
                       ['YouBike bikes', assessment.officialServiceMetrics.youBikeAvailableBikes == null ? '—' : String(assessment.officialServiceMetrics.youBikeAvailableBikes)],
+                      ['Bike lane · 500m', Math.round(assessment.officialServiceMetrics.bikeLaneLength500m) + ' m'],
                       ['Medical', assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
                       ['Bus stop', assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
                       ['Libraries · 800m', String(assessment.officialServiceMetrics.libraryCount800m)],

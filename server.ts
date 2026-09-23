@@ -8,7 +8,7 @@ import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
-import { ensureAssessmentSchema, getAssessmentPhoto, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
+import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
 
@@ -45,10 +45,10 @@ async function generateGeminiContentWithFallback(
   responseMimeType?: string
 ): Promise<string> {
   const candidateModels = [
-    "gemini-3.5-flash-lite",
     "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-flash-latest",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
   ];
   let lastError: any = null;
 
@@ -1384,6 +1384,136 @@ app.post("/api/assessment/field-adjustment", async (req: Request, res: Response)
   } catch (error) {
     console.error("Field observation adjustment error:", error);
     return res.status(500).json({ error: "Unable to calculate field observation adjustment" });
+  }
+});
+
+function normalizeGeminiList(value: unknown, maxItems = 3): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function normalizeGeminiExplanation(value: any) {
+  const summary = typeof value?.summary === "string" ? value.summary.trim().slice(0, 500) : "";
+  if (!summary) {
+    throw new Error("Gemini returned an explanation without a summary");
+  }
+  return {
+    summary,
+    strengths: normalizeGeminiList(value?.strengths),
+    limitations: normalizeGeminiList(value?.limitations),
+    fieldObservations: normalizeGeminiList(value?.fieldObservations),
+    followUpChecks: normalizeGeminiList(value?.followUpChecks),
+  };
+}
+
+app.post("/api/assessments/:id/explanation", async (req: Request, res: Response) => {
+  try {
+    await waitForPersistenceSchema();
+
+    const workspaceId = req.query.workspaceId;
+    const record = await getAssessmentSession(workspaceId, req.params.id);
+    if (!record) {
+      return res.status(404).json({ error: "Saved assessment not found" });
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(503).json({ error: "Gemini explanation service is not configured" });
+    }
+
+    const snapshot = record.assessmentSnapshot && typeof record.assessmentSnapshot === "object"
+      ? record.assessmentSnapshot
+      : {};
+    const factors = Array.isArray((snapshot as any).factors)
+      ? (snapshot as any).factors.slice(0, 100)
+      : [];
+    const sourceStatus = Array.isArray((snapshot as any).sourceStatus)
+      ? (snapshot as any).sourceStatus.slice(0, 30)
+      : [];
+
+    const explanationInput = {
+      location: {
+        streetName: record.streetName,
+        district: record.district,
+        city: record.city,
+        latitude: record.coords.lat,
+        longitude: record.coords.lng,
+      },
+      persistedAssessment: {
+        categoryScores: record.scores,
+        baselineCls: record.baselineClsScore,
+        adjustedCls: record.clsScore,
+        fieldAdjustment: record.fieldAdjustment,
+        sourceDataStatus: (snapshot as any).dataStatus ?? "unknown",
+        factors,
+        sourceStatus,
+      },
+      fieldObservation: {
+        ratings: record.observationRatings || {},
+        categoryAdjustments: record.fieldAdjustmentDetails?.categoryAdjustments || {
+          C1: 0, C2: 0, C3: 0, C4: 0, C5: 0,
+        },
+        ratedItemCount: record.fieldAdjustmentDetails?.ratedItemCount || 0,
+        note: record.fieldNotes || "",
+        evidenceNotes: (record.evidence || [])
+          .filter((item) => item.note)
+          .map((item) => ({
+            type: item.type,
+            capturedAt: item.capturedAt,
+            note: item.note,
+          })),
+      },
+    };
+
+    const prompt = `You are the explanation layer for StreetLens, a street-level livability assessment product.
+
+Use ONLY the persisted assessment data provided below.
+
+Hard rules:
+1. Do not calculate, recalculate, normalize, or invent any score.
+2. Do not fill missing, null, unavailable, or insufficient data with assumptions or outside knowledge.
+3. Any numeric claim must come directly from the provided data.
+4. Clearly distinguish source-backed assessment facts from user field observations.
+5. A field observation may explain an adjustment, but it must never be presented as source data.
+6. Do not rank streets, declare a winner, or recommend one street over another.
+7. Follow-up checks must be framed as things a person could verify in the field, not as claimed facts.
+8. Keep the answer concise and evidence-oriented.
+
+Persisted data:
+${JSON.stringify(explanationInput)}
+
+Return JSON only with this exact shape:
+{
+  "summary": "A concise explanation of what the saved session shows and what remains uncertain.",
+  "strengths": ["up to 3 source-backed or explicitly observed strengths"],
+  "limitations": ["up to 3 important data limitations or uncertainties"],
+  "fieldObservations": ["up to 3 relevant observations from the saved field session"],
+  "followUpChecks": ["up to 3 concrete things to verify on a future visit"]
+}`;
+
+    const textResponse = await generateGeminiContentWithFallback(
+      ai,
+      prompt,
+      "application/json",
+    );
+    const cleaned = String(textResponse || "")
+      .replace(/^\s*\`\`\`json\s*/i, "")
+      .replace(/\s*\`\`\`\s*$/i, "")
+      .trim();
+    const parsed = normalizeGeminiExplanation(JSON.parse(cleaned));
+
+    return res.json({
+      source: "gemini_ai",
+      generatedAt: new Date().toISOString(),
+      ...parsed,
+    });
+  } catch (error: any) {
+    console.error("Persisted assessment explanation error:", error);
+    return res.status(500).json({ error: error?.message || "Failed to generate assessment explanation" });
   }
 });
 

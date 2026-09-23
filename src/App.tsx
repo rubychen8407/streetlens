@@ -21,6 +21,7 @@ import {
   ScoreFactor,
   AssessmentEvidence,
   EvidencePhotoDraft,
+  AssessmentExplanation,
 } from './types';
 import {
   DEFAULT_CLS_WEIGHTS,
@@ -40,6 +41,7 @@ import {
 import {
   deletePersistedAssessment,
   getRemoteEvidencePhotoUrl,
+  generatePersistedAssessmentExplanation,
   getWorkspaceId,
   listPersistedAssessments,
   persistAssessment,
@@ -84,6 +86,10 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('cls_saved_locations') || '[]'); } catch { return []; }
   });
   const [workspaceId] = useState(() => getWorkspaceId());
+  const [activeSavedAssessmentId, setActiveSavedAssessmentId] = useState<string | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<AssessmentExplanation | null>(null);
+  const [isGeneratingAiExplanation, setIsGeneratingAiExplanation] = useState(false);
+  const [aiExplanationError, setAiExplanationError] = useState<string | null>(null);
 
   // Weights
   const [weights, setWeights] = useState<CLSWeights>(DEFAULT_CLS_WEIGHTS);
@@ -697,6 +703,9 @@ export default function App() {
       const cloudResult = await persistAssessment(workspaceId, entry, evidenceDrafts);
       if (cloudResult.ok && cloudResult.record) {
         cloudPersisted = true;
+        setActiveSavedAssessmentId(entry.id);
+        setAiExplanation(null);
+        setAiExplanationError(null);
         entry = {
           ...entry,
           clsScore: cloudResult.record.clsScore,
@@ -738,6 +747,26 @@ export default function App() {
     setIsSavingAssessment(false);
     return true;
   }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, savedLocations, workspaceId]);
+
+  const handleGenerateAiExplanation = useCallback(async () => {
+    if (!activeSavedAssessmentId) {
+      setAiExplanationError('請先把 Assessment 儲存到 Cloud SQL。');
+      return;
+    }
+
+    setIsGeneratingAiExplanation(true);
+    setAiExplanationError(null);
+    try {
+      const result = await generatePersistedAssessmentExplanation(workspaceId, activeSavedAssessmentId);
+      setAiExplanation(result);
+    } catch (error) {
+      console.warn('Gemini assessment explanation error:', error);
+      setAiExplanation(null);
+      setAiExplanationError(error instanceof Error ? error.message : 'Gemini 解釋服務暫時不可用。');
+    } finally {
+      setIsGeneratingAiExplanation(false);
+    }
+  }, [activeSavedAssessmentId, workspaceId]);
 
   const handleToggleFavorite = useCallback(() => {
     const key = favoriteKey(targetLocation, streetName);
@@ -789,6 +818,9 @@ export default function App() {
         targetLocation={targetLocation}
         onSelectLocation={(coord, customName) => {
           setTargetLocation(coord);
+          setActiveSavedAssessmentId(null);
+          setAiExplanation(null);
+          setAiExplanationError(null);
           if (customName) {
             setStreetName(customName);
             fetchLocationData(coord, district, city, customName, true);
@@ -842,6 +874,9 @@ export default function App() {
         onLocateMe={handleLocateMe}
         onSelectCoordinate={(coord, name, dist, c) => {
           setTargetLocation(coord);
+          setActiveSavedAssessmentId(null);
+          setAiExplanation(null);
+          setAiExplanationError(null);
           setStreetName(name);
           const newDist = dist || district;
           const newCity = c || city;
@@ -898,6 +933,11 @@ export default function App() {
         selectedSavedEvidence={selectedSavedEvidence}
         savedEvidenceUrls={savedEvidenceUrls}
         evidenceError={evidenceError}
+        activeSavedAssessmentId={activeSavedAssessmentId}
+        aiExplanation={aiExplanation}
+        isGeneratingAiExplanation={isGeneratingAiExplanation}
+        aiExplanationError={aiExplanationError}
+        onGenerateAiExplanation={handleGenerateAiExplanation}
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);

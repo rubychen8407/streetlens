@@ -368,6 +368,24 @@ export async function listAssessmentSessions(workspaceIdInput: unknown, limitInp
   });
 }
 
+export async function getAssessmentSession(
+  workspaceIdInput: unknown,
+  idInput: unknown,
+): Promise<PersistedAssessmentRecord | null> {
+  if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
+  const workspaceId = validateWorkspaceId(workspaceIdInput);
+  const id = validateAssessmentId(idInput);
+  const result = await dataDb.query(
+    `SELECT payload
+     FROM assessment_sessions
+     WHERE id = $1 AND workspace_id = $2
+     LIMIT 1`,
+    [id, workspaceId],
+  );
+  if (result.rows.length === 0) return null;
+  return result.rows[0].payload as PersistedAssessmentRecord;
+}
+
 export async function deleteAssessmentSession(workspaceIdInput: unknown, idInput: unknown): Promise<boolean> {
   if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
   const workspaceId = validateWorkspaceId(workspaceIdInput);

@@ -217,6 +217,16 @@ export interface AssessmentEvidence {
   height?: number;
 }
 
+export interface AssessmentExplanation {
+  source: 'gemini_ai';
+  generatedAt: string;
+  summary: string;
+  strengths: string[];
+  limitations: string[];
+  fieldObservations: string[];
+  followUpChecks: string[];
+}
+
 export interface EvidencePhotoDraft {
   id: string;
   fileName: string;

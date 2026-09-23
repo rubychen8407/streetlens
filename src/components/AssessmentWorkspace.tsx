@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, X } from 'lucide-react';
-import { AssessmentEvidence, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
+import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, Sparkles, X } from 'lucide-react';
+import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 
 type View = 'assessment' | 'saved' | 'settings';
@@ -39,6 +39,11 @@ interface AssessmentWorkspaceProps {
   selectedSavedEvidence: AssessmentEvidence[];
   savedEvidenceUrls: Record<string, string>;
   evidenceError: string | null;
+  activeSavedAssessmentId: string | null;
+  aiExplanation: AssessmentExplanation | null;
+  isGeneratingAiExplanation: boolean;
+  aiExplanationError: string | null;
+  onGenerateAiExplanation: () => void;
 }
 
 function formatFreshness(timestamp?: string) {
@@ -64,6 +69,7 @@ export function AssessmentWorkspace({
   clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
+  activeSavedAssessmentId, aiExplanation, isGeneratingAiExplanation, aiExplanationError, onGenerateAiExplanation,
 }: AssessmentWorkspaceProps) {
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
@@ -433,6 +439,67 @@ export function AssessmentWorkspace({
 
                 {evidenceError && <div className="mt-2 text-[10px] text-rose-300">{evidenceError}</div>}
                 {evidenceDrafts.length >= 6 && <div className="mt-2 text-[9px] text-slate-600">Maximum 6 photos per assessment.</div>}
+              </section>
+
+              <section className="rounded-2xl border border-violet-400/20 bg-violet-400/[0.05] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-xs font-bold text-violet-100">
+                      <Sparkles className="w-4 h-4 text-violet-300" />
+                      Gemini explanation
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      Generated from the saved session only. It does not recalculate CLS or add missing data.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onGenerateAiExplanation}
+                    disabled={!activeSavedAssessmentId || isGeneratingAiExplanation}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/15 border border-violet-400/20 text-[10px] font-bold text-violet-200 disabled:opacity-40"
+                  >
+                    {isGeneratingAiExplanation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {isGeneratingAiExplanation ? 'Explaining…' : 'Explain with Gemini'}
+                  </button>
+                </div>
+
+                {!activeSavedAssessmentId && (
+                  <div className="mt-2 text-[10px] text-slate-600">
+                    Save this assessment to Cloud SQL before generating a grounded explanation.
+                  </div>
+                )}
+
+                {aiExplanationError && (
+                  <div className="mt-2 rounded-lg bg-rose-400/10 border border-rose-400/15 px-2.5 py-2 text-[10px] text-rose-300">
+                    {aiExplanationError}
+                  </div>
+                )}
+
+                {aiExplanation && (
+                  <div className="mt-3 space-y-2.5">
+                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
+                      <div className="text-[10px] uppercase tracking-wider text-violet-300/80 font-bold">Summary</div>
+                      <div className="text-[11px] leading-relaxed text-slate-300 mt-1">{aiExplanation.summary}</div>
+                    </div>
+                    {([
+                      ['Strengths', aiExplanation.strengths],
+                      ['Limitations', aiExplanation.limitations],
+                      ['Field observations', aiExplanation.fieldObservations],
+                      ['Follow-up checks', aiExplanation.followUpChecks],
+                    ] as const).map(([label, items]) => items.length > 0 && (
+                      <div key={label}>
+                        <div className="text-[9px] uppercase tracking-wider text-slate-600 font-bold mb-1">{label}</div>
+                        <div className="space-y-1">
+                          {items.map((item, index) => (
+                            <div key={label + index} className="rounded-lg bg-black/10 px-2.5 py-2 text-[10px] text-slate-400">
+                              {item}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
 
               <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3">

@@ -1,4 +1,4 @@
-import type { EvidencePhotoDraft, SavedLocation, AssessmentEvidence } from "../types";
+import type { AssessmentExplanation, EvidencePhotoDraft, SavedLocation, AssessmentEvidence } from "../types";
 
 export interface PersistAssessmentResult {
   ok: boolean;
@@ -100,6 +100,22 @@ export async function deletePersistedAssessment(workspaceId: string, id: string)
     { method: "DELETE" },
   );
   return response.ok || response.status === 404;
+}
+
+export async function generatePersistedAssessmentExplanation(
+  workspaceId: string,
+  assessmentId: string,
+): Promise<AssessmentExplanation> {
+  const response = await fetch(
+    "/api/assessments/" + encodeURIComponent(assessmentId)
+      + "/explanation?workspaceId=" + encodeURIComponent(workspaceId),
+    { method: "POST" },
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.error || "Gemini explanation failed: " + response.status);
+  }
+  return body as AssessmentExplanation;
 }
 
 export function getRemoteEvidencePhotoUrl(workspaceId: string, assessmentId: string, evidenceId: string): string {

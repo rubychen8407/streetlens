@@ -787,9 +787,6 @@ export async function replaceExternalSpatialPoints(
         );
         return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
       });
-        const offset = index * 9;
-        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
-      });
       await dataDb.query(
         `INSERT INTO external_spatial_points
           (source_key, feature_id, name, latitude, longitude, properties, fetched_at, source_updated_at, source_version)

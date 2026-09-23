@@ -17,7 +17,11 @@ const percentileAssessment = calculateAssessment(
   undefined,
   Array.from({ length: 19 }, (_, index) => index + 1),
 );
-assert.equal(percentileAssessment.overall, null, "insufficient reference data must not produce a complete overall score");
+assert.equal(percentileAssessment.overall, 50, "real reference data should provide a transparent regional estimate");
+assert.equal(percentileAssessment.overallMode, "estimated");
+assert.equal(percentileAssessment.c2.mode, "estimated");
+assert.equal(percentileAssessment.c2.estimationMethod, "regional_real_data_prior");
+assert.equal(percentileAssessment.c2.estimationReferenceSampleSize, 19);
 
 const unavailableAssessment = {
   ...emptyAssessment,

@@ -1,6 +1,18 @@
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "../green";
 import { fetchTaiwanTransitData } from "../transit";
 import { fetchTaipeiSafetyData, SAFETY_RESOURCE_URLS } from "../safety";
+import {
+  OFFICIAL_SOURCE_URLS,
+  fetchTaipeiYouBikeData,
+  fetchTaipeiMedicalFacilities,
+  fetchTaipeiStreetLights,
+  fetchTaipeiBusStops,
+  fetchTaipeiLibraries,
+  fetchTaipeiPublicToilets,
+  fetchTaipeiParks,
+  fetchTaipeiBikeLanes,
+  fetchTaipeiSidewalkAreas,
+} from "../official";
 
 const TEST_LAT = Number(process.env.STREETLENS_TEST_LAT || "25.033964");
 const TEST_LNG = Number(process.env.STREETLENS_TEST_LNG || "121.564468");
@@ -56,6 +68,17 @@ async function main() {
   const resourceResults = await Promise.all([
     ...Object.values(GREEN_RESOURCE_URLS),
     ...Object.values(SAFETY_RESOURCE_URLS),
+    OFFICIAL_SOURCE_URLS.taipeiYouBike,
+    OFFICIAL_SOURCE_URLS.taipeiClinics,
+    OFFICIAL_SOURCE_URLS.taipeiHospitals,
+    OFFICIAL_SOURCE_URLS.taipeiStreetLights,
+    OFFICIAL_SOURCE_URLS.taipeiBusStops,
+    OFFICIAL_SOURCE_URLS.taipeiLibraries,
+    OFFICIAL_SOURCE_URLS.taipeiPublicToilets,
+    OFFICIAL_SOURCE_URLS.taipeiParks,
+    OFFICIAL_SOURCE_URLS.taipeiBikeLanes,
+    OFFICIAL_SOURCE_URLS.wheelRouteFacility11,
+    OFFICIAL_SOURCE_URLS.wheelRouteFacility12,
   ].map(checkHttpResource));
 
   for (const result of resourceResults) {
@@ -71,10 +94,19 @@ async function main() {
   // Some data.taipei CSV endpoints can reject/timeout generic CI fetches even
   // though the adapter request succeeds, so do not fail before exercising it.
 
-  const [green, transit, safety] = await Promise.all([
+  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
     fetchTaipeiSafetyData(TEST_LAT, TEST_LNG, 500),
+    fetchTaipeiYouBikeData(),
+    fetchTaipeiMedicalFacilities(),
+    fetchTaipeiStreetLights(),
+    fetchTaipeiBusStops(),
+    fetchTaipeiLibraries(),
+    fetchTaipeiPublicToilets(),
+    fetchTaipeiParks(),
+    fetchTaipeiBikeLanes(),
+    fetchTaipeiSidewalkAreas(),
   ]);
 
   console.log(JSON.stringify({
@@ -101,6 +133,17 @@ async function main() {
       accidentCount500m: safety.accidents.length,
       error: safety.error || null,
     },
+    official: {
+      youBike: { status: youBike.status, points: youBike.points.length, error: youBike.error || null },
+      medical: { status: medical.status, points: medical.points.length, error: medical.error || null },
+      streetLights: { status: streetLights.status, points: streetLights.points.length, error: streetLights.error || null },
+      busStops: { status: busStops.status, points: busStops.points.length, error: busStops.error || null },
+      libraries: { status: libraries.status, points: libraries.points.length, error: libraries.error || null },
+      publicToilets: { status: publicToilets.status, points: publicToilets.points.length, error: publicToilets.error || null },
+      parks: { status: parks.status, points: parks.points.length, error: parks.error || null },
+      bikeLanes: { status: bikeLanes.status, lines: bikeLanes.lines?.length || 0, error: bikeLanes.error || null },
+      sidewalks: { status: sidewalks.status, areas: sidewalks.areas?.length || 0, error: sidewalks.error || null },
+    },
   }, null, 2));
 
   // "empty" is a valid real-data outcome. HTTP/parser failures are not.
@@ -117,6 +160,33 @@ async function main() {
     "Transit adapter returned invalid arrays");
   assert(Array.isArray(safety.accidents),
     "Safety adapter returned invalid accidents array");
+
+  const officialResults = [
+    ["YouBike", youBike],
+    ["medical", medical],
+    ["streetLights", streetLights],
+    ["busStops", busStops],
+    ["libraries", libraries],
+    ["publicToilets", publicToilets],
+    ["parks", parks],
+    ["bikeLanes", bikeLanes],
+    ["sidewalks", sidewalks],
+  ] as const;
+
+  for (const [name, result] of officialResults) {
+    assert(result.status !== "error" && result.status !== "timeout",
+      `${name} official source failed: ${result.error || result.status}`);
+  }
+
+  assert(Array.isArray(youBike.points), "YouBike adapter returned invalid points");
+  assert(Array.isArray(medical.points), "Medical adapter returned invalid points");
+  assert(Array.isArray(streetLights.points), "Street light adapter returned invalid points");
+  assert(Array.isArray(busStops.points), "Bus stop adapter returned invalid points");
+  assert(Array.isArray(libraries.points), "Library adapter returned invalid points");
+  assert(Array.isArray(publicToilets.points), "Public toilet adapter returned invalid points");
+  assert(Array.isArray(parks.points), "Park adapter returned invalid points");
+  assert(Array.isArray(bikeLanes.lines), "Bike lane adapter returned invalid lines");
+  assert(Array.isArray(sidewalks.areas), "Sidewalk adapter returned invalid areas");
 
   console.log("External data health check passed.");
 }

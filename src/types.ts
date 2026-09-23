@@ -203,6 +203,33 @@ export interface IndicatorSourceItem {
   status: 'active' | 'loading' | 'unavailable';
 }
 
+export type AssessmentEvidenceType = 'photo' | 'note';
+
+export interface AssessmentEvidence {
+  id: string;
+  type: AssessmentEvidenceType;
+  capturedAt: number;
+  location: LocationCoord;
+  note?: string;
+  storageKey?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface EvidencePhotoDraft {
+  id: string;
+  fileName: string;
+  blob: Blob;
+  previewUrl: string;
+  capturedAt: number;
+  location: LocationCoord;
+  note: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
 export interface SavedLocation {
   id: string;
   name: string;
@@ -216,6 +243,7 @@ export interface SavedLocation {
   fieldAdjustmentDetails?: Pick<FieldObservationAdjustment, 'categoryAdjustments' | 'itemAdjustments' | 'ratedItemCount'>;
   observationRatings?: Record<string, number>;
   assessmentSnapshot?: StreetAssessmentResponse;
+  evidence?: AssessmentEvidence[];
   grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   scores: {
     c1: number | null;

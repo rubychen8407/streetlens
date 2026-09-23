@@ -61,6 +61,7 @@ export function AssessmentWorkspace({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [savedFilter, setSavedFilter] = useState<'all' | 'favorites'>('all');
   const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
+  const [showScoreDetails, setShowScoreDetails] = useState(false);
 
   const grouped = useMemo(() => {
     return ['C1','C2','C3','C4','C5'].map(category => ({
@@ -142,6 +143,49 @@ export function AssessmentWorkspace({
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Objective data</h3>
                 <button onClick={onOpenDataLogs} className="text-[11px] text-sky-300 hover:text-sky-200 flex items-center gap-1">Data status <ChevronRight className="w-3 h-3" /></button>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowScoreDetails(v => !v)}
+                className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-left hover:bg-white/[0.06]"
+                aria-expanded={showScoreDetails}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-200">Why this score?</span>
+                  <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform ${showScoreDetails ? 'rotate-90' : ''}`} />
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">See the source-backed category scores and factor provenance.</div>
+              </button>
+              {showScoreDetails && (
+                <div className="mt-2 rounded-2xl border border-white/10 bg-black/10 p-3 space-y-2">
+                  {(['C1','C2','C3','C4','C5'] as const).map(category => {
+                    const categoryKey = category.toLowerCase() as 'c1' | 'c2' | 'c3' | 'c4' | 'c5';
+                    const score = assessment?.scores[categoryKey]?.score ?? null;
+                    const factors = assessment?.scores[categoryKey]?.factors || [];
+                    return (
+                      <div key={category} className="rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-300">{category}</span>
+                          <span className="text-xs font-mono font-bold text-white">{score ?? '—'}</span>
+                        </div>
+                        <div className="mt-1.5 space-y-1">
+                          {factors.slice(0, 4).map(item => (
+                            <div key={item.indicator} className="flex items-center justify-between gap-2 text-[10px]">
+                              <span className="truncate text-slate-500">{item.indicator}</span>
+                              <span className={item.status === 'available' ? 'text-slate-400' : 'text-slate-600'}>
+                                {item.value ?? 'N/A'} · {item.method}
+                              </span>
+                            </div>
+                          ))}
+                          {factors.length === 0 && <div className="text-[10px] text-slate-600">No factor details available.</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="text-[10px] leading-relaxed text-slate-600">
+                    CLS is calculated from the source-backed assessment model. Field observations are recorded separately and are not silently added to the external-data score.
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 {dataCards.map(([label, item, category]) => (
                   <div key={label} className="rounded-2xl bg-white/[0.045] border border-white/5 p-3">

@@ -176,11 +176,19 @@ export function AssessmentWorkspace({
                         </div>
                         <div className="mt-1.5 space-y-1">
                           {factors.slice(0, 4).map(item => (
-                            <div key={item.indicator} className="flex items-center justify-between gap-2 text-[10px]">
-                              <span className="truncate text-slate-500">{item.indicator}</span>
-                              <span className={item.status === 'available' ? 'text-slate-400' : 'text-slate-600'}>
-                                {item.value ?? 'N/A'} · {item.method}
-                              </span>
+                            <div key={item.indicator} className="rounded-lg bg-black/10 px-2 py-1.5 text-[10px]">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate text-slate-400">{item.indicator}</span>
+                                <span className={item.status === 'available' ? 'text-slate-300' : 'text-slate-600'}>
+                                  {item.value ?? 'N/A'}{item.unit ? ' ' + item.unit : ''}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 flex items-center justify-between gap-2 text-[9px] text-slate-600">
+                                <span className="truncate">{item.source || 'Source unavailable'}</span>
+                                <span className="shrink-0">
+                                  {item.method} · {item.confidence || 'low'} · {formatFreshness(item.retrievedAt)}
+                                </span>
+                              </div>
                             </div>
                           ))}
                           {factors.length === 0 && <div className="text-[10px] text-slate-600">No factor details available.</div>}
@@ -345,7 +353,9 @@ export function AssessmentWorkspace({
                     <tbody>
                       {[
                         ['Street', (saved: SavedLocation) => saved.streetName],
-                        ['CLS', (saved: SavedLocation) => saved.clsScore ?? '—'],
+                        ['External baseline', (saved: SavedLocation) => saved.baselineClsScore ?? '—'],
+                        ['Field adjustment', (saved: SavedLocation) => saved.fieldAdjustment == null ? '—' : (saved.fieldAdjustment >= 0 ? '+' : '') + saved.fieldAdjustment],
+                        ['Adjusted CLS', (saved: SavedLocation) => saved.clsScore ?? '—'],
                         ['C1 Safety', (saved: SavedLocation) => saved.scores.c1 ?? '—'],
                         ['C2 Amenities', (saved: SavedLocation) => saved.scores.c2 ?? '—'],
                         ['C3 Transit', (saved: SavedLocation) => saved.scores.c3 ?? '—'],

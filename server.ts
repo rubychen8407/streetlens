@@ -564,13 +564,14 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<PoiFet
 
 async function fetchOsmPoisNearby(lat: number, lng: number): Promise<PoiFetchResult> {
   const retrievedAt = new Date().toISOString();
-  const query = `[out:json][timeout:8];(
-    node["amenity"](around:800,${lat},${lng});
-    node["shop"](around:800,${lat},${lng});
-    node["public_transport"](around:800,${lat},${lng});
-    node["railway"](around:800,${lat},${lng});
-    node["leisure"="park"](around:800,${lat},${lng});
-  );out 100;`;
+  const query = `[out:json][timeout:15];(
+    nwr["amenity"](around:1200,${lat},${lng});
+    nwr["shop"](around:1200,${lat},${lng});
+    nwr["public_transport"](around:1200,${lat},${lng});
+    nwr["railway"](around:1200,${lat},${lng});
+    nwr["highway"="bus_stop"](around:1200,${lat},${lng});
+    nwr["leisure"~"^(park|garden|playground)$"](around:1200,${lat},${lng});
+  );out center 300;`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -595,13 +596,15 @@ async function fetchOsmPoisNearby(lat: number, lng: number): Promise<PoiFetchRes
       else if (tags.amenity === "community_centre" || tags.amenity === "townhall" || tags.amenity === "library") category = "C5";
 
       const amenityType =
-        /supermarket|grocery|market/.test(tags.shop || "") ? "supermarket" :
-        /convenience/.test(tags.shop || "") ? "convenience" :
+        /supermarket|grocery|market|convenience/.test(tags.shop || "") ? (
+          /convenience/.test(tags.shop || "") ? "convenience" : "supermarket"
+        ) :
         /clinic|doctors|pharmacy|hospital|dentist/.test(tags.amenity || "") ? "clinic" :
         /school|kindergarten|college|university/.test(tags.amenity || "") ? "school" :
         /bank|post_office/.test(tags.amenity || "") ? "bank_post" :
-        /bus_stop|bus_station/.test(tags.public_transport || tags.amenity || "") ? "bus" :
-        /station|subway|tram/.test(tags.railway || tags.public_transport || "") ? "rail" : "other";
+        /station|subway|tram|railway_station/.test(tags.railway || "") ? "rail" :
+        tags.highway === "bus_stop" || /bus_stop|bus_station|platform|stop_position/.test(tags.public_transport || tags.amenity || "") ? "bus" :
+        "other";
 
       return {
         id: `osm_${item.type}_${item.id}`,

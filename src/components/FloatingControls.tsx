@@ -516,6 +516,7 @@ export function FloatingControls({
             )}
           </div>
         </div>
+      </div>
 
       {/* CARTO Key Management & Test Modal */}
       {showKeyModal && (

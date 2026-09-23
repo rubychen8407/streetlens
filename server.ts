@@ -7,7 +7,7 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getNearestCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -514,16 +514,16 @@ async function fetchGooglePlacesNearby(lat: number, lng: number): Promise<PoiFet
   }
 
   const queryGroups = [
-    ["supermarket", "grocery_store"],
-    ["convenience_store"],
+    ["supermarket", "grocery_store", "discount_supermarket", "hypermarket"],
+    ["convenience_store", "market", "farmers_market"],
     ["hospital", "pharmacy", "doctor", "dentist"],
-    ["school", "primary_school", "secondary_school"],
+    ["school", "primary_school", "secondary_school", "preschool", "university"],
     ["bank", "post_office"],
-    ["subway_station", "train_station", "light_rail_station"],
-    ["bus_station", "bus_stop", "transit_station"],
+    ["subway_station", "train_station", "light_rail_station", "tram_stop"],
+    ["bus_station", "bus_stop", "transit_station", "transit_stop"],
     ["police", "fire_station"],
     ["park", "city_park", "garden", "playground"],
-    ["community_center", "library"],
+    ["community_center", "library", "cultural_center"],
   ];
 
   const retrievedAt = new Date().toISOString();
@@ -1291,16 +1291,39 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         snapshots[key] = null;
         return;
       }
-      const nearby = await getNearestCachedSnapshot(key, lat, lng, 250);
-      snapshots[key] = nearby;
-      if (nearby) {
-        snapshotOrigins[key] = {
-          scopeKey: nearby.scopeKey,
-          scopeDistanceMeters: Number(nearby.scopeDistanceMeters),
-          reused: true,
-        };
+
+      const nearby = await getNearbyCachedSnapshots(key, lat, lng, 1000, 6);
+      if (!nearby.length) {
+        snapshots[key] = null;
+        return;
       }
-    }));
+
+      const mergedPayload = nearby.reduce((merged: any, cached: any) => {
+        if (key === "google_places" || key === "openstreetmap") {
+          merged.pois = [...(merged.pois || []), ...(Array.isArray(cached.payload?.pois) ? cached.payload.pois : [])];
+        } else if (key === "tdx_transit") {
+          merged.stops = [...(merged.stops || []), ...(Array.isArray(cached.payload?.stops) ? cached.payload.stops : [])];
+          merged.railStations = [...(merged.railStations || []), ...(Array.isArray(cached.payload?.railStations) ? cached.payload.railStations : [])];
+        } else if (key === "taipei_green") {
+          merged.streetTrees = [...(merged.streetTrees || []), ...(Array.isArray(cached.payload?.streetTrees) ? cached.payload.streetTrees : [])];
+          merged.parkTrees = [...(merged.parkTrees || []), ...(Array.isArray(cached.payload?.parkTrees) ? cached.payload.parkTrees : [])];
+        } else if (key === "taipei_safety") {
+          merged.accidents = [...(merged.accidents || []), ...(Array.isArray(cached.payload?.accidents) ? cached.payload.accidents : [])];
+        }
+        return merged;
+      }, {});
+
+      const primary = nearby[0];
+      snapshots[key] = {
+        ...primary,
+        payload: mergedPayload,
+      };
+      snapshotOrigins[key] = {
+        scopeKey: nearby.map((item) => item.scopeKey).join(","),
+        scopeDistanceMeters: Number(primary.scopeDistanceMeters),
+        reused: true,
+      };
+    });
 
     const floodSpatialIndexReady = await hasFloodHazardPolygons();
     const availabilitySnapshots = floodSpatialIndexReady

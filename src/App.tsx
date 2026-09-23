@@ -19,6 +19,8 @@ import {
   SavedLocation,
   StreetAssessmentResponse,
   ScoreFactor,
+  AssessmentEvidence,
+  EvidencePhotoDraft,
 } from './types';
 import {
   DEFAULT_CLS_WEIGHTS,
@@ -29,6 +31,12 @@ import { AssessmentWorkspace } from './components/AssessmentWorkspace';
 import {
   generateSurroundingStreetSegments,
 } from './utils/scoreCalculator';
+import {
+  deleteEvidencePhotos,
+  loadEvidencePhotoUrl,
+  prepareEvidencePhoto,
+  storeEvidencePhoto,
+} from './utils/evidenceStore';
 
 export default function App() {
   // Default coordinates: Taipei Daan Yongkang Area

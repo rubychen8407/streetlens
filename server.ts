@@ -677,12 +677,20 @@ function parseValidatorState(snapshot: any): ValidatorState {
   }
 }
 
+const STATIC_VALIDATOR_TIMEOUT_MS = 10_000;
+
 async function checkStaticResourceValidators(
   sourceKey: string,
   snapshot: any,
 ): Promise<{ decision: "unchanged" | "changed" | "unknown"; version: string | null; method: "etag" | "last_modified" | "unknown"; sourceUpdatedAt: string | null }> {
   const urls = VALIDATOR_RESOURCES[sourceKey];
   if (!urls?.length) return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+
+  // On the first refresh there is no prior validator state to compare against.
+  // Skip HEAD probes and fetch the real source payload directly.
+  if (!snapshot) {
+    return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+  }
 
   const previous = parseValidatorState(snapshot);
   const state: ValidatorState = {};
@@ -696,8 +704,11 @@ async function checkStaticResourceValidators(
     if (prior.etag) headers["If-None-Match"] = prior.etag;
     if (prior.lastModified) headers["If-Modified-Since"] = prior.lastModified;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), STATIC_VALIDATOR_TIMEOUT_MS);
+
     try {
-      const response = await fetch(url, { method: "HEAD", headers });
+      const response = await fetch(url, { method: "HEAD", headers, signal: controller.signal });
       if (response.status === 304) {
         sawNotModified += 1;
         state[url] = prior;
@@ -712,11 +723,12 @@ async function checkStaticResourceValidators(
       state[url] = { etag, lastModified };
 
       const changed = (prior.etag && etag && prior.etag !== etag)
-        || (prior.lastModified && lastModified && prior.lastModified !== lastModified)
-        || (!prior.etag && !prior.lastModified);
+        || (prior.lastModified && lastModified && prior.lastModified !== lastModified);
       if (changed) sawChanged += 1;
     } catch {
       return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt: null };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -733,7 +745,7 @@ async function checkStaticResourceValidators(
   if (sawNotModified === urls.length) return { decision: "unchanged", version, method, sourceUpdatedAt };
   if (sawChanged > 0) return { decision: "changed", version, method, sourceUpdatedAt };
   if (sawValidator) return { decision: "unchanged", version, method, sourceUpdatedAt };
-  return { decision: "unknown", version, method: "unknown", sourceUpdatedAt };
+  return { decision: "unknown", version: null, method: "unknown", sourceUpdatedAt };
 }
 
 
@@ -812,7 +824,9 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
           continue;
         }
 
-        const validator = await checkStaticResourceValidators(sourceKey, existing);
+        const validator = existing
+          ? await checkStaticResourceValidators(sourceKey, existing)
+          : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
         if (existing && validator.decision === "unchanged") {
           await markSnapshotChecked(sourceKey, scopeKey, {
             sourceVersion: validator.version,

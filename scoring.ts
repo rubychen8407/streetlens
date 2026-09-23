@@ -623,7 +623,6 @@ export function calculateAssessment(
         : "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? undefined : "no_observation",
     },
-    },
   ];
   const c3ComponentScores = c3Factors
 .filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist", "bikeLaneLength500m"].includes(factor.indicator))

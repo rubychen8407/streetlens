@@ -86,6 +86,8 @@ export function AssessmentWorkspace({
 
   const factor = (indicator: string) => assessment?.factors.find(item => item.indicator === indicator);
 
+  const floodFactor = factor('floodHazard_100mmh') || factor('floodHazard_78.8mmh') || factor('floodHazard_130mmh');
+  const floodSourceStatus = assessment?.sourceStatus.find(item => item.source === 'taipei_flood');
   const dataCards = [
     ['Safety', factor('trafficAccidentCount500m'), 'C1'],
     ['Flood risk', factor('floodHazard_100mmh') || factor('floodHazard_78.8mmh') || factor('floodHazard_130mmh'), 'C1'],
@@ -238,9 +240,19 @@ export function AssessmentWorkspace({
                 {dataCards.map(([label, item, category]) => (
                   <div key={label} className="rounded-2xl bg-white/[0.045] border border-white/5 p-3">
                     <div className="text-[11px] text-slate-400">{label} · {category}</div>
-                    <div className="mt-1 text-sm font-bold">{item?.value != null ? `${item.value} ${item.unit}` : 'N/A'}</div>
+                    <div className="mt-1 text-sm font-bold">
+                      {item?.value != null
+                        ? item.value + ' ' + item.unit
+                        : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
+                          ? 'No mapped inundation'
+                          : 'N/A'}
+                    </div>
                     <div className={`mt-1 text-[10px] ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-500'}`}>
-                      {item?.status === 'available' ? 'Source data available' : 'Data unavailable'}
+                      {item?.status === 'available'
+                        ? 'Source data available'
+                        : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
+                          ? 'Official model has no mapped area here'
+                          : 'Data unavailable'}
                     </div>
                     {item && (
                       <div className="mt-1 text-[10px] text-slate-600 truncate" title={`${item.source || 'Unknown source'} · ${item.retrievedAt || 'not retrieved'}`}>

@@ -565,15 +565,16 @@ export default function App() {
     const storedPhotoKeys: string[] = [];
     try {
       for (const draft of evidenceDrafts) {
-        await storeEvidencePhoto(draft.id, draft.blob);
-        storedPhotoKeys.push(draft.id);
+        const storageKey = 'photo_' + crypto.randomUUID();
+        await storeEvidencePhoto(storageKey, draft.blob);
+        storedPhotoKeys.push(storageKey);
         evidence.push({
-          id: draft.id,
+          id: 'evidence_' + crypto.randomUUID(),
           type: 'photo',
           capturedAt: draft.capturedAt,
           location: draft.location,
           note: draft.note.trim() || undefined,
-          storageKey: draft.id,
+          storageKey,
           mimeType: draft.mimeType,
           width: draft.width || undefined,
           height: draft.height || undefined,

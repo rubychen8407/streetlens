@@ -104,6 +104,24 @@ export async function ensureDataCacheSchema(): Promise<void> {
         ON flood_hazard_polygons USING GIST (geom);
       CREATE INDEX IF NOT EXISTS idx_flood_hazard_polygons_scenario
         ON flood_hazard_polygons(scenario_mmh);
+
+      CREATE TABLE IF NOT EXISTS historical_flood_events (
+        id BIGSERIAL PRIMARY KEY,
+        event_date DATE,
+        town_name TEXT,
+        address TEXT,
+        depth_cm DOUBLE PRECISION,
+        area DOUBLE PRECISION,
+        source TEXT NOT NULL,
+        source_version TEXT,
+        source_updated_at TIMESTAMPTZ,
+        geom geometry(Polygon, 4326) NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_historical_flood_events_geom
+        ON historical_flood_events USING GIST (geom);
+      CREATE INDEX IF NOT EXISTS idx_historical_flood_events_date
+        ON historical_flood_events(event_date DESC);
     `);
   }
 }
@@ -215,6 +233,128 @@ function floodPolygonWkt(coordinates: Array<[number, number]>): string | null {
     ? coordinates
     : [...coordinates, coordinates[0]];
   return "POLYGON((" + closed.map(([lng, lat]) => `${lng} ${lat}`).join(",") + "))";
+}
+
+export interface HistoricalFloodEventRecord {
+  eventDate?: string | null;
+  townName?: string | null;
+  address?: string | null;
+  depthCm?: number | null;
+  area?: number | null;
+  source: string;
+  sourceVersion?: string | null;
+  sourceUpdatedAt?: string | null;
+  coordinates: Array<[number, number]>;
+}
+
+export async function replaceHistoricalFloodEvents(
+  events: HistoricalFloodEventRecord[],
+): Promise<boolean> {
+  if (!dataDb || !postgisAvailable || !events.length) return false;
+
+  const client = await dataDb.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM historical_flood_events");
+
+    for (let i = 0; i < events.length; i += 50) {
+      const batch = events.slice(i, i + 50);
+      const values: string[] = [];
+      const params: any[] = [];
+      let p = 1;
+
+      for (const event of batch) {
+        const wkt = floodPolygonWkt(event.coordinates);
+        if (!wkt) continue;
+
+        let eventDate: Date | null = null;
+        if (event.eventDate) {
+          const parsed = new Date(event.eventDate);
+          if (Number.isFinite(parsed.getTime())) eventDate = parsed;
+        }
+
+        values.push(
+          `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, ST_SetSRID(ST_GeomFromText($${p++}), 4326))`,
+        );
+        params.push(
+          eventDate,
+          event.townName ?? null,
+          event.address ?? null,
+          event.depthCm ?? null,
+          event.area ?? null,
+          event.source,
+          event.sourceVersion ?? null,
+          event.sourceUpdatedAt ? new Date(event.sourceUpdatedAt) : null,
+          wkt,
+        );
+      }
+
+      if (values.length) {
+        await client.query(
+          `INSERT INTO historical_flood_events
+             (event_date, town_name, address, depth_cm, area, source, source_version, source_updated_at, geom)
+           VALUES ${values.join(",")}`,
+          params,
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getHistoricalFloodEventsAtPoint(
+  lat: number,
+  lng: number,
+  radiusMeters = 500,
+): Promise<Array<{
+  eventDate: string | null;
+  townName: string | null;
+  address: string | null;
+  depthCm: number | null;
+  area: number | null;
+  distanceMeters: number;
+  source: string;
+}>> {
+  if (!dataDb || !postgisAvailable) return [];
+
+  const result = await dataDb.query(
+    `SELECT event_date AS "eventDate",
+            town_name AS "townName",
+            address,
+            depth_cm AS "depthCm",
+            area,
+            source,
+            ST_Distance(
+              geom::geography,
+              ST_SetSRID(ST_Point($2, $1), 4326)::geography
+            ) AS "distanceMeters"
+     FROM historical_flood_events
+     WHERE ST_DWithin(
+       geom::geography,
+       ST_SetSRID(ST_Point($2, $1), 4326)::geography,
+       $3
+     )
+     ORDER BY "distanceMeters" ASC, event_date DESC NULLS LAST
+     LIMIT 20`,
+    [lat, lng, radiusMeters],
+  );
+
+  return result.rows.map((row: any) => ({
+    eventDate: row.eventDate ? new Date(row.eventDate).toISOString().slice(0, 10) : null,
+    townName: row.townName || null,
+    address: row.address || null,
+    depthCm: row.depthCm == null ? null : Number(row.depthCm),
+    area: row.area == null ? null : Number(row.area),
+    distanceMeters: Number(row.distanceMeters),
+    source: row.source,
+  }));
 }
 
 export async function replaceFloodHazardPolygons(

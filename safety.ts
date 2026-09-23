@@ -394,3 +394,113 @@ export async function fetchTaipeiFloodHazardData(
     };
   }
 }
+
+
+export interface SafetyRefreshTarget {
+  scopeKey: string;
+  latitude: number;
+  longitude: number;
+}
+
+export async function fetchTaipeiSafetyDataForTargets(
+  targets: SafetyRefreshTarget[],
+  radiusMeters = 500,
+): Promise<Record<string, SafetySourceResult>> {
+  const retrievedAt = new Date().toISOString();
+  const resultByScope: Record<string, SafetySourceResult> = {};
+
+  for (const target of targets) {
+    resultByScope[target.scopeKey] = {
+      accidents: [],
+      source: "Taipei City Police Department traffic accident data (2025)",
+      status: "empty",
+      retrievedAt,
+    };
+  }
+
+  if (!targets.length) return resultByScope;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90_000);
+
+  try {
+    const response = await fetch(TAIPEI_ACCIDENT_URL, {
+      signal: controller.signal,
+      headers: { Accept: "text/csv,*/*", "User-Agent": "StreetLens/1.0" },
+    });
+    if (!response.ok) throw new Error(`Taipei accident resource HTTP ${response.status}`);
+
+    const text = await response.text();
+    const rows = parseCsv(text);
+    const unique = new Map<string, any>();
+
+    for (const row of rows) {
+      const accident = parseAccidentRow(row, retrievedAt);
+      if (accident && !unique.has(accident.eventKey)) {
+        unique.set(accident.eventKey, accident);
+      }
+    }
+
+    const radiusLat = radiusMeters / 111_320;
+    const targetBounds = targets.map((target) => ({
+      ...target,
+      minLat: target.latitude - radiusLat,
+      maxLat: target.latitude + radiusLat,
+      minLng: target.longitude - radiusMeters / (111_320 * Math.max(0.1, Math.cos(target.latitude * Math.PI / 180))),
+      maxLng: target.longitude + radiusMeters / (111_320 * Math.max(0.1, Math.cos(target.latitude * Math.PI / 180))),
+    }));
+
+    for (const accident of unique.values()) {
+      for (const target of targetBounds) {
+        if (
+          accident.lat < target.minLat
+          || accident.lat > target.maxLat
+          || accident.lng < target.minLng
+          || accident.lng > target.maxLng
+        ) continue;
+
+        const distanceMeters = haversineDistanceMeters(
+          target.latitude,
+          target.longitude,
+          accident.lat,
+          accident.lng,
+        );
+        if (distanceMeters > radiusMeters) continue;
+
+        resultByScope[target.scopeKey].accidents.push({
+          ...accident,
+          distanceMeters,
+        });
+      }
+    }
+
+    for (const target of targets) {
+      resultByScope[target.scopeKey].accidents.sort((a, b) => a.distanceMeters - b.distanceMeters);
+      resultByScope[target.scopeKey].status =
+        resultByScope[target.scopeKey].accidents.length ? "available" : "empty";
+    }
+
+    console.log(JSON.stringify({
+      safetyParserBatch: {
+        format: "csv",
+        rowCount: rows.length,
+        uniqueAccidentCount: unique.size,
+        targets: targets.map((target) => ({
+          scopeKey: target.scopeKey,
+          nearbyCount: resultByScope[target.scopeKey].accidents.length,
+        })),
+      },
+    }, null, 2));
+
+    return resultByScope;
+  } catch (error: any) {
+    const status = error?.name === "AbortError" ? "timeout" : "error";
+    for (const target of targets) {
+      resultByScope[target.scopeKey].status = status;
+      resultByScope[target.scopeKey].error = error?.message || String(error);
+    }
+    return resultByScope;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

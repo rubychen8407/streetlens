@@ -511,13 +511,76 @@ export function calculateAssessment(
         : "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? undefined : "no_observation",
     },
+    {
+      category: "C3",
+      indicator: "youBikeNearestDist",
+      value: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? Number(c3TransitMetrics?.youBikeNearestDist) : null,
+      unit: "m",
+      direction: "lower_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
+        ? (c3TransitMetrics?.source || "unavailable")
+        : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
+        ? (c3TransitMetrics?.method || "calculated")
+        : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
+        ? (c3TransitMetrics?.confidence || "low")
+        : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      scoringMethod: "raw_observation",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? undefined : "no_observation",
+    },
+    {
+      category: "C3",
+      indicator: "youBikeAvailableBikes",
+      value: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes)) ? Number(c3TransitMetrics?.youBikeAvailableBikes) : null,
+      unit: "bikes",
+      direction: "higher_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes))
+        ? (c3TransitMetrics?.source || "unavailable")
+        : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes))
+        ? (c3TransitMetrics?.method || "calculated")
+        : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes))
+        ? (c3TransitMetrics?.confidence || "low")
+        : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      scoringMethod: "not_scored",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes)) ? undefined : "no_observation",
+    },
+    {
+      category: "C3",
+      indicator: "youBikeAvailableDocks",
+      value: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? Number(c3TransitMetrics?.youBikeAvailableDocks) : null,
+      unit: "docks",
+      direction: "higher_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks))
+        ? (c3TransitMetrics?.source || "unavailable")
+        : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks))
+        ? (c3TransitMetrics?.method || "calculated")
+        : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks))
+        ? (c3TransitMetrics?.confidence || "low")
+        : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      scoringMethod: "not_scored",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? undefined : "no_observation",
+    },
   ];
   const c3ComponentScores = c3Factors
+    .filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist"].includes(factor.indicator))
     .map((factor) => {
       if (factor.value == null) return null;
       const reference = factor.indicator === "busStopDist"
         ? normalization?.c3BusDistances
-        : normalization?.c3RailDistances;
+        : factor.indicator === "mrtOrRailDist"
+          ? normalization?.c3RailDistances
+          : undefined;
       const percentile = empiricalPercentileScore(factor.value, reference, "lower_is_better");
       return percentile
         ?? referenceRelativeScore(factor.value, reference, "lower_is_better")

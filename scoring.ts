@@ -84,6 +84,9 @@ export interface C2PoiMetrics {
 export interface C3TransitMetrics {
   mrtOrRailDist?: number;
   busStopDist?: number;
+  youBikeNearestDist?: number;
+  youBikeAvailableBikes?: number;
+  youBikeAvailableDocks?: number;
   source: string;
   method: "api" | "osm" | "calculated";
   confidence: "high" | "medium" | "low";

@@ -6,8 +6,8 @@ import { GoogleGenAI } from "@google/genai";
 import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
-import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getNearestCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
+import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
+import { ensureDataCacheSchema, getCachedSnapshot, getNearestCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -856,10 +856,12 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         validator = await checkStaticResourceValidators(sourceKey, validatorSample);
       }
 
+      const floodIndexReady = sourceKey !== "taipei_flood" || await hasFloodHazardPolygons();
       if (
         validatorSample
         && validator.decision === "unchanged"
         && dueStates.every(({ existing }) => Boolean(existing))
+        && floodIndexReady
       ) {
         for (const { target, existing } of dueStates) {
           await markSnapshotChecked(sourceKey, target.scopeKey, {
@@ -895,6 +897,14 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
           payloads = await fetchTaipeiSafetyDataForTargets(batchTargets, 500);
         } else {
           payloads = await fetchTaipeiFloodHazardDataForTargets(batchTargets);
+          const floodPolygons = getLastFetchedFloodPolygons();
+          if (floodPolygons.length > 0) {
+            await replaceFloodHazardPolygons(floodPolygons.map((polygon) => ({
+              ...polygon,
+              sourceVersion: validator.version,
+              sourceUpdatedAt: validator.sourceUpdatedAt,
+            })));
+          }
         }
 
         for (const { target, existing } of dueStates) {
@@ -1292,7 +1302,11 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       }
     }));
 
-    const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, snapshots);
+    const floodSpatialIndexReady = await hasFloodHazardPolygons();
+    const availabilitySnapshots = floodSpatialIndexReady
+      ? { ...snapshots, taipei_flood: { status: "available" } }
+      : snapshots;
+    const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, availabilitySnapshots);
     if (dataStatus === "pending_refresh") {
       return res.status(202).json({
         location: { lat, lng, city, district, streetName },
@@ -1337,7 +1351,17 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
             && distanceMetersFromTarget(lat, lng, Number(x.lat), Number(x.lng)) <= 500)
         : [],
     };
-    const floodData = snapshots.taipei_flood?.payload || { cells: [], status: "unavailable" };
+    const indexedFloodHazards = floodSpatialIndexReady
+      ? await getFloodHazardsAtPoint(lat, lng)
+      : [];
+    const floodData = floodSpatialIndexReady
+      ? {
+          riskCells: indexedFloodHazards,
+          source: "Taipei City official rainfall inundation simulation (112 revision)",
+          status: indexedFloodHazards.length ? "available" : "empty",
+          retrievedAt: indexedFloodHazards[0]?.retrievedAt || new Date().toISOString(),
+        }
+      : (snapshots.taipei_flood?.payload || { riskCells: [], status: "unavailable" });
     const weather = {
       ...(snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" }),
       retrievedAt: snapshots.open_meteo_air_quality?.fetchedAt || undefined,
@@ -1481,11 +1505,15 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       dataSources: sourceNames,
       sourceStatus: sourceKeys.map((key) => ({
         source: key,
-        status: snapshots[key]?.status || "unavailable",
-        retrievedAt: snapshots[key]?.fetchedAt || null,
+        status: key === "taipei_flood" && floodSpatialIndexReady
+          ? (indexedFloodHazards.length ? "available" : "empty")
+          : snapshots[key]?.status || "unavailable",
+        retrievedAt: key === "taipei_flood" && floodSpatialIndexReady
+          ? (indexedFloodHazards[0]?.retrievedAt || null)
+          : snapshots[key]?.fetchedAt || null,
         checkedAt: snapshots[key]?.checkedAt || null,
         sourceVersion: snapshots[key]?.sourceVersion || null,
-        freshnessMethod: snapshots[key]?.freshnessMethod || "unknown",
+        freshnessMethod: key === "taipei_flood" && floodSpatialIndexReady ? "spatial_index" : (snapshots[key]?.freshnessMethod || "unknown"),
         cacheScopeDistanceMeters: snapshotOrigins[key]?.scopeDistanceMeters ?? 0,
         reusedNearbySnapshot: snapshotOrigins[key]?.reused ?? false,
       })),

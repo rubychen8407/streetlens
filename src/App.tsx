@@ -12,7 +12,7 @@ import {
   C4Data,
   C5Data,
   CLSWeights,
-  FieldCheckItem,
+  FieldObservationAdjustment,
   POIMarker,
   StreetSegmentScore,
   WeatherData,
@@ -22,7 +22,6 @@ import {
 } from './types';
 import {
   DEFAULT_CLS_WEIGHTS,
-  INITIAL_FIELD_CHECKS,
 } from './data/fieldIndicators';
 import { ScoutMap } from './components/ScoutMap';
 import { FloatingControls } from './components/FloatingControls';
@@ -74,13 +73,16 @@ export default function App() {
   const [weights, setWeights] = useState<CLSWeights>(DEFAULT_CLS_WEIGHTS);
   const [weightMode, setWeightMode] = useState<'equal' | 'pca' | 'custom'>('equal');
 
-  // Field checklist & notes
-  const [fieldChecks, setFieldChecks] = useState<FieldCheckItem[]>(INITIAL_FIELD_CHECKS);
+  // Field observation draft
+  const [observationRatings, setObservationRatings] = useState<Record<string, number>>({});
   const [fieldNotes, setFieldNotes] = useState<string>('');
 
   // Source-backed assessment state. Scores are returned by the backend only.
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
-  const [fieldAdjustment, setFieldAdjustment] = useState<{ baselineCls: number | null; adjustedCls: number | null; adjustment: number } | null>(null);
+  const [fieldAdjustment, setFieldAdjustment] = useState<FieldObservationAdjustment | null>(null);
+  const [isPreviewingFieldAdjustment, setIsPreviewingFieldAdjustment] = useState(false);
+  const [isSavingAssessment, setIsSavingAssessment] = useState(false);
+  const fieldAdjustmentRequestRef = useRef(0);
   const [c1, setC1] = useState<C1Data>({ crimeRate: null, accidentRate: null, hazardLevel: null, wCrime: 0.333, wAccident: 0.333, wHazard: 0.333, score: null });
   const [c2, setC2] = useState<C2Data>({ supermarketDist: null, convenienceDist: null, clinicDist: null, schoolDist: null, bankPostDist: null, decayBeta: null, poiDensityCount: null, score: null });
   const [c3, setC3] = useState<C3Data>({ mrtOrRailDist: null, busStopDist: null, busFrequencyScore: null, walkabilityScore: null, bikeLaneScore: null, wTransit: 0.4, wWalk: 0.35, wBike: 0.25, score: null });
@@ -101,8 +103,8 @@ export default function App() {
   });
 
   // Never calculate scores in the browser. The backend is the single source of truth.
-  const clsScore = fieldAdjustment?.adjustedCls ?? assessment?.scores.overall ?? null;
-  const baselineClsScore = assessment?.scores.overall ?? null;
+  const clsScore = fieldAdjustment !== null ? fieldAdjustment.adjustedCls : assessment?.scores.overall ?? null;
+  const baselineClsScore = fieldAdjustment !== null ? fieldAdjustment.baselineCls : assessment?.scores.overall ?? null;
   const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
   const baselineScores = { cls: clsScore, c1: assessment?.scores.c1.score ?? null, c2: assessment?.scores.c2.score ?? null, c3: assessment?.scores.c3.score ?? null, c4: assessment?.scores.c4.score ?? null, c5: assessment?.scores.c5.score ?? null };
 
@@ -160,7 +162,12 @@ export default function App() {
   };
 
   // Read persisted assessment data. This request never fetches external sources.
-  const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName) => {
+  const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
+    if (resetDraft) {
+      setObservationRatings({});
+      setFieldNotes('');
+      setFieldAdjustment(null);
+    }
     setIsLoadingBaseline(true);
     try {
       await Promise.all([fetchWeather(coord), fetchNearbyPois(coord, targetDist, targetCity, targetStreet), fetchStreetNetwork(coord, targetStreet)]);
@@ -215,10 +222,10 @@ export default function App() {
       }
 
       // Automatically fetch updated data for this new location!
-      fetchLocationData(coord, resolvedDistrict, resolvedCity, resolvedRoad);
+      fetchLocationData(coord, resolvedDistrict, resolvedCity, resolvedRoad, true);
     } catch (err) {
       console.warn('Reverse geocode error', err);
-      fetchLocationData(coord, district, city, streetName);
+      fetchLocationData(coord, district, city, streetName, true);
     }
   };
 
@@ -241,15 +248,23 @@ export default function App() {
     if (saved.c4Data) setC4(saved.c4Data);
     if (saved.c5Data) setC5(saved.c5Data);
     if (saved.weights) setWeights(saved.weights);
-    if (saved.fieldNotes) setFieldNotes(saved.fieldNotes);
+    setFieldNotes(saved.fieldNotes || '');
+    setObservationRatings(saved.observationRatings || {});
+    setAssessment(saved.assessmentSnapshot || null);
     setFieldAdjustment(
-      saved.baselineClsScore != null
-        ? { baselineCls: saved.baselineClsScore, adjustedCls: saved.clsScore, adjustment: saved.fieldAdjustment ?? 0 }
+      saved.baselineClsScore != null || saved.fieldAdjustmentDetails
+        ? {
+            baselineCls: saved.baselineClsScore ?? null,
+            adjustedCls: saved.clsScore,
+            adjustment: saved.fieldAdjustment ?? 0,
+            categoryAdjustments: saved.fieldAdjustmentDetails?.categoryAdjustments ?? { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0 },
+            itemAdjustments: saved.fieldAdjustmentDetails?.itemAdjustments ?? {},
+            ratedItemCount: saved.fieldAdjustmentDetails?.ratedItemCount ?? Object.keys(saved.observationRatings || {}).length,
+          }
         : null,
     );
-    // Refresh weather for this coordinate
     fetchWeather(saved.coords);
-    setGpsSuccessMsg(`已切換至已存地點【${saved.name || saved.streetName}】(CLS: ${saved.clsScore}分)`);
+    setGpsSuccessMsg('已切換至已存地點【' + (saved.name || saved.streetName) + '】(CLS: ' + (saved.clsScore ?? '—') + '分)');
     setTimeout(() => setGpsSuccessMsg(null), 4000);
   };
 
@@ -381,15 +396,10 @@ export default function App() {
     setWeightMode(mode);
   };
 
-  // Toggle field check item
-  const handleToggleFieldCheck = (id: string) => {
-    setFieldChecks((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item))
-    );
-  };
-
-  const handleSaveAssessment = useCallback(async (name: string, observationRatings: Record<string, number>, notes: string) => {
+  const handleSaveAssessment = useCallback(async (name: string, notes: string): Promise<boolean> => {
+    setIsSavingAssessment(true);
     let adjustment = fieldAdjustment;
+
     if (baselineClsScore != null || Object.keys(observationRatings).length > 0) {
       try {
         const response = await fetch('/api/assessment/field-adjustment', {
@@ -398,17 +408,20 @@ export default function App() {
           body: JSON.stringify({ baselineCls: baselineClsScore, ratings: observationRatings }),
         });
         if (!response.ok) throw new Error('field adjustment request failed: ' + response.status);
-        adjustment = await response.json();
+        adjustment = await response.json() as FieldObservationAdjustment;
         setFieldAdjustment(adjustment);
       } catch (error) {
         console.warn('Field observation adjustment error:', error);
+        setFieldAdjustment(null);
+        setIsSavingAssessment(false);
+        return false;
       }
     }
 
     const savedClsScore = adjustment?.adjustedCls ?? baselineClsScore;
     const savedGrade = savedClsScore == null ? null : savedClsScore >= 90 ? 'S' : savedClsScore >= 80 ? 'A' : savedClsScore >= 70 ? 'B' : savedClsScore >= 60 ? 'C' : 'D';
     const entry: SavedLocation = {
-      id: `saved_${crypto.randomUUID()}`,
+      id: 'saved_' + crypto.randomUUID(),
       name,
       streetName: streetName || 'Selected street',
       district,
@@ -416,7 +429,14 @@ export default function App() {
       coords: targetLocation,
       clsScore: savedClsScore,
       baselineClsScore,
-      fieldAdjustment: adjustment?.adjustment ?? 0,
+      fieldAdjustment: adjustment?.adjustment ?? null,
+      fieldAdjustmentDetails: adjustment ? {
+        categoryAdjustments: adjustment.categoryAdjustments,
+        itemAdjustments: adjustment.itemAdjustments,
+        ratedItemCount: adjustment.ratedItemCount,
+      } : undefined,
+      observationRatings,
+      assessmentSnapshot: assessment ?? undefined,
       grade: savedGrade,
       scores: {
         c1: assessment?.scores.c1.score ?? null,
@@ -431,7 +451,7 @@ export default function App() {
       c4Data: c4,
       c5Data: c5,
       weights,
-      fieldNotes: JSON.stringify({ notes, observationRatings }),
+      fieldNotes: notes,
       timestamp: Date.now(),
     };
     setSavedLocations(prev => {
@@ -439,8 +459,39 @@ export default function App() {
       try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
       return next;
     });
-  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, assessment, c1, c2, c3, c4, c5, weights]);
+    setIsSavingAssessment(false);
+    return true;
+  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, assessment, c1, c2, c3, c4, c5, weights]);
+  useEffect(() => {
+    if (!isSheetOpen || workspaceView !== 'assessment') return;
 
+    const requestId = ++fieldAdjustmentRequestRef.current;
+    const timer = window.setTimeout(async () => {
+      if (baselineClsScore == null && Object.keys(observationRatings).length === 0) {
+        setFieldAdjustment(null);
+        setIsPreviewingFieldAdjustment(false);
+        return;
+      }
+
+      setIsPreviewingFieldAdjustment(true);
+      try {
+        const response = await fetch('/api/assessment/field-adjustment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ baselineCls: baselineClsScore, ratings: observationRatings }),
+        });
+        if (!response.ok) throw new Error('field adjustment preview failed: ' + response.status);
+        const result = await response.json() as FieldObservationAdjustment;
+        if (requestId === fieldAdjustmentRequestRef.current) setFieldAdjustment(result);
+      } catch (error) {
+        if (requestId === fieldAdjustmentRequestRef.current) console.warn('Field observation adjustment preview error:', error);
+      } finally {
+        if (requestId === fieldAdjustmentRequestRef.current) setIsPreviewingFieldAdjustment(false);
+      }
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [isSheetOpen, workspaceView, observationRatings, baselineClsScore]);
   const handleToggleFavorite = useCallback(() => {
     const key = favoriteKey(targetLocation, streetName);
     setFavoriteLocations(prev => {
@@ -478,7 +529,7 @@ export default function App() {
           setTargetLocation(coord);
           if (customName) {
             setStreetName(customName);
-            fetchLocationData(coord, district, city, customName);
+            fetchLocationData(coord, district, city, customName, true);
           } else {
             fetchAddressFromCoords(coord);
           }
@@ -534,7 +585,7 @@ export default function App() {
           const newCity = c || city;
           if (dist) setDistrict(dist);
           if (c) setCity(c);
-          fetchLocationData(coord, newDist, newCity, name);
+          fetchLocationData(coord, newDist, newCity, name, true);
         }}
         onOpenSheet={() => setIsSheetOpen(true)}
         onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
@@ -562,11 +613,14 @@ export default function App() {
         clsScore={clsScore}
         grade={clsGrade}
         assessment={assessment}
-        fieldChecks={fieldChecks}
-        onToggleFieldCheck={handleToggleFieldCheck}
         fieldNotes={fieldNotes}
         onUpdateNotes={setFieldNotes}
         onSave={handleSaveAssessment}
+        observationRatings={observationRatings}
+        onRatingChange={(id, rating) => setObservationRatings(prev => ({ ...prev, [id]: rating }))}
+        fieldAdjustment={fieldAdjustment}
+        isPreviewingFieldAdjustment={isPreviewingFieldAdjustment}
+        isSaving={isSavingAssessment}
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);

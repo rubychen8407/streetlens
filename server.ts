@@ -5,8 +5,8 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
-import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
-import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
+import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
+import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
@@ -814,87 +814,144 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     const now = Date.now();
     const sourceKeys = requestedSource ? [requestedSource] : REFRESH_SOURCE_KEYS;
 
-    for (const target of targets) {
-      const { latitude: lat, longitude: lng, scopeKey } = target;
+    // Large city-wide sources are fetched once and evaluated against all active
+    // targets. This avoids downloading the same multi-MB dataset once per target.
+    const batchSourceKeys = new Set(["taipei_green", "taipei_safety", "taipei_flood"]);
 
-      for (const sourceKey of sourceKeys) {
-        console.log(`[refresh] target=${scopeKey} source=${sourceKey} start`);
-        const existing = await getCachedSnapshot(sourceKey, scopeKey);
-        const due = !existing
-          || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+    for (const sourceKey of sourceKeys) {
+      const targetStates = await Promise.all(targets.map(async (target) => ({
+        target,
+        existing: await getCachedSnapshot(sourceKey, target.scopeKey),
+      })));
 
-        if (!due) {
+      const dueStates = targetStates.filter(({ existing }) =>
+        !existing
+        || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000,
+      );
+
+      if (!dueStates.length) {
+        for (const { target, existing } of targetStates) {
           results.push({
-            scopeKey,
+            scopeKey: target.scopeKey,
             sourceKey,
             changed: false,
-            status: existing.status,
+            status: existing?.status || "unavailable",
             skipped: true,
             reason: "cadence",
-            fetchedAt: existing.fetchedAt,
-            checkedAt: existing.checkedAt,
+            fetchedAt: existing?.fetchedAt || null,
+            checkedAt: existing?.checkedAt || null,
           });
-          console.log(`[refresh] target=${scopeKey} source=${sourceKey} skipped=cadence`);
-          continue;
         }
+        continue;
+      }
 
-        // A first refresh has no prior validator state, so do not probe static
-        // resources before fetching the real payload.
-        const validator = existing
-          ? await checkStaticResourceValidators(sourceKey, existing)
-          : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
+      let validator: Awaited<ReturnType<typeof checkStaticResourceValidators>> = {
+        decision: "unknown",
+        version: null,
+        method: "unknown",
+        sourceUpdatedAt: null,
+      };
+      const validatorSample = dueStates.find(({ existing }) => existing?.sourceVersion)?.existing || null;
+      if (validatorSample && VALIDATOR_RESOURCES[sourceKey]?.length) {
+        validator = await checkStaticResourceValidators(sourceKey, validatorSample);
+      }
 
-        if (existing && validator.decision === "unchanged") {
-          await markSnapshotChecked(sourceKey, scopeKey, {
+      if (
+        validatorSample
+        && validator.decision === "unchanged"
+        && dueStates.every(({ existing }) => Boolean(existing))
+      ) {
+        for (const { target, existing } of dueStates) {
+          await markSnapshotChecked(sourceKey, target.scopeKey, {
             sourceVersion: validator.version,
             sourceUpdatedAt: validator.sourceUpdatedAt,
             freshnessMethod: validator.method,
           });
           results.push({
-            scopeKey,
+            scopeKey: target.scopeKey,
             sourceKey,
             changed: false,
-            status: existing.status,
+            status: existing!.status,
             skipped: true,
             reason: "source-unchanged",
-            fetchedAt: existing.fetchedAt,
+            fetchedAt: existing!.fetchedAt,
             sourceVersion: validator.version,
           });
-          console.log(`[refresh] target=${scopeKey} source=${sourceKey} skipped=source-unchanged`);
-          continue;
+        }
+        continue;
+      }
+
+      if (batchSourceKeys.has(sourceKey)) {
+        const batchTargets = dueStates.map(({ target }) => ({
+          scopeKey: target.scopeKey,
+          latitude: target.latitude,
+          longitude: target.longitude,
+        }));
+
+        let payloads: Record<string, any>;
+        if (sourceKey === "taipei_green") {
+          payloads = await fetchTaipeiGreenDataForTargets(batchTargets, 800);
+        } else if (sourceKey === "taipei_safety") {
+          payloads = await fetchTaipeiSafetyDataForTargets(batchTargets, 500);
+        } else {
+          payloads = await fetchTaipeiFloodHazardDataForTargets(batchTargets);
         }
 
-        let payload: any;
-        let fetchError: string | null = null;
-        try {
-          payload = await refreshPayloadForSource(sourceKey, lat, lng);
-        } catch (error: any) {
-          fetchError = error?.message || String(error);
-        }
-
-        // Never replace a previously valid snapshot with a transient upstream error.
-        // A stale real snapshot remains usable until a later scheduled refresh succeeds.
-        if (fetchError) {
-          if (existing) {
-            await markSnapshotChecked(sourceKey, scopeKey, {
-              freshnessMethod: validator.method,
+        for (const { target, existing } of dueStates) {
+          const payload = payloads[target.scopeKey];
+          if (!payload || payload.status === "error" || payload.status === "timeout") {
+            results.push({
+              scopeKey: target.scopeKey,
+              sourceKey,
+              changed: false,
+              status: existing?.status || "unavailable",
+              skipped: false,
+              error: payload?.error || "Batch source refresh failed",
+              preservedExisting: Boolean(existing),
             });
+            continue;
           }
+
+          const saved = await saveSnapshot(sourceKey, target.scopeKey, payload, {
+            status: String(payload.status || "available"),
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+
           results.push({
-            scopeKey,
+            scopeKey: target.scopeKey,
+            sourceKey,
+            changed: saved.changed,
+            status: payload.status || "available",
+            skipped: false,
+            freshnessMethod: validator.method,
+            sourceVersion: validator.version,
+          });
+        }
+        continue;
+      }
+
+      // Target-specific sources are fetched independently.
+      for (const { target, existing } of dueStates) {
+        const payload = await refreshPayloadForSource(sourceKey, target.latitude, target.longitude).catch(
+          (error: any) => ({ __error: error?.message || String(error) }),
+        );
+
+        if (payload?.__error) {
+          results.push({
+            scopeKey: target.scopeKey,
             sourceKey,
             changed: false,
             status: existing?.status || "unavailable",
             skipped: false,
-            error: fetchError,
+            error: payload.__error,
             preservedExisting: Boolean(existing),
-            freshnessMethod: validator.method,
           });
-          console.warn(`[refresh] target=${scopeKey} source=${sourceKey} error=${fetchError}`);
           continue;
         }
 
-        const saved = await saveSnapshot(sourceKey, scopeKey, payload, {
+        const saved = await saveSnapshot(sourceKey, target.scopeKey, payload, {
           status: String(payload?.status || "available"),
           sourceVersion: validator.version,
           sourceUpdatedAt: validator.sourceUpdatedAt,
@@ -902,7 +959,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         });
 
         results.push({
-          scopeKey,
+          scopeKey: target.scopeKey,
           sourceKey,
           changed: saved.changed,
           status: payload?.status || "available",
@@ -910,7 +967,6 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
           freshnessMethod: validator.method,
           sourceVersion: validator.version,
         });
-        console.log(`[refresh] target=${scopeKey} source=${sourceKey} complete changed=${saved.changed}`);
       }
     }
 

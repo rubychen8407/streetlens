@@ -292,6 +292,7 @@ export function calculateAssessment(
     c2Distances?: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
     c3RailDistances?: number[];
     c3BusDistances?: number[];
+    c3YouBikeDistances?: number[];
     c4Aqi?: number[];
     c4NearestParkDistances?: number[];
     c5NearestCommunityDistances?: number[];
@@ -607,7 +608,9 @@ export function calculateAssessment(
         ? normalization?.c3BusDistances
         : factor.indicator === "mrtOrRailDist"
           ? normalization?.c3RailDistances
-          : undefined;
+          : factor.indicator === "youBikeNearestDist"
+            ? normalization?.c3YouBikeDistances
+            : undefined;
       const percentile = empiricalPercentileScore(factor.value, reference, "lower_is_better");
       return percentile
         ?? referenceRelativeScore(factor.value, reference, "lower_is_better")
@@ -828,10 +831,16 @@ export function calculateAssessment(
           normalization?.c3BusDistances,
           "lower_is_better",
         ),
+        referenceRelativeScore(
+          medianValue(normalization?.c3YouBikeDistances) ?? undefined,
+          normalization?.c3YouBikeDistances,
+          "lower_is_better",
+        ),
       ]),
       sampleSize: Math.max(
         normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
         normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
+        normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0,
       ),
     },
     C4: {

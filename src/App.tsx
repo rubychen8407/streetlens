@@ -316,7 +316,6 @@ export default function App() {
     }
     setIsLoadingBaseline(true);
     try {
-      await Promise.all([fetchWeather(coord), fetchNearbyPois(coord, targetDist, targetCity, targetStreet), fetchStreetNetwork(coord, targetStreet)]);
       const url = '/api/assessment?lat=' + coord.lat + '&lng=' + coord.lng + '&district=' + encodeURIComponent(targetDist) + '&city=' + encodeURIComponent(targetCity) + '&streetName=' + encodeURIComponent(targetStreet);
       const res = await fetch(url);
       if (res.status === 202) {
@@ -325,6 +324,11 @@ export default function App() {
         setFieldAdjustment(null);
         setPendingAssessmentSources(Array.isArray(pending.missingSources) ? pending.missingSources : []);
         setBaselineSummary('此座標尚無已儲存的外部資料快照；等待背景資料更新。');
+        void Promise.all([
+          fetchWeather(coord),
+          fetchNearbyPois(coord, targetDist, targetCity, targetStreet),
+          fetchStreetNetwork(coord, targetStreet),
+        ]);
         return;
       }
       if (!res.ok) {
@@ -350,6 +354,14 @@ export default function App() {
       setC4((prev) => ({ ...prev, airQualityScore: factor('airQualityScore'), score: data.scores.c4.score }));
       setC5((prev) => ({ ...prev, activityFrequency: factor('communityCulturalPoiCount800m'), score: data.scores.c5.score }));
       setStreetName(data.location.streetName || targetStreet); setDistrict(data.location.district || targetDist); setCity(data.location.city || targetCity);
+
+      // Secondary live panels load independently so the source-backed assessment
+      // appears as soon as the persisted snapshot query finishes.
+      void Promise.all([
+        fetchWeather(coord),
+        fetchNearbyPois(coord, targetDist, targetCity, targetStreet),
+        fetchStreetNetwork(coord, targetStreet),
+      ]);
     } catch (err) { console.warn('Assessment load error', err); setAssessment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
     finally { setIsLoadingBaseline(false); }
   }, [district, city, streetName, clearEvidenceDrafts]);

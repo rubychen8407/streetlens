@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft } from 'lucide-react';
-import { FieldCheckItem, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
+import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2 } from 'lucide-react';
+import { FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
+import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 
 type View = 'assessment' | 'saved' | 'settings';
 
@@ -16,11 +17,13 @@ interface AssessmentWorkspaceProps {
   clsScore: number | null;
   grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   assessment: StreetAssessmentResponse | null;
-  fieldChecks: FieldCheckItem[];
-  onToggleFieldCheck: (id: string) => void;
+  observationRatings: Record<string, number>;
+  onRatingChange: (id: string, rating: number) => void;
+  fieldAdjustment: FieldObservationAdjustment | null;
+  isPreviewingFieldAdjustment: boolean;
   fieldNotes: string;
   onUpdateNotes: (notes: string) => void;
-  onSave: (name: string, observationRatings: Record<string, number>, notes: string) => void;
+  onSave: (name: string, notes: string) => Promise<boolean>;
   onSelectSaved: (saved: SavedLocation) => void;
   savedLocations: SavedLocation[];
   onDeleteSaved: (id: string) => void;
@@ -28,9 +31,8 @@ interface AssessmentWorkspaceProps {
   isFavorite: boolean;
   onToggleFavorite: () => void;
   favoriteLocationKeys: string[];
+  isSaving: boolean;
 }
-
-const ratingLabels = ['Poor', 'Fair', 'Good', 'Great'];
 
 function formatFreshness(timestamp?: string) {
   if (!timestamp) return 'Not retrieved';
@@ -52,10 +54,9 @@ function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
 
 export function AssessmentWorkspace({
   view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
-  clsScore, grade, assessment, fieldChecks, onToggleFieldCheck, fieldNotes,
-  onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys,
+  clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
+  onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
 }: AssessmentWorkspaceProps) {
-  const [ratings, setRatings] = useState<Record<string, number>>({});
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -63,13 +64,6 @@ export function AssessmentWorkspace({
   const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
   const [showScoreDetails, setShowScoreDetails] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
-
-  const grouped = useMemo(() => {
-    return ['C1','C2','C3','C4','C5'].map(category => ({
-      category,
-      items: fieldChecks.filter(item => item.category === category),
-    }));
-  }, [fieldChecks]);
 
   const factor = (indicator: string) => assessment?.factors.find(item => item.indicator === indicator);
 
@@ -82,6 +76,17 @@ export function AssessmentWorkspace({
     ['Green space', factor('nearestParkDist') || factor('parkCount800m'), 'C4'],
     ['Community', factor('communityCulturalPoiCount800m'), 'C5'],
   ] as const;
+
+  const historyGroups = useMemo(() => {
+    const groups = new Map<string, SavedLocation[]>();
+    for (const saved of savedLocations) {
+      const key = saved.coords.lat.toFixed(5) + ':' + saved.coords.lng.toFixed(5) + ':' + saved.streetName.trim().toLowerCase();
+      groups.set(key, [...(groups.get(key) || []), saved]);
+    }
+    return [...groups.values()]
+      .filter(group => group.length > 1)
+      .map(group => [...group].sort((a, b) => b.timestamp - a.timestamp));
+  }, [savedLocations]);
 
   const savedList = useMemo(() => {
     const gradeRank: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
@@ -97,8 +102,9 @@ export function AssessmentWorkspace({
     });
   }, [savedLocations, savedFilter, savedSort, favoriteLocationKeys]);
 
-  const handleSave = () => {
-    onSave(name.trim() || `${district ? district + ' ' : ''}${streetName || 'Street assessment'}`, ratings, fieldNotes);
+  const handleSave = async () => {
+    const ok = await onSave(name.trim() || `${district ? district + ' ' : ''}${streetName || 'Street assessment'}`, fieldNotes);
+    if (!ok) return;
     setSavedNotice(true);
     setName('');
     window.setTimeout(() => setSavedNotice(false), 2200);
@@ -205,30 +211,74 @@ export function AssessmentWorkspace({
               </div>
             </section>}
             {step === 2 && <section>
-              <div className="mb-2">
+              <div className="mb-3">
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Your observation</h3>
-                <p className="text-[11px] text-slate-500 mt-1">Rate each observed condition from Poor to Great. Positive conditions raise the adjustment; negative conditions lower it. External source data remains the baseline.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Rate only conditions you actually observed. Unrated items do not affect CLS. Notes are recommended when an observation meaningfully changes the assessment.</p>
+              </div>
+              <div className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3 mb-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] uppercase tracking-wider text-sky-200/80 font-bold">CLS adjustment preview</div>
+                  {isPreviewingFieldAdjustment && <Loader2 className="w-3.5 h-3.5 text-sky-300 animate-spin" />}
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div>
+                    <div className="text-[9px] text-slate-500">External baseline</div>
+                    <div className="text-sm font-black text-white">{fieldAdjustment?.baselineCls ?? assessment?.scores.overall ?? '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-500">Field adjustment</div>
+                    <div className="text-sm font-black text-sky-200">{isPreviewingFieldAdjustment ? '…' : fieldAdjustment ? (fieldAdjustment.adjustment >= 0 ? '+' : '') + fieldAdjustment.adjustment : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-500">Adjusted CLS</div>
+                    <div className="text-sm font-black text-white">{fieldAdjustment?.adjustedCls ?? assessment?.scores.overall ?? '—'}</div>
+                  </div>
+                </div>
+                <div className="text-[10px] leading-relaxed text-slate-500 mt-2">
+                  The baseline is calculated from source-backed external data. Field observations are a separate bounded adjustment; they do not rewrite the external-data score.
+                </div>
+                {fieldAdjustment && fieldAdjustment.ratedItemCount > 0 && (
+                  <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+                    {FIELD_OBSERVATION_DEFINITIONS.filter(item => observationRatings[item.id] != null).map(item => {
+                      const rating = observationRatings[item.id];
+                      const itemImpact = fieldAdjustment.itemAdjustments[item.id] ?? 0;
+                      const categoryImpact = fieldAdjustment.categoryAdjustments[item.category] ?? 0;
+                      return (
+                        <div key={item.id} className="flex items-start justify-between gap-2 text-[10px]">
+                          <div className="min-w-0">
+                            <div className="text-slate-300 font-semibold">{item.category} · {item.title}</div>
+                            <div className="text-slate-500">{item.ratingLabels[rating - 1]} · item impact {itemImpact >= 0 ? '+' : ''}{itemImpact}</div>
+                          </div>
+                          <span className="shrink-0 text-sky-200 font-mono font-bold">{categoryImpact >= 0 ? '+' : ''}{Math.round(categoryImpact * 10) / 10}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="text-[9px] leading-relaxed text-slate-600">Each category is capped at ±10. Category adjustments are then equally weighted across C1–C5, so a +8 C3 category adjustment contributes +1.6 to overall CLS.</div>
+                  </div>
+                )}
               </div>
               <div className="space-y-3">
-                {grouped.map(group => (
-                  <div key={group.category} className="rounded-2xl bg-white/[0.035] border border-white/5 p-3">
-                    <div className="text-[11px] font-bold text-slate-300 mb-2">{group.category}</div>
-                    {group.items.map(item => {
-                      const value = ratings[item.id] ?? (item.checked ? 3 : 0);
+                {['C1','C2','C3','C4','C5'].map(category => (
+                  <div key={category} className="rounded-2xl bg-white/[0.035] border border-white/5 p-3">
+                    <div className="text-[11px] font-bold text-slate-300 mb-2">{category}</div>
+                    {FIELD_OBSERVATION_DEFINITIONS.filter(item => item.category === category).map(item => {
+                      const value = observationRatings[item.id];
                       return (
                         <div key={item.id} className="py-2.5 border-t first:border-t-0 border-white/5">
-                          <div className="flex items-start gap-2">
-                            <button onClick={() => onToggleFieldCheck(item.id)} className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${item.checked ? 'bg-sky-500 border-sky-400' : 'border-white/20'}`}>
-                              {item.checked && <Check className="w-3.5 h-3.5" />}
-                            </button>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-semibold">{item.title}</div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">{item.description}</div>
-                              <div className="flex gap-1 mt-2">
-                                {ratingLabels.map((label, index) => (
-                                  <button key={label} onClick={() => setRatings(prev => ({ ...prev, [item.id]: index + 1 }))} className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold border ${value === index + 1 ? 'bg-sky-500/20 border-sky-400/40 text-sky-200' : 'bg-white/5 border-white/5 text-slate-500 hover:text-slate-300'}`}>{label}</button>
-                                ))}
-                              </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold">{item.title}</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">{item.description}</div>
+                            <div className="flex gap-1 mt-2">
+                              {item.ratingScale.map((rating, index) => (
+                                <button
+                                  type="button"
+                                  key={rating}
+                                  onClick={() => onRatingChange(item.id, rating)}
+                                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold border ${value === rating ? 'bg-sky-500/20 border-sky-400/40 text-sky-200' : 'bg-white/5 border-white/5 text-slate-500 hover:text-slate-300'}`}
+                                >
+                                  {item.ratingLabels[index]}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         </div>
@@ -237,8 +287,7 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
-            </section>}
-            {step === 3 && <>
+            </section>}            {step === 3 && <>
               <section>
                 <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Review & save</label>
               <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3">
@@ -316,6 +365,37 @@ export function AssessmentWorkspace({
                 </div>
               </section>
             )}
+            {historyGroups.length > 0 && (
+              <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-xs font-bold text-slate-200">Assessment history</div>
+                    <div className="text-[10px] text-slate-500">Repeated assessments for the same street are kept as separate field sessions.</div>
+                  </div>
+                  <span className="text-[10px] text-slate-500">{historyGroups.length} streets</span>
+                </div>
+                <div className="space-y-2">
+                  {historyGroups.slice(0, 4).map(group => (
+                    <div key={group[0].id} className="rounded-xl border border-white/5 bg-white/[0.02] p-2.5">
+                      <div className="text-[11px] font-semibold text-slate-300 truncate">{group[0].streetName}</div>
+                      <div className="mt-1.5 space-y-1">
+                        {group.slice(0, 5).map(saved => (
+                          <button key={saved.id} type="button" onClick={() => onSelectSaved(saved)} className="w-full flex items-center justify-between gap-2 text-left hover:bg-white/5 rounded-lg px-1 py-1">
+                            <span className="text-[10px] text-slate-500">{new Date(saved.timestamp).toLocaleString('zh-TW')}</span>
+                            <span className="text-[10px] font-mono font-bold text-slate-200">
+                              {saved.clsScore ?? '—'}
+                              {saved.fieldAdjustment != null && saved.baselineClsScore != null && (
+                                <span className="ml-1 text-sky-300">{saved.fieldAdjustment >= 0 ? '+' : ''}{saved.fieldAdjustment}</span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-500">{savedFilter === 'favorites' ? 'No favorite streets yet.' : 'No saved assessments yet.'}</div>}
             {savedList.map(saved => (
               <div key={saved.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -388,7 +468,10 @@ export function AssessmentWorkspace({
           ) : (
             <div className="flex gap-2">
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Assessment name" className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-white/5 border border-white/10 text-xs outline-none" />
-              <button onClick={handleSave} className="px-5 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold flex items-center gap-2"><Save className="w-4 h-4" /> Save</button>
+              <button onClick={handleSave} disabled={isSaving} className="px-5 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-2">
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {isSaving ? 'Saving…' : 'Save'}
+              </button>
             </div>
           )}
           {savedNotice && <div className="text-[10px] text-emerald-400 text-center mt-2">Assessment saved.</div>}

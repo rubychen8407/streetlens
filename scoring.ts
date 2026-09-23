@@ -407,7 +407,7 @@ export function calculateAssessment(
         "lower_is_better",
       );
       return percentile ?? inverseDistanceScore(Number(value), 500);
-    });
+    }).filter((value): value is number => value !== null);
   c2Factors.forEach((factor) => {
     if (factor.value == null) factor.availabilityReason = "no_observation";
   });

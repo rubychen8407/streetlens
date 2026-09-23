@@ -207,7 +207,7 @@ export function AssessmentWorkspace({
             {step === 2 && <section>
               <div className="mb-2">
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Your observation</h3>
-                <p className="text-[11px] text-slate-500 mt-1">Use what you see on site to record the street conditions. This is separate from external source data.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Rate each observed condition from Poor to Great. Positive conditions raise the adjustment; negative conditions lower it. External source data remains the baseline.</p>
               </div>
               <div className="space-y-3">
                 {grouped.map(group => (
@@ -247,7 +247,7 @@ export function AssessmentWorkspace({
                     Observation ready to save
                   </div>
                   <div className="text-[10px] text-slate-500 mt-1">
-                    Your field observations are stored separately from external source data.
+                    Your observations are stored separately and applied as a bounded adjustment when saved.
                   </div>
                 </div>
                 <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder="What did you observe? e.g. sidewalk blocked, good shade, heavy traffic..." className="mt-2 w-full rounded-2xl bg-white/5 border border-white/10 p-3 text-xs outline-none focus:border-sky-400/50 resize-none placeholder:text-slate-600" />

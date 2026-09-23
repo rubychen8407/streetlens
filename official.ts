@@ -8,8 +8,16 @@ export interface OfficialSpatialPoint {
   properties: Record<string, unknown>;
 }
 
+export interface OfficialSpatialLine {
+  id: string;
+  name: string;
+  coordinates: Array<[number, number]>;
+  properties: Record<string, unknown>;
+}
+
 export interface OfficialCitywideSourceResult {
   points: OfficialSpatialPoint[];
+  lines?: OfficialSpatialLine[];
   source: string;
   status: "available" | "empty" | "error" | "timeout";
   retrievedAt: string;
@@ -26,6 +34,7 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiLibraries: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=fb6cc268-e2b8-43a7-86f2-e79702291a2b",
   taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
   taipeiParks: "https://parks.gov.taipei/parks/api/",
+  taipeiBikeLanes: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a69988de-6a49-4956-9220-40ebd7c42800",
 };
 
 const USER_AGENT = "StreetLens/1.0";
@@ -341,6 +350,82 @@ export async function fetchTaipeiLibraries(): Promise<OfficialCitywideSourceResu
   }
 }
 
+
+
+function parseCoordinateValues(value: string): number[] {
+  return value
+    .replace(/[()\[\]]/g, " ")
+    .split(/[;|\s]+/)
+    .flatMap((part) => part.split(","))
+    .map((part) => Number(part.trim()))
+    .filter(Number.isFinite);
+}
+
+function convertTwd97Path(
+  xValue: string,
+  yValue: string,
+): Array<[number, number]> {
+  const xs = parseCoordinateValues(xValue);
+  const ys = parseCoordinateValues(yValue);
+  const count = Math.min(xs.length, ys.length);
+  const coordinates: Array<[number, number]> = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const converted = toWgs84(xs[i], ys[i]);
+    if (converted) coordinates.push([converted.lng, converted.lat]);
+  }
+  return coordinates;
+}
+
+export async function fetchTaipeiBikeLanes(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City official urban bicycle lane GIS data";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiBikeLanes);
+    const rows = parseCsv(text);
+    const lines: OfficialSpatialLine[] = rows.map((row, index) => {
+      const name = firstValue(row, ["路段名稱", "NAME", "name"]) || `bike-lane-${index}`;
+      const routeId = firstValue(row, ["自行車道路線編號", "路線編號", "ROUTE_ID"]);
+      const coordinates = convertTwd97Path(
+        firstValue(row, ["路徑（X）", "路徑(X)", "GIS_X", "X"]),
+        firstValue(row, ["路徑（Y）", "路徑(Y)", "GIS_Y", "Y"]),
+      );
+      return {
+        id: [routeId, firstValue(row, ["路段序號", "段序號", "ID"]), name, index].join("|"),
+        name,
+        coordinates,
+        properties: {
+          routeId: routeId || null,
+          lengthM: numberValue(row, ["自行車道長度（M）", "自行車道長度(M)", "B_LENGTH", "length"]),
+          widthM: numberValue(row, ["自行車道寬度（M）", "自行車道寬度(M)", "B_WIDTH", "width"]),
+          laneType: firstValue(row, ["自行車道類型", "B_TYPE"]) || null,
+          surfaceType: firstValue(row, ["自行車道鋪面類別", "B_SURFACE"]) || null,
+          roadWidthM: numberValue(row, ["所屬道路寬度（M）", "所屬道路寬度(M)"]),
+          startDescription: firstValue(row, ["自行車道起點描述", "路段起點描述", "SP_DESC"]) || null,
+          endDescription: firstValue(row, ["自行車道迄點描述", "路段迄點描述", "EP_DESC"]) || null,
+        },
+      };
+    }).filter((line) => line.coordinates.length >= 2);
+
+    return {
+      points: [],
+      lines,
+      source,
+      status: lines.length ? "available" : "empty",
+      retrievedAt,
+      sourceUpdatedAt: lastModified,
+    };
+  } catch (error: any) {
+    return {
+      points: [],
+      lines: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
 
 export async function fetchTaipeiParks(): Promise<OfficialCitywideSourceResult> {
   const retrievedAt = new Date().toISOString();

@@ -288,9 +288,14 @@ export interface ScoreFactor {
   availabilityReason?: 'insufficient_reference_data' | 'source_unavailable' | 'no_observation';
 }
 
+export type ScoreMode = 'observed' | 'estimated';
+
 export interface CategoryScore {
   score: number | null;
   factors: ScoreFactor[];
+  mode: ScoreMode;
+  estimationMethod?: 'regional_real_data_prior';
+  estimationReferenceSampleSize?: number;
 }
 
 export interface StreetAssessmentScores {
@@ -300,6 +305,8 @@ export interface StreetAssessmentScores {
   c4: CategoryScore;
   c5: CategoryScore;
   overall: number | null;
+  overallMode: ScoreMode;
+  estimatedCategoryCount: number;
   weights: Record<'C1' | 'C2' | 'C3' | 'C4' | 'C5', number>;
   confidence: 'high' | 'medium' | 'low';
   status?: 'available' | 'unavailable';

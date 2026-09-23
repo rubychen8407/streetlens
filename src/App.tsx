@@ -234,9 +234,15 @@ export default function App() {
   const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
     if (resetDraft) {
       setObservationRatings({});
+      clearEvidenceDrafts();
+      setSelectedSavedEvidence([]);
+      Object.values(savedEvidenceUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
+      savedEvidenceUrlsRef.current = {};
+      setSavedEvidenceUrls({});
       setFieldNotes('');
       setFieldAdjustment(null);
       setAssessment(null);
+      setEvidenceError(null);
       setBaselineSummary('正在載入新的街道資料…');
       setWeatherData(null);
       setNearbyPois([]);
@@ -262,7 +268,7 @@ export default function App() {
       setStreetName(data.location.streetName || targetStreet); setDistrict(data.location.district || targetDist); setCity(data.location.city || targetCity);
     } catch (err) { console.warn('Assessment load error', err); setAssessment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
     finally { setIsLoadingBaseline(false); }
-  }, [district, city, streetName]);
+  }, [district, city, streetName, clearEvidenceDrafts]);
 
   // Auto-fetch baseline data
   const handleAutoFetchBaseline = useCallback(() => {

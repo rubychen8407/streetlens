@@ -121,6 +121,62 @@ export default function App() {
   const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
 
 
+  const revokeDraftEvidence = (drafts: EvidencePhotoDraft[]) => {
+    for (const draft of drafts) URL.revokeObjectURL(draft.previewUrl);
+  };
+
+  const clearEvidenceDrafts = useCallback(() => {
+    setEvidenceDrafts(prev => {
+      revokeDraftEvidence(prev);
+      return [];
+    });
+    setEvidenceError(null);
+  }, []);
+
+  const handleAddEvidencePhotos = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setEvidenceError(null);
+    const additions: EvidencePhotoDraft[] = [];
+
+    for (const file of Array.from(files)) {
+      try {
+        const prepared = await prepareEvidencePhoto(file);
+        const id = 'evidence_' + crypto.randomUUID();
+        additions.push({
+          id,
+          fileName: file.name,
+          blob: prepared.blob,
+          previewUrl: URL.createObjectURL(prepared.blob),
+          capturedAt: Date.now(),
+          location: targetLocation,
+          note: '',
+          mimeType: prepared.mimeType,
+          width: prepared.width,
+          height: prepared.height,
+        });
+      } catch (error) {
+        console.warn('Evidence photo preparation error:', error);
+        setEvidenceError('部分照片無法加入，請確認檔案是可讀取的圖片。');
+      }
+    }
+
+    if (additions.length > 0) {
+      setEvidenceDrafts(prev => [...prev, ...additions].slice(0, 6));
+    }
+  }, [targetLocation]);
+
+  const handleRemoveEvidencePhoto = useCallback((id: string) => {
+    setEvidenceDrafts(prev => {
+      const draft = prev.find(item => item.id === id);
+      if (draft) URL.revokeObjectURL(draft.previewUrl);
+      return prev.filter(item => item.id !== id);
+    });
+  }, []);
+
+  const handleUpdateEvidenceNote = useCallback((id: string, note: string) => {
+    setEvidenceDrafts(prev => prev.map(item => item.id === id ? { ...item, note } : item));
+  }, []);
+
   // Fetch real-time weather & air quality for coordinate
   const fetchWeather = async (coord: LocationCoord) => {
     try {

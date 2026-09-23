@@ -7,7 +7,8 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot } from "./db";
+import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, OFFICIAL_SOURCE_URLS } from "./official";
+import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -667,6 +668,12 @@ const VALIDATOR_RESOURCES: Record<string, string[]> = {
   taipei_safety: [SAFETY_RESOURCE_URLS.taipeiTrafficAccidentPoints2025],
   taipei_flood: Object.values(FLOOD_RESOURCE_URLS),
   taipei_historical_flood: [SAFETY_RESOURCE_URLS.taipeiHistoricalFlood],
+  taipei_youbike: [OFFICIAL_SOURCE_URLS.taipeiYouBike],
+  taipei_medical: Object.values({
+    clinics: OFFICIAL_SOURCE_URLS.taipeiClinics,
+    hospitals: OFFICIAL_SOURCE_URLS.taipeiHospitals,
+  }),
+  taipei_street_lights: [OFFICIAL_SOURCE_URLS.taipeiStreetLights],
 };
 
 type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
@@ -761,6 +768,9 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   taipei_safety: 168,
   taipei_flood: 168,
   taipei_historical_flood: 168,
+  taipei_youbike: 24,
+  taipei_medical: 168,
+  taipei_street_lights: 168,
   open_meteo_air_quality: 24,
 };
 
@@ -819,11 +829,109 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     const now = Date.now();
     const sourceKeys = requestedSource ? [requestedSource] : REFRESH_SOURCE_KEYS;
 
-    // Large city-wide sources are fetched once and evaluated against all active
-    // targets. This avoids downloading the same multi-MB dataset once per target.
+    // Large city-wide sources are fetched once and stored as global spatial points.
+    const citywideSpatialSourceKeys = new Set([
+      "taipei_youbike",
+      "taipei_medical",
+      "taipei_street_lights",
+    ]);
     const batchSourceKeys = new Set(["taipei_green", "taipei_safety", "taipei_flood"]);
 
     for (const sourceKey of sourceKeys) {
+      if (citywideSpatialSourceKeys.has(sourceKey)) {
+        const existing = await getCachedSnapshot(sourceKey, "__citywide__");
+        const due = !existing
+          || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+
+        if (!due) {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing.fetchedAt,
+            checkedAt: existing.checkedAt,
+          });
+          continue;
+        }
+
+        const validator = existing
+          ? await checkStaticResourceValidators(sourceKey, existing)
+          : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
+
+        if (existing && validator.decision === "unchanged") {
+          await markSnapshotChecked(sourceKey, "__citywide__", {
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing.fetchedAt,
+          });
+          continue;
+        }
+
+        const citywide = sourceKey === "taipei_youbike"
+          ? await fetchTaipeiYouBikeData()
+          : sourceKey === "taipei_medical"
+            ? await fetchTaipeiMedicalFacilities()
+            : await fetchTaipeiStreetLights();
+
+        if (citywide.status === "available" || citywide.status === "empty") {
+          await replaceExternalSpatialPoints(
+            sourceKey,
+            citywide.points,
+            {
+              fetchedAt: citywide.retrievedAt,
+              sourceUpdatedAt: citywide.sourceUpdatedAt ?? validator.sourceUpdatedAt,
+              sourceVersion: validator.version,
+            },
+          );
+          const saved = await saveSnapshot(
+            sourceKey,
+            "__citywide__",
+            {
+              source: citywide.source,
+              pointCount: citywide.points.length,
+              retrievedAt: citywide.retrievedAt,
+            },
+            {
+              status: citywide.status,
+              sourceVersion: validator.version,
+              sourceUpdatedAt: citywide.sourceUpdatedAt ?? validator.sourceUpdatedAt,
+              freshnessMethod: citywide.sourceUpdatedAt ? "source_updated_at" : validator.method,
+            },
+          );
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: saved.changed,
+            status: citywide.status,
+            skipped: false,
+            pointCount: citywide.points.length,
+          });
+        } else {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: citywide.status,
+            skipped: false,
+            error: citywide.error || "Citywide official source unavailable",
+            preservedExisting: Boolean(existing),
+          });
+        }
+        continue;
+      }
+
       if (sourceKey === "taipei_historical_flood") {
         const existing = await getCachedSnapshot(sourceKey, "__citywide__");
         const due = !existing

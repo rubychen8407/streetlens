@@ -254,7 +254,7 @@ export function FloatingControls({
             title="天氣" aria-label="天氣"
           >
             <Sun className="w-4 h-4 text-amber-400" />
-            <span className="font-bold font-mono">{weatherData ? `${weatherData.temperature}°` : '26°'}</span>
+            <span className="font-bold font-mono">{weatherData?.temperature != null ? `${weatherData.temperature}°` : '—'}</span>
             <span className="text-[11px] text-slate-400 hidden xs:inline">
               {weatherData?.stationDistrict || district || '台北'}
             </span>
@@ -268,28 +268,28 @@ export function FloatingControls({
                   {weatherData?.stationDistrict || `${city || '台北市'} ${district || '大安區'}`}
                 </span>
                 <span className="font-bold text-amber-400">
-                  {weatherData?.condition || '晴朗'}
+                  {weatherData?.condition || '資料不可用'}
                 </span>
               </div>
               <div className="flex items-baseline justify-between">
                 <div className="text-2xl font-bold font-mono">
-                  {weatherData ? `${weatherData.temperature}°C` : '26°C'}
+                  {weatherData?.temperature != null ? `${weatherData.temperature}°C` : '—'}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  {weatherData?.stationName ? `環保署【${weatherData.stationName}】測站` : '即時監測中'}
+                  {weatherData?.stationName ? `資料來源：${weatherData.stationName}` : weatherData?.source || '資料尚未取得'}
                 </div>
               </div>
               <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/10 pt-1.5">
                 <div className="flex justify-between items-center">
                   <span>空氣品質 AQI：</span>
                   <span className="font-mono font-semibold text-emerald-400">
-                    {weatherData ? `${weatherData.aqi} (${weatherData.aqiStatus})` : '36 (良好)'}
+                    {weatherData?.aqi != null ? `${weatherData.aqi} (${weatherData.aqiStatus})` : '—'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span>相對濕度：</span>
                   <span className="font-mono font-semibold text-sky-300">
-                    {weatherData ? `${weatherData.humidity}%` : '65%'}
+                    {weatherData?.humidity != null ? `${weatherData.humidity}%` : '—'}
                   </span>
                 </div>
                 {weatherData?.pm25 !== undefined && (

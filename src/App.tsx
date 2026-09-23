@@ -548,6 +548,7 @@ export default function App() {
         onOpenDataLogs={() => setWorkspaceView('settings')}
         isFavorite={isFavorite}
         onToggleFavorite={handleToggleFavorite}
+        favoriteLocationKeys={favoriteLocations}
       />
     </div>
   );

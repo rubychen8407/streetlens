@@ -215,11 +215,11 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     : undefined;
 
   const scores = {
-    c1: Number.isFinite(Number(assessment?.scores?.c1)) ? Number(assessment.scores.c1) : null,
-    c2: Number.isFinite(Number(assessment?.scores?.c2)) ? Number(assessment.scores.c2) : null,
-    c3: Number.isFinite(Number(assessment?.scores?.c3)) ? Number(assessment.scores.c3) : null,
-    c4: Number.isFinite(Number(assessment?.scores?.c4)) ? Number(assessment.scores.c4) : null,
-    c5: Number.isFinite(Number(assessment?.scores?.c5)) ? Number(assessment.scores.c5) : null,
+    c1: assessment?.scores?.c1 == null ? null : Number.isFinite(Number(assessment.scores.c1)) ? Number(assessment.scores.c1) : null,
+    c2: assessment?.scores?.c2 == null ? null : Number.isFinite(Number(assessment.scores.c2)) ? Number(assessment.scores.c2) : null,
+    c3: assessment?.scores?.c3 == null ? null : Number.isFinite(Number(assessment.scores.c3)) ? Number(assessment.scores.c3) : null,
+    c4: assessment?.scores?.c4 == null ? null : Number.isFinite(Number(assessment.scores.c4)) ? Number(assessment.scores.c4) : null,
+    c5: assessment?.scores?.c5 == null ? null : Number.isFinite(Number(assessment.scores.c5)) ? Number(assessment.scores.c5) : null,
   };
 
   const payload: PersistedAssessmentRecord = {
@@ -252,7 +252,7 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     timestamp: Number.isFinite(Number(assessment.timestamp)) ? Number(assessment.timestamp) : Date.now(),
   };
 
-  await dataDb.query(
+  const persisted = await dataDb.query(
     `INSERT INTO assessment_sessions
       (id, workspace_id, street_name, district, city, latitude, longitude,
        baseline_cls, adjusted_cls, session_timestamp, payload, created_at, updated_at)
@@ -268,7 +268,9 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
                    adjusted_cls = EXCLUDED.adjusted_cls,
                    session_timestamp = EXCLUDED.session_timestamp,
                    payload = EXCLUDED.payload,
-                   updated_at = NOW()`,
+                   updated_at = NOW()
+       WHERE assessment_sessions.workspace_id = EXCLUDED.workspace_id
+     RETURNING id`,
     [
       payload.id,
       workspaceId,
@@ -283,6 +285,10 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
       JSON.stringify(payload),
     ],
   );
+
+  if (persisted.rowCount === 0) {
+    throw new Error("assessment id belongs to another workspace");
+  }
 
   await dataDb.query("DELETE FROM assessment_evidence WHERE assessment_id = $1", [id]);
 

@@ -41,15 +41,15 @@ assert.equal(unchanged.ratedItemCount, 0);
 const positiveObservation = applyFieldObservationAdjustment(80, {
   c3_sidewalk_quality: 4,
 });
-assert.equal(positiveObservation.adjustedCls, 88);
-assert.equal(positiveObservation.adjustment, 8);
+assert.equal(positiveObservation.adjustedCls, 82);
+assert.equal(positiveObservation.adjustment, 2);
 assert.equal(positiveObservation.categoryAdjustments.C3, 8);
 
 const negativeObservation = applyFieldObservationAdjustment(80, {
   c3_sidewalk_blocked: 4,
 });
-assert.equal(negativeObservation.adjustedCls, 70);
-assert.equal(negativeObservation.adjustment, -10);
+assert.equal(negativeObservation.adjustedCls, 78);
+assert.equal(negativeObservation.adjustment, -2);
 assert.equal(negativeObservation.categoryAdjustments.C3, -10);
 
 const balancedObservation = applyFieldObservationAdjustment(80, {

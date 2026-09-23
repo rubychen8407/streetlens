@@ -8,6 +8,7 @@ import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { ensureDataCacheSchema, getCachedSnapshot, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, saveSnapshot } from "./db";
+import { ensureAssessmentSchema, getAssessmentPhoto, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
 
@@ -17,7 +18,8 @@ const PORT = Number(process.env.PORT || 3000);
 app.use(express.json());
 
 // Assessment data is persisted first. User requests never crawl scoring sources.
-ensureDataCacheSchema().catch((error) => console.error("Data cache initialization failed:", error));
+const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema()]);
+schemaReady.catch((error) => console.error("Data schema initialization failed:", error));
 const DATA_REFRESH_TOKEN = process.env.STREETLENS_REFRESH_TOKEN || "";
 
 // Lazy-initialized Gemini client
@@ -73,6 +75,85 @@ async function generateGeminiContentWithFallback(
 // Health check
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+async function waitForPersistenceSchema() {
+  await schemaReady;
+}
+
+app.get("/api/assessments", async (req: Request, res: Response) => {
+  try {
+    await waitForPersistenceSchema();
+    const workspaceId = req.query.workspaceId;
+    if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+    const records = await listAssessmentSessions(workspaceId, req.query.limit);
+    return res.json(records);
+  } catch (error: any) {
+    console.error("Assessment history error:", error);
+    return res.status(503).json({ error: error?.message || "Assessment history unavailable" });
+  }
+});
+
+app.post("/api/assessments", async (req: Request, res: Response) => {
+  try {
+    await waitForPersistenceSchema();
+    const record = await saveAssessmentSession({
+      workspaceId: req.body?.workspaceId,
+      assessment: req.body?.assessment,
+      evidence: req.body?.evidence,
+    });
+    return res.status(201).json(record);
+  } catch (error: any) {
+    const message = error?.message || "Unable to persist assessment";
+    console.error("Assessment persistence error:", error);
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.delete("/api/assessments/:id", async (req: Request, res: Response) => {
+  try {
+    await waitForPersistenceSchema();
+    const deleted = await deleteAssessmentSession(req.query.workspaceId, req.params.id);
+    return res.status(deleted ? 204 : 404).send();
+  } catch (error: any) {
+    console.error("Assessment delete error:", error);
+    return res.status(400).json({ error: error?.message || "Unable to delete assessment" });
+  }
+});
+
+app.put(
+  "/api/assessments/:id/evidence/:evidenceId/photo",
+  express.raw({ type: ["image/*", "application/octet-stream"], limit: "5mb" }),
+  async (req: Request, res: Response) => {
+    try {
+      await waitForPersistenceSchema();
+      await saveAssessmentPhoto(
+        req.query.workspaceId,
+        req.params.id,
+        req.params.evidenceId,
+        req.body as Buffer,
+        req.headers["content-type"],
+      );
+      return res.status(204).send();
+    } catch (error: any) {
+      console.error("Assessment photo upload error:", error);
+      return res.status(400).json({ error: error?.message || "Unable to store assessment photo" });
+    }
+  },
+);
+
+app.get("/api/assessments/:id/evidence/:evidenceId/photo", async (req: Request, res: Response) => {
+  try {
+    await waitForPersistenceSchema();
+    const photo = await getAssessmentPhoto(req.query.workspaceId, req.params.id, req.params.evidenceId);
+    if (!photo) return res.status(404).json({ error: "Evidence photo not found" });
+    res.setHeader("Content-Type", photo.mimeType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    return res.send(photo.body);
+  } catch (error: any) {
+    console.error("Assessment photo load error:", error);
+    return res.status(400).json({ error: error?.message || "Unable to load assessment photo" });
+  }
 });
 
 // ---------------------------------------------------------------------------

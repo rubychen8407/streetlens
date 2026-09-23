@@ -45,6 +45,7 @@ interface AssessmentWorkspaceProps {
   aiExplanationError: string | null;
   onGenerateAiExplanation: () => void;
   pendingAssessmentSources: string[];
+  baselineSummary: string;
 }
 
 function formatFreshness(timestamp?: string) {
@@ -71,7 +72,7 @@ export function AssessmentWorkspace({
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
   activeSavedAssessmentId, aiExplanation, isGeneratingAiExplanation, aiExplanationError, onGenerateAiExplanation,
-  pendingAssessmentSources,
+  pendingAssessmentSources, baselineSummary,
 }: AssessmentWorkspaceProps) {
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);

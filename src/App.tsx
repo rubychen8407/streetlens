@@ -350,6 +350,32 @@ export default function App() {
     }
     setFieldNotes(restoredNotes);
     setObservationRatings(restoredRatings);
+    setEvidenceDrafts(prev => {
+      revokeDraftEvidence(prev);
+      return [];
+    });
+    setEvidenceError(null);
+
+    const savedEvidence = saved.evidence || [];
+    setSelectedSavedEvidence(savedEvidence);
+    Object.values(savedEvidenceUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
+    savedEvidenceUrlsRef.current = {};
+
+    void (async () => {
+      const entries: Record<string, string> = {};
+      for (const item of savedEvidence) {
+        if (item.type !== 'photo' || !item.storageKey) continue;
+        try {
+          const url = await loadEvidencePhotoUrl(item.storageKey);
+          if (url) entries[item.storageKey] = url;
+        } catch (error) {
+          console.warn('Saved evidence preview error:', error);
+        }
+      }
+      savedEvidenceUrlsRef.current = entries;
+      setSavedEvidenceUrls(entries);
+    })();
+
     setAssessment(saved.assessmentSnapshot || null);
     setFieldAdjustment(
       saved.baselineClsScore != null || saved.fieldAdjustmentDetails
@@ -367,6 +393,13 @@ export default function App() {
     setGpsSuccessMsg('已切換至已存地點【' + (saved.name || saved.streetName) + '】(CLS: ' + (saved.clsScore ?? '—') + '分)');
     setTimeout(() => setGpsSuccessMsg(null), 4000);
   };
+
+  useEffect(() => {
+    return () => {
+      Object.values(savedEvidenceUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
+      savedEvidenceUrlsRef.current = {};
+    };
+  }, []);
 
   // Reliable Browser Geolocation Handler
   const handleLocateMe = useCallback(() => {

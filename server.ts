@@ -3,7 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import { calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
+import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiFloodHazardData, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
@@ -1266,6 +1266,41 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 });
 
 // 實勘結果綜合分析與診斷報告
+app.post("/api/assessment/field-adjustment", async (req: Request, res: Response) => {
+  try {
+    const baselineCls = req.body?.baselineCls;
+    const ratings = req.body?.ratings;
+    if (baselineCls !== null && (!Number.isFinite(Number(baselineCls)) || Number(baselineCls) < 0 || Number(baselineCls) > 100)) {
+      return res.status(400).json({ error: "baselineCls must be null or a number from 0 to 100" });
+    }
+    if (!ratings || typeof ratings !== "object" || Array.isArray(ratings)) {
+      return res.status(400).json({ error: "ratings must be an object" });
+    }
+
+    const result = applyFieldObservationAdjustment(
+      baselineCls === null ? null : Number(baselineCls),
+      ratings as Record<string, number>,
+    );
+
+    return res.json({
+      baselineCls: result.baselineCls,
+      adjustedCls: result.adjustedCls,
+      adjustment: result.adjustment,
+      categoryAdjustments: result.categoryAdjustments,
+      ratedItemCount: result.ratedItemCount,
+      model: {
+        ratingScale: "1=Poor, 2=Fair, 3=Good, 4=Great",
+        categoryCap: 10,
+        weighting: "equal C1-C5",
+        note: "Field observations adjust the source-backed baseline; they do not replace external data.",
+      },
+    });
+  } catch (error) {
+    console.error("Field observation adjustment error:", error);
+    return res.status(500).json({ error: "Unable to calculate field observation adjustment" });
+  }
+});
+
 app.post("/api/analyze-cls", async (req: Request, res: Response) => {
   try {
     const {

@@ -347,5 +347,18 @@ export interface StreetAssessmentResponse {
   sourceStatus?: AssessmentSourceStatus[];
   dataStatus?: 'cached' | 'pending_refresh' | 'database_required';
   historicalFloodEvents?: HistoricalFloodEvent[];
+  officialServiceMetrics?: {
+    youBikeNearestDistance: number | null;
+    youBikeAvailableBikes: number | null;
+    youBikeAvailableDocks: number | null;
+    medicalFacilityNearestDistance: number | null;
+    busStopNearestDistance: number | null;
+    libraryCount800m: number;
+    libraryNearestDistance800m: number | null;
+    publicToiletCount800m: number;
+    streetLightCount300m: number | null;
+    officialParkCount800m: number;
+    officialParkNearestDistance800m: number | null;
+  };
 }
 

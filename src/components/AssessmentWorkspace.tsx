@@ -489,12 +489,20 @@ export function AssessmentWorkspace({
                       <div className="mt-1.5 space-y-1">
                         {group.slice(0, 5).map(saved => (
                           <button key={saved.id} type="button" onClick={() => onSelectSaved(saved)} className="w-full flex items-center justify-between gap-2 text-left hover:bg-white/5 rounded-lg px-1 py-1">
-                            <span className="text-[10px] text-slate-500">{new Date(saved.timestamp).toLocaleString('zh-TW')}</span>
-                            <span className="text-[10px] font-mono font-bold text-slate-200">
-                              {saved.clsScore ?? '—'}
-                              {saved.fieldAdjustment != null && saved.baselineClsScore != null && (
-                                <span className="ml-1 text-sky-300">{saved.fieldAdjustment >= 0 ? '+' : ''}{saved.fieldAdjustment}</span>
+                            <span className="text-[10px] text-slate-500">
+                        {saved.evidence && saved.evidence.length > 0 ? 'Evidence ' + saved.evidence.length + ' · ' : ''}
+                        {new Date(saved.timestamp).toLocaleString('zh-TW')}
+                      </span>
+                            <span className="flex items-center gap-2 text-[10px] font-mono font-bold text-slate-200">
+                              {saved.evidence && saved.evidence.length > 0 && (
+                                <span className="text-slate-500">Evidence {saved.evidence.length}</span>
                               )}
+                              <span>
+                                {saved.clsScore ?? '—'}
+                                {saved.fieldAdjustment != null && saved.baselineClsScore != null && (
+                                  <span className="ml-1 text-sky-300">{saved.fieldAdjustment >= 0 ? '+' : ''}{saved.fieldAdjustment}</span>
+                                )}
+                              </span>
                             </span>
                           </button>
                         ))}

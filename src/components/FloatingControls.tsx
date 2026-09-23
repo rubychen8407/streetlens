@@ -326,10 +326,10 @@ export function FloatingControls({
 
       </div>
 
-      {/* BOTTOM FLOATING CONTROLS (Exactly matching Apple Maps layout) */}
-      <div className="flex flex-col gap-3 pointer-events-auto pb-1">
+      {/* BOTTOM FLOATING CONTROLS */}
+      <div className="relative pointer-events-auto pb-1 min-h-12">
         {/* Unified address search + field assessment entry */}
-        <div className="relative w-full max-w-lg mx-auto" ref={searchContainerRef}>
+        <div className="relative w-[calc(100%-56px)] sm:w-full max-w-lg mx-auto" ref={searchContainerRef}>
           <div className="flex items-center gap-2">
             <div className="relative flex-1 min-w-0">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 pointer-events-none">
@@ -375,11 +375,11 @@ export function FloatingControls({
           </div>
         </div>
 
-          {/* Bottom-Right: Vertical Glass Capsule (Layers + Locate buttons) */}
-          <div
-            className="relative flex flex-col bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
-            ref={layerMenuRef}
-          >
+        {/* Bottom-right map tools stay independent from the search bar on every breakpoint. */}
+        <div
+          className="absolute right-0 bottom-0 flex flex-col bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
+          ref={layerMenuRef}
+        >
             {/* Layer Button */}
             <button
               type="button"

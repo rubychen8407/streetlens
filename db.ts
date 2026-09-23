@@ -265,6 +265,16 @@ export async function replaceFloodHazardPolygons(
   }
 }
 
+export async function hasFloodHazardPolygons(): Promise<boolean> {
+  if (!dataDb || !postgisAvailable) return false;
+  const result = await dataDb.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM flood_hazard_polygons
+     ) AS "hasRows"`,
+  );
+  return Boolean(result.rows[0]?.hasRows);
+}
+
 export async function getFloodHazardsAtPoint(
   lat: number,
   lng: number,

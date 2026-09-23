@@ -66,6 +66,20 @@ export async function ensureDataCacheSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_external_spatial_points_source_lat_lng
       ON external_spatial_points(source_key, latitude, longitude);
 
+    CREATE TABLE IF NOT EXISTS external_spatial_areas (
+      source_key TEXT NOT NULL,
+      feature_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source_updated_at TIMESTAMPTZ,
+      source_version TEXT,
+      geom geometry(Geometry, 4326) NOT NULL,
+      PRIMARY KEY (source_key, feature_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_external_spatial_areas_source_geom
+      ON external_spatial_areas USING GIST (geom);
     CREATE TABLE IF NOT EXISTS external_spatial_lines (
       source_key TEXT NOT NULL,
       feature_id TEXT NOT NULL,
@@ -842,6 +856,140 @@ export async function replaceExternalSpatialPoints(
 }
 
 
+export async function replaceExternalSpatialAreas(
+  sourceKey: string,
+  areas: Array<{
+    id: string;
+    name: string;
+    geometry: { type: "Polygon" | "MultiPolygon"; coordinates: unknown };
+    properties?: Record<string, unknown>;
+  }>,
+  metadata: { fetchedAt?: string; sourceUpdatedAt?: string | null; sourceVersion?: string | null } = {},
+): Promise<void> {
+  if (!dataDb || !postgisAvailable) return;
+  const client = await dataDb.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM external_spatial_areas WHERE source_key = $1", [sourceKey]);
+
+    const fetchedAt = metadata.fetchedAt || new Date().toISOString();
+    const sourceUpdatedAt = metadata.sourceUpdatedAt ?? null;
+    const sourceVersion = metadata.sourceVersion ?? null;
+    const validAreas = areas.filter((area) => area?.geometry?.coordinates);
+
+    for (let start = 0; start < validAreas.length; start += 100) {
+      const batch = validAreas.slice(start, start + 100);
+      const values: unknown[] = [];
+      const rows = batch.map((area, index) => {
+        const offset = index * 8;
+        values.push(
+          sourceKey,
+          area.id,
+          area.name,
+          JSON.stringify(area.properties || {}),
+          fetchedAt,
+          sourceUpdatedAt,
+          sourceVersion,
+          JSON.stringify(area.geometry),
+        );
+        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}::jsonb, ${offset + 5}, ${offset + 6}, ${offset + 7}, ST_SetSRID(ST_GeomFromGeoJSON(${offset + 8}), 4326))`;
+      });
+      if (!rows.length) continue;
+      await client.query(
+        `INSERT INTO external_spatial_areas
+           (source_key, feature_id, name, properties, fetched_at, source_updated_at, source_version, geom)
+         VALUES ${rows.join(",")}
+         ON CONFLICT (source_key, feature_id) DO UPDATE SET
+           name = EXCLUDED.name,
+           properties = EXCLUDED.properties,
+           fetched_at = EXCLUDED.fetched_at,
+           source_updated_at = EXCLUDED.source_updated_at,
+           source_version = EXCLUDED.source_version,
+           geom = EXCLUDED.geom`,
+        values,
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getNearbyExternalSpatialAreaCoverage(
+  sourceKey: string,
+  lat: number,
+  lng: number,
+  radiusMeters = 500,
+): Promise<{
+  coveragePct: number;
+  areaM2: number;
+  featureCount: number;
+  fetchedAt: string | null;
+  sourceUpdatedAt: string | null;
+  sourceVersion: string | null;
+}> {
+  if (!dataDb || !postgisAvailable) {
+    return { coveragePct: 0, areaM2: 0, featureCount: 0, fetchedAt: null, sourceUpdatedAt: null, sourceVersion: null };
+  }
+
+  const point = "ST_SetSRID(ST_Point($2, $1), 4326)::geography";
+  const result = await dataDb.query(
+    `WITH clipped AS (
+       SELECT
+         ST_Intersection(
+           geom,
+           ST_Buffer(${point}, $3)::geometry
+         ) AS geom,
+         fetched_at AS "fetchedAt",
+         source_updated_at AS "sourceUpdatedAt",
+         source_version AS "sourceVersion"
+       FROM external_spatial_areas
+       WHERE source_key = $4
+         AND ST_DWithin(geom::geography, ${point}, $3)
+     )
+     SELECT
+       COALESCE(ST_Area(ST_Union(geom)::geography), 0) AS "areaM2",
+       COUNT(*) FILTER (WHERE geom IS NOT NULL) AS "featureCount",
+       MAX("fetchedAt") AS "fetchedAt",
+       MAX("sourceUpdatedAt") AS "sourceUpdatedAt",
+       MAX("sourceVersion") AS "sourceVersion"
+     FROM clipped`,
+    [lat, lng, radiusMeters, sourceKey],
+  );
+
+  const row = result.rows[0] || {};
+  const areaM2 = Number(row.areaM2) || 0;
+  const circleAreaM2 = Math.PI * radiusMeters * radiusMeters;
+  const coveragePct = circleAreaM2 > 0 ? Math.min(100, (areaM2 / circleAreaM2) * 100) : 0;
+  return {
+    coveragePct,
+    areaM2,
+    featureCount: Number(row.featureCount) || 0,
+    fetchedAt: row.fetchedAt ? new Date(row.fetchedAt).toISOString() : null,
+    sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
+    sourceVersion: row.sourceVersion || null,
+  };
+}
+
+export async function getSpatialAreaCoverageReference(
+  sourceKey: string,
+  radiusMeters = 500,
+  excludeScopeKey?: string,
+): Promise<number[]> {
+  if (!dataDb || !postgisAvailable) return [];
+  const targets = await listActiveAssessmentTargets();
+  const values: number[] = [];
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const metric = await getNearbyExternalSpatialAreaCoverage(sourceKey, target.latitude, target.longitude, radiusMeters);
+    if (metric.featureCount > 0) values.push(metric.coveragePct);
+  }
+  return values;
+}
 export async function replaceExternalSpatialLines(
   sourceKey: string,
   lines: Array<{

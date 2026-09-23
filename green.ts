@@ -113,7 +113,6 @@ function parseCsv(text: string): Record<string, string>[] {
 }
 
 interface DatasetRowsResult {
-  rows: any[];
   format: "json" | "csv";
   rowCount: number;
   coordinateRowCount: number;
@@ -187,7 +186,6 @@ async function fetchDatasetResource(
   const processed = processNearbyRows(rows, lat, lng, radiusMeters);
 
   return {
-    rows,
     format,
     rowCount: rows.length,
     coordinateRowCount: processed.coordinateRowCount,

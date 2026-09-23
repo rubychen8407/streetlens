@@ -155,6 +155,7 @@ export default function App() {
   const [c5, setC5] = useState<C5Data>({ activityFrequency: null, neighborhoodTrust: null, jobCommercialDensity: null, governanceParticipation: null, wActivity: 0.25, wTrust: 0.25, wJobs: 0.25, wGovernance: 0.25, score: null });
   const [isLoadingBaseline, setIsLoadingBaseline] = useState<boolean>(false);
   const [baselineSummary, setBaselineSummary] = useState<string>('等待已儲存資料…');
+  const [pendingAssessmentSources, setPendingAssessmentSources] = useState<string[]>([]);
 
   // Map active layers
   const [activeLayers, setActiveLayers] = useState({
@@ -294,6 +295,10 @@ export default function App() {
   // Read persisted assessment data. This request never fetches external sources.
   const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
     if (resetDraft) {
+      setActiveSavedAssessmentId(null);
+      setAiExplanation(null);
+      setAiExplanationError(null);
+      setPendingAssessmentSources([]);
       setObservationRatings({});
       clearEvidenceDrafts();
       setSelectedSavedEvidence([]);
@@ -314,11 +319,19 @@ export default function App() {
       await Promise.all([fetchWeather(coord), fetchNearbyPois(coord, targetDist, targetCity, targetStreet), fetchStreetNetwork(coord, targetStreet)]);
       const url = '/api/assessment?lat=' + coord.lat + '&lng=' + coord.lng + '&district=' + encodeURIComponent(targetDist) + '&city=' + encodeURIComponent(targetCity) + '&streetName=' + encodeURIComponent(targetStreet);
       const res = await fetch(url);
-      if (res.status === 202) { setAssessment(null); setBaselineSummary('此座標尚未有已儲存資料；背景更新後即可取得評估。'); return; }
+      if (res.status === 202) {
+        const pending = await res.json().catch(() => ({}));
+        setAssessment(null);
+        setFieldAdjustment(null);
+        setPendingAssessmentSources(Array.isArray(pending.missingSources) ? pending.missingSources : []);
+        setBaselineSummary('此座標尚無已儲存的外部資料快照；等待背景資料更新。');
+        return;
+      }
       if (!res.ok) throw new Error('assessment request failed: ' + res.status);
       const data: StreetAssessmentResponse = await res.json();
       setAssessment(data);
       setFieldAdjustment(null);
+      setPendingAssessmentSources([]);
       setBaselineSummary(data.dataSources.length ? '資料來源：' + data.dataSources.join('、') : '資料來源資訊不足');
       const factor = (name: string) => data.factors.find((item) => item.indicator === name)?.value ?? null;
       setC1((prev) => ({ ...prev, accidentRate: factor('trafficAccidentCount500m'), score: data.scores.c1.score }));
@@ -336,6 +349,35 @@ export default function App() {
     fetchLocationData(targetLocation, district, city, streetName);
   }, [fetchLocationData, targetLocation, district, city, streetName]);
 
+  // Preview the bounded field observation adjustment whenever ratings change.
+  // The backend remains the source of truth; the browser only renders the response.
+  useEffect(() => {
+    const requestId = ++fieldAdjustmentRequestRef.current;
+    if (baselineClsScore == null) {
+      setFieldAdjustment(null);
+      setIsPreviewingFieldAdjustment(false);
+      return;
+    }
+
+    setIsPreviewingFieldAdjustment(true);
+    void fetch('/api/assessment/field-adjustment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baselineCls: baselineClsScore, ratings: observationRatings }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('field adjustment request failed: ' + response.status);
+      return await response.json() as FieldObservationAdjustment;
+    }).then((result) => {
+      if (requestId !== fieldAdjustmentRequestRef.current) return;
+      setFieldAdjustment(result);
+    }).catch((error) => {
+      if (requestId !== fieldAdjustmentRequestRef.current) return;
+      console.warn('Field observation preview error:', error);
+      setFieldAdjustment(null);
+    }).finally(() => {
+      if (requestId === fieldAdjustmentRequestRef.current) setIsPreviewingFieldAdjustment(false);
+    });
+  }, [baselineClsScore, observationRatings]);
   // Reverse Geocoding with automatic data refresh
   const fetchAddressFromCoords = async (coord: LocationCoord) => {
     try {
@@ -379,6 +421,10 @@ export default function App() {
 
   // Select and load a saved location from the Bottom Sheet
   const handleSelectSavedLocation = (saved: SavedLocation) => {
+    setActiveSavedAssessmentId(saved.id);
+    setAiExplanation(null);
+    setAiExplanationError(null);
+    setPendingAssessmentSources([]);
     setTargetLocation(saved.coords);
     setStreetName(saved.streetName);
     setDistrict(saved.district);
@@ -715,12 +761,12 @@ export default function App() {
           grade: cloudResult.record.grade,
         };
       } else {
-        console.warn('Cloud SQL assessment persistence unavailable:', cloudResult.error);
-        setEvidenceError('Cloud SQL 尚未同步；此筆 Assessment 已保留在本機。');
+        console.warn('PostgreSQL assessment persistence unavailable:', cloudResult.error);
+        setEvidenceError('PostgreSQL 尚未同步；此筆 Assessment 已保留在本機。');
       }
     } catch (error) {
-      console.warn('Cloud SQL assessment persistence error:', error);
-      setEvidenceError('Cloud SQL 暫時無法同步；此筆 Assessment 已保留在本機。');
+      console.warn('PostgreSQL assessment persistence error:', error);
+      setEvidenceError('PostgreSQL 暫時無法同步；此筆 Assessment 已保留在本機。');
     }
 
     const nextSavedLocations = [entry, ...savedLocations];
@@ -735,7 +781,7 @@ export default function App() {
       setSelectedSavedEvidence(evidence);
       setIsSavingAssessment(false);
       if (cloudPersisted) {
-        setEvidenceError('Cloud SQL 已儲存，但瀏覽器本機歷史無法寫入。');
+        setEvidenceError('PostgreSQL 已儲存，但瀏覽器本機歷史無法寫入。');
         return true;
       }
       setEvidenceError('Assessment 無法寫入瀏覽器儲存空間，因此沒有儲存。');
@@ -744,13 +790,14 @@ export default function App() {
 
     setSavedLocations(nextSavedLocations);
     setSelectedSavedEvidence(evidence);
+    if (!cloudPersisted) setActiveSavedAssessmentId(null);
     setIsSavingAssessment(false);
     return true;
   }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, savedLocations, workspaceId]);
 
   const handleGenerateAiExplanation = useCallback(async () => {
     if (!activeSavedAssessmentId) {
-      setAiExplanationError('請先把 Assessment 儲存到 Cloud SQL。');
+      setAiExplanationError('請先把 Assessment 儲存到 PostgreSQL。');
       return;
     }
 

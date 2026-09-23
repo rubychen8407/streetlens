@@ -902,6 +902,34 @@ export async function getSpatialPointCountReference(
   return values;
 }
 
+export async function getSpatialPointPropertySumReference(
+  sourceKey: string,
+  propertyKey: string,
+  maxDistanceMeters = 300,
+  excludeScopeKey?: string,
+): Promise<number[]> {
+  if (!dataDb) return [];
+  const targets = await listActiveAssessmentTargets();
+  const values: number[] = [];
+
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const rows = await getNearbyExternalSpatialPoints(
+      sourceKey,
+      target.latitude,
+      target.longitude,
+      maxDistanceMeters,
+      5000,
+    );
+    values.push(rows.reduce((sum, row) => {
+      const value = Number(row.properties?.[propertyKey]);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0));
+  }
+
+  return values;
+}
+
 export async function closeDataDb(): Promise<void> {
   if (dataDb) await dataDb.end();
 }

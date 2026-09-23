@@ -333,17 +333,52 @@ export function FloatingControls({
 
       {/* BOTTOM FLOATING CONTROLS (Exactly matching Apple Maps layout) */}
       <div className="flex flex-col gap-3 pointer-events-auto pb-1">
-        {/* Floating action buttons row (Binoculars on left, Capsule on right) */}
-        <div className="flex items-end justify-between px-1">
-          {/* Bottom-Left: Binoculars (Scout Look Around / Open Sheet button) */}
-          <button
-            type="button"
-            onClick={onOpenSheet}
-            className="w-12 h-12 rounded-full bg-[#1c1c1e]/90 hover:bg-[#1c1c1e] backdrop-blur-xl text-white shadow-xl border border-white/10 flex items-center justify-center transition-all active:scale-90"
-            title="開啟實勘評分面板"
-          >
-            <Binoculars className="w-5 h-5 text-indigo-400" />
-          </button>
+        {/* Unified address search + field assessment entry */}
+        <div className="relative w-full max-w-lg mx-auto" ref={searchContainerRef}>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 pointer-events-none">
+                {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+              </div>
+              <input
+                type="text"
+                value={searchQuery || currentStreetName}
+                onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
+                onFocus={() => setIsSearchOpen(true)}
+                placeholder="搜尋新的實勘點..."
+                className="w-full pl-11 pr-10 py-3 bg-[#1c1c1e]/92 backdrop-blur-xl border border-white/15 rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
+                aria-label="搜尋新的實勘點"
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white" aria-label="清除搜尋">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {isSearchOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
+                  {suggestions.length > 0 ? (
+                    <div className="p-1">
+                      {suggestions.map((item, idx) => (
+                        <button key={idx} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-xs hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors">
+                          <MapPin className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div>
+                            <div className="text-[11px] text-slate-400 truncate">{item.display_name}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-xs text-slate-500">輸入地址或街道名稱搜尋新的實勘點</div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button type="button" onClick={onOpenSheet} className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white shadow-2xl border border-indigo-300/30 flex items-center justify-center transition-all active:scale-90" title="開始實勘" aria-label="開始實勘">
+              <Compass className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
 
           {/* Bottom-Right: Vertical Glass Capsule (Layers + Locate buttons) */}
           <div
@@ -485,38 +520,16 @@ export function FloatingControls({
           </div>
         </div>
 
-        {/* Unified current address + field assessment entry */}
-        <div className="relative w-full max-w-lg mx-auto flex items-center gap-2" ref={searchContainerRef}>
-          <div className="relative flex-1 min-w-0">
-            <div className="absolute left-4 text-rose-400 pointer-events-none">
-              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+        {/* Bottom Search Capsule (Apple Maps Style Floating Search Bar) */}
+        <div className="relative w-full max-w-lg mx-auto" ref={searchContainerRef}>
+          <div className="relative flex items-center">
+            <div className="absolute left-4 text-slate-400 pointer-events-none">
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
             </div>
-            <input
-              type="text"
-              value={searchQuery || currentStreetName}
-              onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
-              onFocus={() => setIsSearchOpen(true)}
-              placeholder="搜尋新的實勘點..."
-              className="w-full pl-11 pr-10 py-3 bg-[#1c1c1e]/92 backdrop-blur-xl border border-white/15 rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
-              aria-label="搜尋新的實勘點"
-            />
-            {searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>}
-            {isSearchOpen && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
-                {suggestions.length > 0 ? suggestions.map((item, idx) => (
-                  <button key={idx} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-xs hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors">
-                    <MapPin className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <div className="min-w-0"><div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div><div className="text-[11px] text-slate-400 truncate">{item.display_name}</div></div>
-                  </button>
-                )) : <div className="p-4 text-center text-xs text-slate-500">輸入地址或街道名稱搜尋新的實勘點</div>}
-              </div>
-            )}
-          </div>
-          <button type="button" onClick={onOpenSheet} className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white shadow-2xl border border-indigo-300/30 flex items-center justify-center transition-all active:scale-90" title="開始實勘" aria-label="開始實勘">
-            <Compass className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
 
             <input
               type="text"

@@ -321,13 +321,9 @@ export function FloatingControls({
         </div>
 
       </div>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-          </button>
-        )}
-      </div>
 
       {/* BOTTOM FLOATING CONTROLS (Exactly matching Apple Maps layout) */}
-      <div className="flex flex-col gap-3 pointer-events-auto pb-1">
+      <div className="flex items-end gap-3 pointer-events-auto pb-1">
         {/* Unified location + field assessment entry */}
         <div className="flex items-end gap-2 flex-1 min-w-0">
           <div ref={searchContainerRef} className="relative flex-1 min-w-0">

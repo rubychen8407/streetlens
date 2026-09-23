@@ -6,14 +6,17 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - refactor/data-integrity-and-security
+      - main
     paths:
       - "server.ts"
       - "db.ts"
       - "scoring.ts"
       - "transit.ts"
+      - "official.ts"
       - "scripts/check-external-data.ts"
       - "src/dataSources/**"
+      - "green.ts"
+      - "safety.ts"
       - ".github/workflows/external-data-health.yml"
 
 jobs:

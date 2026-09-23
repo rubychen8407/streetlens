@@ -184,6 +184,8 @@ export interface SavedLocation {
   city: string;
   coords: LocationCoord;
   clsScore: number | null;
+  baselineClsScore?: number | null;
+  fieldAdjustment?: number;
   grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   scores: {
     c1: number | null;

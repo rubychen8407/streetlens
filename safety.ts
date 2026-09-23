@@ -511,6 +511,17 @@ export interface FloodRefreshTarget {
   longitude: number;
 }
 
+export function getLastFetchedFloodPolygons() {
+  return lastFetchedFloodPolygons;
+}
+
+let lastFetchedFloodPolygons: Array<{
+  scenarioMmH: 78.8 | 100 | 130;
+  depthCm: number | null;
+  source: string;
+  coordinates: Array<[number, number]>;
+}> = [];
+
 export async function fetchTaipeiFloodHazardDataForTargets(
   targets: FloodRefreshTarget[],
 ): Promise<Record<string, FloodSourceResult>> {
@@ -541,6 +552,12 @@ export async function fetchTaipeiFloodHazardDataForTargets(
   });
 
   const errors: string[] = [];
+  const fetchedPolygons: Array<{
+    scenarioMmH: 78.8 | 100 | 130;
+    depthCm: number | null;
+    source: string;
+    coordinates: Array<[number, number]>;
+  }> = [];
 
   for (const resource of FLOOD_RESOURCES) {
     const controller = new AbortController();
@@ -581,6 +598,12 @@ export async function fetchTaipeiFloodHazardDataForTargets(
 
           if (polygon.length < 3) continue;
           parsedPolygonCount += 1;
+          fetchedPolygons.push({
+            scenarioMmH: resource.scenario,
+            depthCm,
+            source: "Taipei City official rainfall inundation simulation (112 revision)",
+            coordinates: polygon,
+          });
 
           let minLng = Infinity;
           let maxLng = -Infinity;
@@ -634,6 +657,10 @@ export async function fetchTaipeiFloodHazardDataForTargets(
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  if (fetchedPolygons.length > 0) {
+    lastFetchedFloodPolygons = fetchedPolygons;
   }
 
   for (const target of targets) {

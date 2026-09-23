@@ -154,13 +154,14 @@ export async function getCachedSnapshot(sourceKey: string, scopeKey: string): Pr
   return result.rows[0] || null;
 }
 
-export async function getNearestCachedSnapshot(
+export async function getNearbyCachedSnapshots(
   sourceKey: string,
   lat: number,
   lng: number,
-  maxDistanceMeters = 250,
-): Promise<(CachedSnapshot & { scopeDistanceMeters: number }) | null> {
-  if (!dataDb) return null;
+  maxDistanceMeters = 900,
+  limit = 6,
+): Promise<Array<CachedSnapshot & { scopeDistanceMeters: number }>> {
+  if (!dataDb) return [];
 
   const result = await dataDb.query(
     `SELECT s.source_key AS "sourceKey", s.scope_key AS "scopeKey", s.payload,
@@ -177,17 +178,25 @@ export async function getNearestCachedSnapshot(
      JOIN assessment_targets t ON t.scope_key = s.scope_key
      WHERE s.source_key = $1
        AND s.status IN ('available', 'empty')
-       AND t.active = TRUE
      ORDER BY "scopeDistanceMeters" ASC
-     LIMIT 1`,
-    [sourceKey, lat, lng],
+     LIMIT $4`,
+    [sourceKey, lat, lng, limit],
   );
 
-  const row = result.rows[0];
-  if (!row || !Number.isFinite(Number(row.scopeDistanceMeters)) || Number(row.scopeDistanceMeters) > maxDistanceMeters) {
-    return null;
-  }
-  return row;
+  return result.rows.filter((row) =>
+    Number.isFinite(Number(row.scopeDistanceMeters))
+    && Number(row.scopeDistanceMeters) <= maxDistanceMeters
+  );
+}
+
+export async function getNearestCachedSnapshot(
+  sourceKey: string,
+  lat: number,
+  lng: number,
+  maxDistanceMeters = 250,
+): Promise<(CachedSnapshot & { scopeDistanceMeters: number }) | null> {
+  const rows = await getNearbyCachedSnapshots(sourceKey, lat, lng, maxDistanceMeters, 1);
+  return rows[0] || null;
 }
 
 export interface FloodHazardPolygonRecord {

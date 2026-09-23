@@ -15,9 +15,20 @@ export interface OfficialSpatialLine {
   properties: Record<string, unknown>;
 }
 
+export interface OfficialSpatialArea {
+  id: string;
+  name: string;
+  geometry: {
+    type: "Polygon" | "MultiPolygon";
+    coordinates: unknown;
+  };
+  properties: Record<string, unknown>;
+}
+
 export interface OfficialCitywideSourceResult {
   points: OfficialSpatialPoint[];
   lines?: OfficialSpatialLine[];
+  areas?: OfficialSpatialArea[];
   source: string;
   status: "available" | "empty" | "error" | "timeout";
   retrievedAt: string;
@@ -35,6 +46,8 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
   taipeiParks: "https://parks.gov.taipei/parks/api/",
   taipeiBikeLanes: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a69988de-6a49-4956-9220-40ebd7c42800",
+  wheelRouteFacility11: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/11",
+  wheelRouteFacility12: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/12",
 };
 
 const USER_AGENT = "StreetLens/1.0";
@@ -259,6 +272,52 @@ export async function fetchTaipeiMedicalFacilities(): Promise<OfficialCitywideSo
 }
 
 
+function parseGeometry(value: unknown): OfficialSpatialArea["geometry"] | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try { return parseGeometry(JSON.parse(value)); } catch { return null; }
+  }
+  if (typeof value !== "object") return null;
+  const candidate = value as any;
+  if (candidate.type === "Polygon" || candidate.type === "MultiPolygon") {
+    return Array.isArray(candidate.coordinates)
+      ? { type: candidate.type, coordinates: candidate.coordinates }
+      : null;
+  }
+  if (candidate.geometry) return parseGeometry(candidate.geometry);
+  if (candidate.GEOM4326) return parseGeometry(candidate.GEOM4326);
+  if (candidate.geometry4326) return parseGeometry(candidate.geometry4326);
+  if (candidate.coordinates && Array.isArray(candidate.coordinates)) {
+    const first = candidate.coordinates?.[0]?.[0];
+    const firstPair = Array.isArray(first?.[0]) ? first[0] : first;
+    if (Array.isArray(firstPair) && firstPair.length >= 2
+      && Number.isFinite(Number(firstPair[0]))
+      && Number.isFinite(Number(firstPair[1]))) {
+      const isMulti = Array.isArray(candidate.coordinates?.[0]?.[0]?.[0]);
+      return { type: isMulti ? "MultiPolygon" : "Polygon", coordinates: candidate.coordinates };
+    }
+  }
+  return null;
+}
+
+function findSpatialAreas(value: any, depth = 0): Array<{ row: any; geometry: OfficialSpatialArea["geometry"] }> {
+  if (depth > 6 || value == null) return [];
+  if (Array.isArray(value)) {
+    const found: Array<{ row: any; geometry: OfficialSpatialArea["geometry"] }> = [];
+    for (const row of value) {
+      const geometry = parseGeometry(row);
+      if (geometry) found.push({ row, geometry });
+      else found.push(...findSpatialAreas(row, depth + 1));
+    }
+    return found;
+  }
+  if (typeof value === "object") {
+    const geometry = parseGeometry(value);
+    if (geometry) return [{ row: value, geometry }];
+    return Object.values(value).flatMap((item) => findSpatialAreas(item, depth + 1));
+  }
+  return [];
+}
 function findSpatialRows(value: any, depth = 0): any[] {
   if (depth > 5 || value == null) return [];
   if (Array.isArray(value)) {
@@ -377,6 +436,78 @@ function convertTwd97Path(
   return coordinates;
 }
 
+export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Transportation Department official sidewalks and marked sidewalks (WheelRoute)";
+  try {
+    const responses = await Promise.all([
+      fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility11, 30_000),
+      fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility12, 30_000),
+    ]);
+    const areas: OfficialSpatialArea[] = [];
+    const seen = new Set<string>();
+
+    responses.forEach(({ text }, responseIndex) => {
+      const facilityType = responseIndex === 0 ? 11 : 12;
+      let payload: any;
+      try { payload = JSON.parse(text); } catch { return; }
+
+      for (const { row, geometry } of findSpatialAreas(payload)) {
+        const name = String(
+          row?.facilityName
+          ?? row?.name
+          ?? row?.NAME
+          ?? row?.設施名稱
+          ?? (facilityType === 11 ? "Sidewalk" : "Marked sidewalk"),
+        );
+        const id = String(
+          row?.ID
+          ?? row?.id
+          ?? row?.KEYID
+          ?? row?.keyid
+          ?? (String(facilityType) + "|" + name + "|" + String(areas.length)),
+        );
+        const uniqueId = String(facilityType) + "|" + id;
+        if (seen.has(uniqueId)) continue;
+        seen.add(uniqueId);
+
+        const widthCm = Number(row?.width ?? row?.WTH ?? row?.RDLBWT ?? row?.寬度);
+        const slopePct = Number(row?.slope ?? row?.SLOPE ?? row?.坡度);
+
+        areas.push({
+          id: uniqueId,
+          name,
+          geometry,
+          properties: {
+            facilityType,
+            widthCm: Number.isFinite(widthCm) ? widthCm : null,
+            slopePct: Number.isFinite(slopePct) ? slopePct : null,
+            roadId: row?.roadId ?? row?.ROADID ?? row?.RDCODE ?? null,
+            lengthM: Number(row?.length ?? row?.LENGTH ?? row?.RDLBLG) || null,
+          },
+        });
+      }
+    });
+
+    return {
+      points: [],
+      areas,
+      source,
+      status: areas.length ? "available" : "empty",
+      retrievedAt,
+      sourceUpdatedAt: responses.map((response) => response.lastModified).filter(Boolean).sort().pop() || null,
+    };
+  } catch (error: any) {
+    return {
+      points: [],
+      areas: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
 export async function fetchTaipeiBikeLanes(): Promise<OfficialCitywideSourceResult> {
   const retrievedAt = new Date().toISOString();
   const source = "Taipei City official urban bicycle lane GIS data";

@@ -154,6 +154,9 @@ export function AssessmentWorkspace({
               <div className={`shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${gradeClass(grade)}`}>
                 <span className="text-2xl leading-none font-black">{clsScore ?? '—'}</span>
                 <span className="text-xs font-bold">{grade ?? 'N/A'}</span>
+                {assessment?.scores.overallMode === 'estimated' && (
+                  <span className="text-[10px] font-semibold text-amber-300">推估</span>
+                )}
               </div>
             </div>
           </>
@@ -316,7 +319,7 @@ export function AssessmentWorkspace({
                   </div>
                 </div>
                 <div className="text-[10px] leading-relaxed text-slate-500 mt-2">
-                  The baseline is calculated from source-backed external data. Field observations are a separate bounded adjustment; they do not rewrite the external-data score.
+                  The baseline uses source-backed observations when available. When a category has no local observation, StreetLens may use a clearly marked estimate derived from persisted real reference data; it does not fabricate street-level facts. Field observations are a separate bounded adjustment.
                 </div>
                 {fieldAdjustment && fieldAdjustment.ratedItemCount > 0 && (
                   <div className="mt-3 pt-3 border-t border-white/10 space-y-2">

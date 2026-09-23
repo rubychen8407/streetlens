@@ -1085,13 +1085,42 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
     const scopeKey = await registerAssessmentTarget(lat, lng);
     if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured" });
-    const [google, osm] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey)]);
-    if (!google && !osm) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
-    const pois = mergePois(lat, lng, [google?.payload, osm?.payload].filter(Boolean));
-    return res.json({ pois, dataStatus: "cached", scopeKey, sources: [
-      google ? { source: google.sourceKey, status: google.status, retrievedAt: google.fetchedAt } : { source: "google_places", status: "unavailable" },
-      osm ? { source: osm.sourceKey, status: osm.status, retrievedAt: osm.fetchedAt } : { source: "openstreetmap", status: "unavailable" },
-    ] });
+    const [googleExact, osmExact] = await Promise.all([
+      getCachedSnapshot("google_places", scopeKey),
+      getCachedSnapshot("openstreetmap", scopeKey),
+    ]);
+    const [googleNearby, osmNearby] = await Promise.all([
+      getNearbyCachedSnapshots("google_places", lat, lng, 1000, 6),
+      getNearbyCachedSnapshots("openstreetmap", lat, lng, 1000, 6),
+    ]);
+    const googleSources = [
+      ...(googleExact ? [googleExact] : []),
+      ...googleNearby.filter((item) => item.scopeKey !== scopeKey),
+    ];
+    const osmSources = [
+      ...(osmExact ? [osmExact] : []),
+      ...osmNearby.filter((item) => item.scopeKey !== scopeKey),
+    ];
+    if (!googleSources.length && !osmSources.length) {
+      return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
+    }
+    const pois = mergePois(
+      lat,
+      lng,
+      [
+        ...googleSources.map((item) => item.payload),
+        ...osmSources.map((item) => item.payload),
+      ],
+    );
+    return res.json({
+      pois,
+      dataStatus: "cached",
+      scopeKey,
+      sources: [
+        ...googleSources.map((item) => ({ source: item.sourceKey, status: item.status, retrievedAt: item.fetchedAt })),
+        ...osmSources.map((item) => ({ source: item.sourceKey, status: item.status, retrievedAt: item.fetchedAt })),
+      ],
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to load cached POIs" });
   }
@@ -1366,23 +1395,28 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     await Promise.all(sourceKeys.map(async (key, index) => {
       const exact = exactCached[index];
-      if (exact) {
-        snapshots[key] = exact;
-        snapshotOrigins[key] = { scopeKey: exact.scopeKey, scopeDistanceMeters: 0, reused: false };
-        return;
-      }
+
       if (!nearbyCacheSources.has(key)) {
+        snapshots[key] = exact;
+        if (exact) {
+          snapshotOrigins[key] = { scopeKey: exact.scopeKey, scopeDistanceMeters: 0, reused: false };
+        }
+        return;
+      }
+
+      const nearby = await getNearbyCachedSnapshots(key, lat, lng, 1000, key === "taipei_green" || key === "taipei_safety" ? 3 : 6);
+      const candidates = [
+        ...(exact ? [exact] : []),
+        ...nearby.filter((item) => item.scopeKey !== scopeKey),
+      ];
+
+      if (!candidates.length) {
         snapshots[key] = null;
         return;
       }
 
-      const nearby = await getNearbyCachedSnapshots(key, lat, lng, 1000, 6);
-      if (!nearby.length) {
-        snapshots[key] = null;
-        return;
-      }
-
-      const mergedPayload = nearby.reduce((merged: any, cached: any) => {
+      const primary = candidates[0];
+      const mergedPayload = candidates.reduce((merged: any, cached: any) => {
         if (key === "google_places" || key === "openstreetmap") {
           merged.pois = [...(merged.pois || []), ...(Array.isArray(cached.payload?.pois) ? cached.payload.pois : [])];
         } else if (key === "tdx_transit") {
@@ -1397,15 +1431,15 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         return merged;
       }, {});
 
-      const primary = nearby[0];
       snapshots[key] = {
         ...primary,
         payload: mergedPayload,
+        status: candidates.some((item) => item.status === "available") ? "available" : primary.status,
       };
       snapshotOrigins[key] = {
-        scopeKey: nearby.map((item) => item.scopeKey).join(","),
-        scopeDistanceMeters: Number(primary.scopeDistanceMeters),
-        reused: true,
+        scopeKey: candidates.map((item) => item.scopeKey).join(","),
+        scopeDistanceMeters: Number(primary.scopeDistanceMeters ?? 0),
+        reused: candidates.length > 1 || Number(primary.scopeDistanceMeters ?? 0) > 0,
       };
     });
 
@@ -1482,7 +1516,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const sourceNames = [...new Set(pois.map((poi: any) => poi.source).filter(Boolean))];
     const c2PoiMetrics = {
       supermarketDist: nearest("supermarket"), convenienceDist: nearest("convenience"), clinicDist: nearest("clinic"), schoolDist: nearest("school"), bankPostDist: nearest("bank_post"),
-      poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length || undefined,
+      poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length,
       source: sourceNames.length ? sourceNames.join(" + ") : "unavailable", method: "calculated" as const,
       confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
       status: sourceNames.length ? "available" as const : "empty" as const,
@@ -1543,7 +1577,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         ? Number(parkTreeCount800m) / GREEN_OBSERVATION_AREA_KM2
         : undefined,
       nearestParkDist,
-      parkCount800m: parkPois.length || undefined,
+      parkCount800m: parkPois.length,
       source: greenData.source || "Taipei City Parks and Street Trees dataset",
       method: "calculated" as const,
       confidence: greenData.status === "available" ? "high" as const : "low" as const,

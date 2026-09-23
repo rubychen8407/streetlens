@@ -80,6 +80,7 @@ export default function App() {
 
   // Source-backed assessment state. Scores are returned by the backend only.
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
+  const [fieldAdjustment, setFieldAdjustment] = useState<{ baselineCls: number | null; adjustedCls: number | null; adjustment: number } | null>(null);
   const [c1, setC1] = useState<C1Data>({ crimeRate: null, accidentRate: null, hazardLevel: null, wCrime: 0.333, wAccident: 0.333, wHazard: 0.333, score: null });
   const [c2, setC2] = useState<C2Data>({ supermarketDist: null, convenienceDist: null, clinicDist: null, schoolDist: null, bankPostDist: null, decayBeta: null, poiDensityCount: null, score: null });
   const [c3, setC3] = useState<C3Data>({ mrtOrRailDist: null, busStopDist: null, busFrequencyScore: null, walkabilityScore: null, bikeLaneScore: null, wTransit: 0.4, wWalk: 0.35, wBike: 0.25, score: null });
@@ -100,7 +101,8 @@ export default function App() {
   });
 
   // Never calculate scores in the browser. The backend is the single source of truth.
-  const clsScore = assessment?.scores.overall ?? null;
+  const clsScore = fieldAdjustment?.adjustedCls ?? assessment?.scores.overall ?? null;
+  const baselineClsScore = assessment?.scores.overall ?? null;
   const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
   const baselineScores = { cls: clsScore, c1: assessment?.scores.c1.score ?? null, c2: assessment?.scores.c2.score ?? null, c3: assessment?.scores.c3.score ?? null, c4: assessment?.scores.c4.score ?? null, c5: assessment?.scores.c5.score ?? null };
 
@@ -168,6 +170,7 @@ export default function App() {
       if (!res.ok) throw new Error('assessment request failed: ' + res.status);
       const data: StreetAssessmentResponse = await res.json();
       setAssessment(data);
+      setFieldAdjustment(null);
       setBaselineSummary(data.dataSources.length ? '資料來源：' + data.dataSources.join('、') : '資料來源資訊不足');
       const factor = (name: string) => data.factors.find((item) => item.indicator === name)?.value ?? null;
       setC1((prev) => ({ ...prev, accidentRate: factor('trafficAccidentCount500m'), score: data.scores.c1.score }));
@@ -380,7 +383,25 @@ export default function App() {
     );
   };
 
-  const handleSaveAssessment = useCallback((name: string, observationRatings: Record<string, number>, notes: string) => {
+  const handleSaveAssessment = useCallback(async (name: string, observationRatings: Record<string, number>, notes: string) => {
+    let adjustment = fieldAdjustment;
+    if (baselineClsScore != null || Object.keys(observationRatings).length > 0) {
+      try {
+        const response = await fetch('/api/assessment/field-adjustment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ baselineCls: baselineClsScore, ratings: observationRatings }),
+        });
+        if (!response.ok) throw new Error('field adjustment request failed: ' + response.status);
+        adjustment = await response.json();
+        setFieldAdjustment(adjustment);
+      } catch (error) {
+        console.warn('Field observation adjustment error:', error);
+      }
+    }
+
+    const savedClsScore = adjustment?.adjustedCls ?? baselineClsScore;
+    const savedGrade = savedClsScore == null ? null : savedClsScore >= 90 ? 'S' : savedClsScore >= 80 ? 'A' : savedClsScore >= 70 ? 'B' : savedClsScore >= 60 ? 'C' : 'D';
     const entry: SavedLocation = {
       id: `saved_${crypto.randomUUID()}`,
       name,
@@ -388,8 +409,10 @@ export default function App() {
       district,
       city,
       coords: targetLocation,
-      clsScore,
-      grade: clsGrade,
+      clsScore: savedClsScore,
+      baselineClsScore,
+      fieldAdjustment: adjustment?.adjustment ?? 0,
+      grade: savedGrade,
       scores: {
         c1: assessment?.scores.c1.score ?? null,
         c2: assessment?.scores.c2.score ?? null,
@@ -411,7 +434,7 @@ export default function App() {
       try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
       return next;
     });
-  }, [streetName, district, city, targetLocation, clsScore, clsGrade, assessment, c1, c2, c3, c4, c5, weights]);
+  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, assessment, c1, c2, c3, c4, c5, weights]);
 
   const handleToggleFavorite = useCallback(() => {
     const key = favoriteKey(targetLocation, streetName);

@@ -352,6 +352,8 @@ export interface StreetAssessmentResponse {
     youBikeAvailableBikes: number | null;
     youBikeAvailableDocks: number | null;
     bikeLaneLength500m: number;
+    sidewalkCoverage500mPct: number | null;
+    sidewalkFeatureCount500m: number;
     medicalFacilityNearestDistance: number | null;
     busStopNearestDistance: number | null;
     libraryCount800m: number;

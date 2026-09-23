@@ -44,6 +44,7 @@ interface AssessmentWorkspaceProps {
   isGeneratingAiExplanation: boolean;
   aiExplanationError: string | null;
   onGenerateAiExplanation: () => void;
+  pendingAssessmentSources: string[];
 }
 
 function formatFreshness(timestamp?: string) {
@@ -70,6 +71,7 @@ export function AssessmentWorkspace({
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
   activeSavedAssessmentId, aiExplanation, isGeneratingAiExplanation, aiExplanationError, onGenerateAiExplanation,
+  pendingAssessmentSources,
 }: AssessmentWorkspaceProps) {
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
@@ -215,6 +217,20 @@ export function AssessmentWorkspace({
                   <div className="text-[10px] leading-relaxed text-slate-600">
                     CLS is calculated from the source-backed assessment model. Field observations are recorded separately and are not silently added to the external-data score.
                   </div>
+                </div>
+              )}
+              {!assessment && (pendingAssessmentSources.length > 0 || baselineSummary) && (
+                <div className="mb-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-3">
+                  <div className="text-xs font-bold text-amber-100">External data status</div>
+                  <div className="mt-1 text-[10px] leading-relaxed text-slate-500">{baselineSummary}</div>
+                  {pendingAssessmentSources.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {pendingAssessmentSources.map(source => (
+                        <span key={source} className="rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1 text-[9px] text-slate-500">{source}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 text-[9px] leading-relaxed text-slate-600">Scoring data is read from persisted source snapshots only. No placeholder values are shown while background refresh is pending.</div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
@@ -465,7 +481,7 @@ export function AssessmentWorkspace({
 
                 {!activeSavedAssessmentId && (
                   <div className="mt-2 text-[10px] text-slate-600">
-                    Save this assessment to Cloud SQL before generating a grounded explanation.
+                    Save this assessment to PostgreSQL before generating a grounded explanation.
                   </div>
                 )}
 

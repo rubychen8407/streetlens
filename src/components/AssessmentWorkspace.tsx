@@ -32,6 +32,17 @@ interface AssessmentWorkspaceProps {
 
 const ratingLabels = ['Poor', 'Fair', 'Good', 'Great'];
 
+function formatFreshness(timestamp?: string) {
+  if (!timestamp) return 'Not retrieved';
+  const time = new Date(timestamp).getTime();
+  if (!Number.isFinite(time)) return 'Unknown freshness';
+  const ageHours = Math.max(0, (Date.now() - time) / 3600000);
+  if (ageHours < 1) return 'Updated <1h ago';
+  if (ageHours < 24) return `Updated ${Math.floor(ageHours)}h ago`;
+  const ageDays = Math.floor(ageHours / 24);
+  return ageDays === 1 ? 'Updated 1d ago' : `Updated ${ageDays}d ago`;
+}
+
 function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
   if (grade === 'S' || grade === 'A') return 'text-emerald-300 bg-emerald-400/15 border-emerald-400/30';
   if (grade === 'B') return 'text-sky-300 bg-sky-400/15 border-sky-400/30';
@@ -136,7 +147,14 @@ export function AssessmentWorkspace({
                   <div key={label} className="rounded-2xl bg-white/[0.045] border border-white/5 p-3">
                     <div className="text-[11px] text-slate-400">{label} · {category}</div>
                     <div className="mt-1 text-sm font-bold">{item?.value != null ? `${item.value} ${item.unit}` : 'N/A'}</div>
-                    <div className={`mt-1 text-[10px] ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-500'}`}>{item?.status === 'available' ? 'Source data available' : 'No observation for this location'}</div>
+                    <div className={`mt-1 text-[10px] ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {item?.status === 'available' ? 'Source data available' : 'Data unavailable'}
+                    </div>
+                    {item && (
+                      <div className="mt-1 text-[10px] text-slate-600 truncate" title={`${item.source || 'Unknown source'} · ${item.retrievedAt || 'not retrieved'}`}>
+                        {item.source || 'Unknown source'} · {formatFreshness(item.retrievedAt)}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -244,11 +262,28 @@ export function AssessmentWorkspace({
               <h2 className="text-xl font-bold">Settings</h2>
               <p className="text-xs text-slate-500 mt-1">System and data-source diagnostics live here, away from the assessment workflow.</p>
             </div>
-            <button onClick={onOpenDataLogs} className="w-full p-4 rounded-2xl border border-white/10 bg-white/[0.04] flex items-center gap-3 text-left hover:bg-white/[0.07]">
-              <Database className="w-5 h-5 text-sky-300" />
-              <div className="flex-1"><div className="text-sm font-semibold">Data sources & system status</div><div className="text-[11px] text-slate-500 mt-1">Connection, snapshot freshness, source provenance and Cloud SQL status.</div></div>
-              <ChevronRight className="w-4 h-4 text-slate-500" />
-            </button>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <div className="flex items-center gap-3">
+                <Database className="w-5 h-5 text-sky-300" />
+                <div>
+                  <div className="text-sm font-semibold">Data sources & system status</div>
+                  <div className="text-[11px] text-slate-500 mt-1">Read-only diagnostics for the currently loaded assessment.</div>
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {(assessment?.sourceStatus || []).map(source => (
+                  <div key={source.source} className="flex items-center justify-between gap-3 text-[10px]">
+                    <span className="text-slate-400 truncate">{source.source}</span>
+                    <span className={source.status === 'available' ? 'text-emerald-400' : 'text-slate-500'}>
+                      {source.status} · {formatFreshness(source.retrievedAt || undefined)}
+                    </span>
+                  </div>
+                ))}
+                {(!assessment?.sourceStatus || assessment.sourceStatus.length === 0) && (
+                  <div className="text-[10px] text-slate-500">No source status is available for this assessment yet.</div>
+                )}
+              </div>
+            </div>
             <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.04]">
               <div className="text-xs font-bold text-slate-300">Assessment model</div>
               <div className="text-[11px] text-slate-500 mt-1">External data and field observations remain distinct. Score changes should be persisted as explicit observation adjustments.</div>

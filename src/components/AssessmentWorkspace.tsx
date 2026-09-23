@@ -319,6 +319,95 @@ export function AssessmentWorkspace({
                 <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder="What did you observe? e.g. sidewalk blocked, good shade, heavy traffic..." className="mt-2 w-full rounded-2xl bg-white/5 border border-white/10 p-3 text-xs outline-none focus:border-sky-400/50 resize-none placeholder:text-slate-600" />
               </section>
 
+              <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-slate-200">Evidence</div>
+                    <div className="text-[10px] text-slate-500 mt-1">Photos are stored as evidence only. They never change CLS.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => evidenceInputRef.current?.click()}
+                    disabled={evidenceDrafts.length >= 6}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sky-500/15 border border-sky-400/20 text-[10px] font-bold text-sky-200 disabled:opacity-40"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    Add photo
+                  </button>
+                  <input
+                    ref={evidenceInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture="environment"
+                    className="hidden"
+                    onChange={event => {
+                      onAddEvidencePhotos(event.target.files);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                </div>
+
+                {evidenceDrafts.length > 0 && (
+                  <div className="mt-3 space-y-2.5">
+                    {evidenceDrafts.map(photo => (
+                      <div key={photo.id} className="rounded-xl border border-white/5 bg-black/10 p-2">
+                        <div className="flex gap-2.5">
+                          <div className="relative w-20 h-20 shrink-0 overflow-hidden rounded-lg bg-black/20">
+                            <img src={photo.previewUrl} alt={photo.fileName} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => onRemoveEvidencePhoto(photo.id)}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white"
+                              aria-label="Remove photo"
+                              title="Remove photo"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[10px] text-slate-400 truncate">{photo.fileName}</div>
+                            <div className="text-[9px] text-slate-600 mt-0.5">Captured {new Date(photo.capturedAt).toLocaleString('zh-TW')} · selected street location</div>
+                            <input
+                              type="text"
+                              value={photo.note}
+                              onChange={event => onUpdateEvidenceNote(photo.id, event.target.value)}
+                              placeholder="Add a note for this photo"
+                              className="mt-2 w-full rounded-lg bg-white/5 border border-white/10 px-2.5 py-2 text-[10px] text-white placeholder:text-slate-600 outline-none focus:border-sky-400/30"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {selectedSavedEvidence.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Saved with this session</div>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {selectedSavedEvidence.filter(item => item.type === 'photo').map(item => (
+                        <div key={item.id} className="relative aspect-square overflow-hidden rounded-lg bg-black/20 border border-white/5">
+                          {item.storageKey && savedEvidenceUrls[item.storageKey] ? (
+                            <img src={savedEvidenceUrls[item.storageKey]} alt="Saved assessment evidence" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-600">Photo unavailable</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {selectedSavedEvidence.filter(item => item.type === 'note' && item.note).map(item => (
+                      <div key={item.id} className="mt-2 rounded-lg bg-white/[0.03] px-2.5 py-2 text-[10px] text-slate-400">
+                        {item.note}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {evidenceError && <div className="mt-2 text-[10px] text-rose-300">{evidenceError}</div>}
+                {evidenceDrafts.length >= 6 && <div className="mt-2 text-[9px] text-slate-600">Maximum 6 photos per assessment.</div>}
+              </section>
+
               <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3">
                 <div className="flex items-center gap-2 text-xs font-bold">
                   <MapPin className="w-4 h-4 text-sky-300" />

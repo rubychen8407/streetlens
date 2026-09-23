@@ -539,6 +539,8 @@ export async function fetchTaipeiFloodHazardDataForTargets(
 
   if (!targets.length) return resultByScope;
 
+  lastFetchedFloodPolygons = [];
+
   const targetBounds = targets.map((target) => {
     const radiusLat = 0.01;
     const radiusLng = 0.01 / Math.max(0.1, Math.cos(target.latitude * Math.PI / 180));

@@ -303,6 +303,38 @@ export function FloatingControls({
           )}
         </div>
 
+        {/* Center CLS score: always visible without creating another entry point */}
+        <div className="flex-1 flex justify-center min-w-0 px-1 pointer-events-none">
+          <div
+            className={`h-10 px-3 sm:px-3.5 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center gap-2 text-white pointer-events-auto ${
+              clsScore == null ? 'opacity-80' : ''
+            }`}
+            title="CLS 分數"
+            aria-label={clsScore == null ? 'CLS 分數暫無' : `CLS 分數 ${clsScore.toFixed(0)}，等級 ${grade || '—'}`}
+          >
+            <span className="text-[10px] sm:text-[11px] font-semibold tracking-wide text-slate-400">CLS</span>
+            <span
+              className={`text-sm sm:text-base font-bold font-mono leading-none ${
+                grade === 'S' || grade === 'A'
+                  ? 'text-emerald-400'
+                  : grade === 'B'
+                    ? 'text-sky-400'
+                    : grade === 'C'
+                      ? 'text-amber-400'
+                      : grade === 'D'
+                        ? 'text-rose-400'
+                        : 'text-slate-300'
+              }`}
+            >
+              {clsScore == null ? '—' : clsScore.toFixed(0)}
+            </span>
+            {grade && (
+              <span className="text-[10px] font-bold text-slate-400 border-l border-white/10 pl-2">
+                {grade}
+              </span>
+            )}
+          </div>
+        </div>
         {/* Top-Right account menu: navigation lives here, not inside assessment */}
         <div className="relative">
           <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="帳戶" aria-label="帳戶">

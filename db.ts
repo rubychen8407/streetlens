@@ -736,6 +736,7 @@ export interface ExternalSpatialPointRecord {
   name: string;
   lat: number;
   lng: number;
+  distanceMeters: number;
   properties: Record<string, unknown>;
   fetchedAt: string;
   sourceUpdatedAt: string | null;
@@ -790,8 +791,6 @@ export async function replaceExternalSpatialPoints(
           sourceVersion,
         );
       });
-      // NOTE: 9 placeholders per point; the offset above intentionally uses
-      // 9 fields so metadata remains explicit and query-safe.
       const correctedRows = batch.map((_point, index) => {
         const offset = index * 9;
         return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
@@ -871,6 +870,7 @@ export async function getNearbyExternalSpatialPoints(
       name: String(row.name || row.id),
       lat: Number(row.lat),
       lng: Number(row.lng),
+      distanceMeters: Number(row.distanceMeters),
       properties: row.properties || {},
       fetchedAt: new Date(row.fetchedAt).toISOString(),
       sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
@@ -878,10 +878,9 @@ export async function getNearbyExternalSpatialPoints(
     }));
 }
 
-export async function getSpatialPointMetricReference(
+export async function getSpatialPointCountReference(
   sourceKey: string,
   maxDistanceMeters = 300,
-  radiusMode: "count" | "nearest" = "count",
   excludeScopeKey?: string,
 ): Promise<number[]> {
   if (!dataDb) return [];
@@ -890,18 +889,14 @@ export async function getSpatialPointMetricReference(
 
   for (const target of targets) {
     if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const rows = await getNearbyExternalSpatialPoints(sourceKey, target.latitude, target.longitude, maxDistanceMeters, 5000);
-    if (radiusMode === "nearest") {
-      if (rows.length) {
-        const nearest = rows.reduce((best, row) => {
-          const distance = Math.sqrt((row.lat - target.latitude) ** 2 + (row.lng - target.longitude) ** 2);
-          return Math.min(best, distance);
-        }, Number.POSITIVE_INFINITY);
-        if (Number.isFinite(nearest)) values.push(nearest);
-      }
-    } else {
-      values.push(rows.length);
-    }
+    const rows = await getNearbyExternalSpatialPoints(
+      sourceKey,
+      target.latitude,
+      target.longitude,
+      maxDistanceMeters,
+      5000,
+    );
+    values.push(rows.length);
   }
 
   return values;

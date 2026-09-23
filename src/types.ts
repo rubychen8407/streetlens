@@ -100,8 +100,13 @@ export interface FieldObservationDefinition {
 
 // Legacy compatibility shape for existing callers. New assessment UI uses
 // FieldObservationDefinition so an unrated item is never implicitly selected.
-export interface FieldCheckItem extends FieldObservationDefinition {
+export interface FieldCheckItem {
+  id: string;
+  category: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
+  title: string;
+  description: string;
   checked: boolean;
+  scoreImpact: number | null;
 }
 
 export interface FieldObservationAdjustment {

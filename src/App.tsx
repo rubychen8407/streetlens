@@ -84,6 +84,11 @@ export default function App() {
   // Field observation draft
   const [observationRatings, setObservationRatings] = useState<Record<string, number>>({});
   const [fieldNotes, setFieldNotes] = useState<string>('');
+  const [evidenceDrafts, setEvidenceDrafts] = useState<EvidencePhotoDraft[]>([]);
+  const [selectedSavedEvidence, setSelectedSavedEvidence] = useState<AssessmentEvidence[]>([]);
+  const [savedEvidenceUrls, setSavedEvidenceUrls] = useState<Record<string, string>>({});
+  const savedEvidenceUrlsRef = useRef<Record<string, string>>({});
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
 
   // Source-backed assessment state. Scores are returned by the backend only.
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);

@@ -16,12 +16,129 @@ const TAIPEI_RESIDENTIAL_THEFT_URL =
 const TAIPEI_ACCIDENT_URL =
   "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=d4aaaaa6-d03e-4539-945b-cdbd9387007d";
 
+const TAIPEI_HISTORICAL_FLOOD_URL =
+  "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=dbed5503-d5fb-46d5-8701-7b591ac38c35";
+
 export const SAFETY_RESOURCE_URLS = {
   taipeiTrafficAccidentPoints2025: TAIPEI_ACCIDENT_URL,
   taipeiResidentialTheft: TAIPEI_RESIDENTIAL_THEFT_URL,
+  taipeiHistoricalFlood: TAIPEI_HISTORICAL_FLOOD_URL,
 };
 
 
+
+export interface HistoricalFloodEvent {
+  eventDate: string | null;
+  townName: string | null;
+  address: string | null;
+  depthCm: number | null;
+  area: number | null;
+  source: string;
+  coordinates: Array<[number, number]>;
+}
+
+function extractKmlValue(placemark: string, names: string[]): string | null {
+  for (const name of names) {
+    const simple = new RegExp(
+      `<SimpleData[^>]*name=["']${name}["'][^>]*>([\\s\\S]*?)</SimpleData>`,
+      "i",
+    ).exec(placemark);
+    if (simple?.[1]) return simple[1].trim();
+
+    const data = new RegExp(
+      `<Data[^>]*name=["']${name}["'][^>]*>[\\s\\S]*?<value>([\\s\\S]*?)</value>`,
+      "i",
+    ).exec(placemark);
+    if (data?.[1]) return data[1].trim();
+  }
+  return null;
+}
+
+function parseKmlPolygonEvents(kml: string, source: string): HistoricalFloodEvent[] {
+  const events: HistoricalFloodEvent[] = [];
+  const placemarks = kml.match(/<Placemark[\\s\\S]*?<\\/Placemark>/gi) || [];
+
+  for (const placemark of placemarks) {
+    const eventDate = extractKmlValue(placemark, ["FDATE", "fdate", "date"]);
+    const townName = extractKmlValue(placemark, ["TOWN_NAME", "town_name", "town"]);
+    const address = extractKmlValue(placemark, ["ADDRESS", "address"]);
+    const depthRaw = extractKmlValue(placemark, ["Depth", "DEPTH", "depth", "積水深度"]);
+    const areaRaw = extractKmlValue(placemark, ["area", "AREA"]);
+
+    const outer =
+      /<outerBoundaryIs[\\s\\S]*?<coordinates[^>]*>([\\s\\S]*?)<\\/coordinates>[\\s\\S]*?<\\/outerBoundaryIs>/i.exec(placemark)?.[1]
+      || /<coordinates[^>]*>([\\s\\S]*?)<\\/coordinates>/i.exec(placemark)?.[1];
+
+    if (!outer) continue;
+
+    const coordinates = outer
+      .trim()
+      .split(/\\s+/)
+      .map((token) => token.split(",").map(Number))
+      .filter((pair) => Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
+      .map(([lng, lat]) => [lng, lat] as [number, number]);
+
+    if (coordinates.length < 3) continue;
+
+    const depthCm = depthRaw ? Number(depthRaw.replace(/,/g, "")) : null;
+    const area = areaRaw ? Number(areaRaw.replace(/,/g, "")) : null;
+
+    events.push({
+      eventDate: eventDate || null,
+      townName: townName || null,
+      address: address || null,
+      depthCm: Number.isFinite(depthCm) ? depthCm : null,
+      area: Number.isFinite(area) ? area : null,
+      source,
+      coordinates,
+    });
+  }
+
+  return events;
+}
+
+export async function fetchTaipeiHistoricalFloodEvents(): Promise<{
+  events: HistoricalFloodEvent[];
+  retrievedAt: string;
+  status: "available" | "empty" | "error" | "timeout";
+  source: string;
+  error?: string;
+}> {
+  const source = "Taipei City Water Resources Department historical inundation records";
+  const retrievedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    const response = await fetch(TAIPEI_HISTORICAL_FLOOD_URL, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.google-earth.kml+xml,application/xml,text/xml,*/*",
+        "User-Agent": "StreetLens/1.0",
+      },
+    });
+    if (!response.ok) throw new Error(`Taipei historical flood KML HTTP ${response.status}`);
+
+    const kml = await response.text();
+    const events = parseKmlPolygonEvents(kml, source);
+    return {
+      events,
+      retrievedAt,
+      status: events.length ? "available" : "empty",
+      source,
+    };
+  } catch (error: any) {
+    return {
+      events: [],
+      retrievedAt,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      source,
+      error: error?.message || String(error),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export interface CrimeSourceResult {
   thefts: any[];

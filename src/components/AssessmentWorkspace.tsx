@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2 } from 'lucide-react';
-import { FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
+import { useMemo, useRef, useState } from 'react';
+import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, X } from 'lucide-react';
+import { AssessmentEvidence, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 
 type View = 'assessment' | 'saved' | 'settings';
@@ -32,6 +32,13 @@ interface AssessmentWorkspaceProps {
   onToggleFavorite: () => void;
   favoriteLocationKeys: string[];
   isSaving: boolean;
+  evidenceDrafts: EvidencePhotoDraft[];
+  onAddEvidencePhotos: (files: FileList | null) => void;
+  onRemoveEvidencePhoto: (id: string) => void;
+  onUpdateEvidenceNote: (id: string, note: string) => void;
+  selectedSavedEvidence: AssessmentEvidence[];
+  savedEvidenceUrls: Record<string, string>;
+  evidenceError: string | null;
 }
 
 function formatFreshness(timestamp?: string) {
@@ -56,6 +63,7 @@ export function AssessmentWorkspace({
   view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
+  evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
 }: AssessmentWorkspaceProps) {
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
@@ -64,6 +72,7 @@ export function AssessmentWorkspace({
   const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
   const [showScoreDetails, setShowScoreDetails] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const evidenceInputRef = useRef<HTMLInputElement | null>(null);
 
   const factor = (indicator: string) => assessment?.factors.find(item => item.indicator === indicator);
 

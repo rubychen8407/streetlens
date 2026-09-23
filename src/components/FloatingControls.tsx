@@ -325,10 +325,6 @@ export function FloatingControls({
         </div>
 
       </div>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-          </button>
-        )}
-      </div>
 
       {/* BOTTOM FLOATING CONTROLS (Exactly matching Apple Maps layout) */}
       <div className="flex flex-col gap-3 pointer-events-auto pb-1">

@@ -17,8 +17,8 @@ const refreshUrl = normalizedUrl.endsWith("/api/internal/refresh-data")
   ? normalizedUrl
   : normalizedUrl + "/api/internal/refresh-data";
 
-const timeoutMs = Number(process.env.STREETLENS_REFRESH_TIMEOUT_MS || 120_000);
-const maxAttempts = 4;
+const timeoutMs = Number(process.env.STREETLENS_REFRESH_TIMEOUT_MS || 600_000);
+const maxAttempts = 3;
 
 async function requestRefresh(attempt: number): Promise<Response> {
   const controller = new AbortController();
@@ -34,7 +34,7 @@ async function requestRefresh(attempt: number): Promise<Response> {
       signal: controller.signal,
     });
   } catch (error: any) {
-    if (attempt >= maxAttempts) throw error;
+    if (error?.name === "AbortError" || attempt >= maxAttempts) throw error;
     const delayMs = 500 * 2 ** (attempt - 1);
     console.warn(`Refresh request failed (attempt ${attempt}/${maxAttempts}): ${error?.message || error}`);
     await new Promise((resolve) => setTimeout(resolve, delayMs));

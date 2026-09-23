@@ -386,7 +386,34 @@ export function calculateAssessment(
     });
   }
 
-  const c1ComponentScores = [accidentScore, floodScore]
+  const streetLightCount = c1SafetyMetrics?.streetLightCount300m;
+  const streetLightReference = c1SafetyMetrics?.streetLightCountReference;
+  const streetLightReferenceSize = streetLightReference?.filter(Number.isFinite).length ?? 0;
+  const streetLightScore = Number.isFinite(Number(streetLightCount))
+    ? (empiricalPercentileScore(Number(streetLightCount), streetLightReference, "higher_is_better")
+      ?? referenceRelativeScore(Number(streetLightCount), streetLightReference, "higher_is_better"))
+    : null;
+  c1Factors.push({
+    category: "C1",
+    indicator: "streetLightCount300m",
+    value: Number.isFinite(Number(streetLightCount)) ? Number(streetLightCount) : null,
+    unit: "lights",
+    direction: "higher_is_better",
+    source: Number.isFinite(Number(streetLightCount))
+      ? (c1SafetyMetrics?.source || "unavailable")
+      : "unavailable",
+    method: Number.isFinite(Number(streetLightCount))
+      ? (c1SafetyMetrics?.method || "calculated")
+      : "calculated",
+    confidence: streetLightScore != null ? "medium" : (Number.isFinite(Number(streetLightCount)) ? "low" : "low"),
+    status: Number.isFinite(Number(streetLightCount)) ? "available" : "unavailable",
+    retrievedAt: c1SafetyMetrics?.retrievedAt,
+    referenceSampleSize: streetLightReferenceSize,
+    scoringMethod: streetLightScore != null && streetLightReferenceSize >= 20 ? "empirical_percentile" : "not_scored",
+    availabilityReason: Number.isFinite(Number(streetLightCount)) ? (streetLightScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
+  });
+
+  const c1ComponentScores = [accidentScore, floodScore, streetLightScore]
     .filter((value): value is number => value !== null);
   const c1Observed: number | null = c1ComponentScores.length
     ? clampScore(average(c1ComponentScores))

@@ -158,16 +158,18 @@ export function AssessmentWorkspace({
                 ))}
               </div>
             </section>}
-            {step === 3 && <section>
-              <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Review & save</label>
+            {step === 3 && <>
+              <section>
+                <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Review & save</label>
               <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3 text-xs text-slate-300">Your observation is ready to be added to the CLS assessment.</div>
-              <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder="What did you observe? e.g. sidewalk blocked, good shade, heavy traffic..." className="mt-2 w-full rounded-2xl bg-white/5 border border-white/10 p-3 text-xs outline-none focus:border-sky-400/50 resize-none placeholder:text-slate-600" />
-            </section>
+                <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder="What did you observe? e.g. sidewalk blocked, good shade, heavy traffic..." className="mt-2 w-full rounded-2xl bg-white/5 border border-white/10 p-3 text-xs outline-none focus:border-sky-400/50 resize-none placeholder:text-slate-600" />
+              </section>
 
-            <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3">
+              <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3">
               <div className="flex items-center gap-2 text-xs font-bold"><MapPin className="w-4 h-4 text-sky-300" /> {targetLocation.lat.toFixed(5)}, {targetLocation.lng.toFixed(5)}</div>
               <div className="text-[10px] text-slate-500 mt-1">Observation will be stored with this location and assessment timestamp.</div>
-            </section>}
+              </section>
+            </>}
           </div>
         )}
 

@@ -62,6 +62,7 @@ export function AssessmentWorkspace({
   const [savedFilter, setSavedFilter] = useState<'all' | 'favorites'>('all');
   const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
   const [showScoreDetails, setShowScoreDetails] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
 
   const grouped = useMemo(() => {
     return ['C1','C2','C3','C4','C5'].map(category => ({
@@ -281,6 +282,40 @@ export function AssessmentWorkspace({
                 <option value="grade">Grade high → low</option>
               </select>
             </div>
+            {compareIds.length > 0 && (
+              <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.05] p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-xs font-bold text-sky-200">Compare assessments</div>
+                    <div className="text-[10px] text-slate-500">Side-by-side records; no ranking is applied.</div>
+                  </div>
+                  <button type="button" onClick={() => setCompareIds([])} className="text-[10px] text-slate-500 hover:text-white">Clear</button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px]">
+                    <tbody>
+                      {[
+                        ['Street', (saved: SavedLocation) => saved.streetName],
+                        ['CLS', (saved: SavedLocation) => saved.clsScore ?? '—'],
+                        ['C1 Safety', (saved: SavedLocation) => saved.scores.c1 ?? '—'],
+                        ['C2 Amenities', (saved: SavedLocation) => saved.scores.c2 ?? '—'],
+                        ['C3 Transit', (saved: SavedLocation) => saved.scores.c3 ?? '—'],
+                        ['C4 Green', (saved: SavedLocation) => saved.scores.c4 ?? '—'],
+                        ['C5 Community', (saved: SavedLocation) => saved.scores.c5 ?? '—'],
+                      ].map(([label, getter]) => (
+                        <tr key={String(label)} className="border-t border-white/5">
+                          <td className="py-1.5 pr-2 text-slate-500 whitespace-nowrap">{String(label)}</td>
+                          {compareIds.map(id => {
+                            const saved = savedLocations.find(item => item.id === id);
+                            return <td key={id} className="py-1.5 px-2 text-slate-200 font-semibold">{saved ? String((getter as (item: SavedLocation) => string | number)(saved)) : '—'}</td>;
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
             {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-500">{savedFilter === 'favorites' ? 'No favorite streets yet.' : 'No saved assessments yet.'}</div>}
             {savedList.map(saved => (
               <div key={saved.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -293,7 +328,17 @@ export function AssessmentWorkspace({
                       <span className="text-[10px] text-slate-500">{new Date(saved.timestamp).toLocaleString('zh-TW')}</span>
                     </div>
                   </button>
-                  <button onClick={() => onDeleteSaved(saved.id)} className="w-8 h-8 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center"><Trash2 className="w-4 h-4" /></button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCompareIds(prev => prev.includes(saved.id) ? prev.filter(id => id !== saved.id) : prev.length < 2 ? [...prev, saved.id] : prev)}
+                      className={`px-2 py-1.5 rounded-lg text-[9px] border ${compareIds.includes(saved.id) ? 'bg-sky-400/15 border-sky-400/30 text-sky-200' : 'bg-white/[0.03] border-white/5 text-slate-500'}`}
+                      title={compareIds.length >= 2 && !compareIds.includes(saved.id) ? 'Compare up to two assessments' : 'Compare'}
+                    >
+                      {compareIds.includes(saved.id) ? 'Selected' : 'Compare'}
+                    </button>
+                    <button onClick={() => onDeleteSaved(saved.id)} className="w-8 h-8 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center" title="Delete assessment"><Trash2 className="w-4 h-4" /></button>
+                  </div>
                 </div>
               </div>
             ))}

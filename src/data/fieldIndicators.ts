@@ -1,4 +1,4 @@
-import { FieldCheckItem, CLSWeights } from '../types';
+import { FieldCheckItem, CLSWeights, FieldObservationDefinition } from '../types';
 
 export const DEFAULT_CLS_WEIGHTS: CLSWeights = {
   wC1: 0.20,
@@ -188,3 +188,28 @@ export const INITIAL_FIELD_CHECKS: FieldCheckItem[] = [
     scoreImpact: 5,
   },
 ];
+
+
+const RATING_SCALE = [1, 2, 3, 4] as const;
+const RATING_LABELS = ['Poor', 'Fair', 'Good', 'Great'] as const;
+
+function toObservationDefinition(item: FieldCheckItem): FieldObservationDefinition {
+  if (item.scoreImpact == null) {
+    throw new Error(`Field observation ${item.id} is missing scoreImpact`);
+  }
+  return {
+    id: item.id,
+    category: item.category,
+    title: item.title,
+    description: item.description,
+    ratingScale: RATING_SCALE,
+    ratingLabels: RATING_LABELS,
+    scoreImpact: item.scoreImpact,
+    evidenceRequirement: 'note_recommended',
+  };
+}
+
+// Single canonical definition used by scoring and the assessment UI. The legacy
+// INITIAL_FIELD_CHECKS remains available for compatibility with older callers.
+export const FIELD_OBSERVATION_DEFINITIONS: FieldObservationDefinition[] =
+  INITIAL_FIELD_CHECKS.map(toObservationDefinition);

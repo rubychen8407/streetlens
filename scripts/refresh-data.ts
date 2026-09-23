@@ -35,6 +35,7 @@ const sourceKeys = [
   "taipei_libraries",
   "taipei_public_toilets",
   "taipei_parks",
+  "taipei_bike_lanes",
 ];
 
 async function requestRefresh(sourceKey: string): Promise<Response> {

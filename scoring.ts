@@ -17,11 +17,17 @@ export interface ScoreFactor {
   referenceSampleSize?: number;
   scoringMethod?: "empirical_percentile" | "raw_observation" | "not_scored";
   availabilityReason?: "insufficient_reference_data" | "source_unavailable" | "no_observation";
+  estimationMethod?: "regional_real_data_prior";
 }
+
+export type ScoreMode = "observed" | "estimated";
 
 export interface CategoryScore {
   score: number | null;
   factors: ScoreFactor[];
+  mode: ScoreMode;
+  estimationMethod?: "regional_real_data_prior";
+  estimationReferenceSampleSize?: number;
 }
 
 export interface AssessmentScores {
@@ -31,6 +37,8 @@ export interface AssessmentScores {
   c4: CategoryScore;
   c5: CategoryScore;
   overall: number | null;
+  overallMode: ScoreMode;
+  estimatedCategoryCount: number;
   weights: Record<Category, number>;
   confidence: "high" | "medium" | "low";
 }
@@ -197,6 +205,41 @@ function overallConfidence(factors: ScoreFactor[]): "high" | "medium" | "low" {
   return avg >= 2.6 ? "high" : avg >= 1.8 ? "medium" : "low";
 }
 
+function medianValue(values: number[] | undefined): number | null {
+  if (!values) return null;
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function referenceRelativeScore(
+  value: number | undefined,
+  referenceValues: number[] | undefined,
+  direction: "higher_is_better" | "lower_is_better",
+): number | null {
+  if (!Number.isFinite(value)) return null;
+  const median = medianValue(referenceValues);
+  if (median == null) return null;
+
+  const numericValue = Number(value);
+  if (median <= 0) {
+    if (direction === "lower_is_better") return numericValue <= 0 ? 100 : 0;
+    return numericValue > 0 ? 100 : 0;
+  }
+
+  const ratioScore = direction === "lower_is_better"
+    ? (100 * median) / (median + Math.max(0, numericValue))
+    : (100 * Math.max(0, numericValue)) / (Math.max(0, numericValue) + median);
+  return clampScore(ratioScore);
+}
+
+function regionalPriorScore(candidates: Array<number | null>): number | null {
+  const valid = candidates.filter((value): value is number => Number.isFinite(value));
+  return valid.length ? clampScore(average(valid)) : null;
+}
 
 export function validateAssessmentIntegrity(assessment: AssessmentScores): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
@@ -310,8 +353,10 @@ export function calculateAssessment(
   const floodCells = c1SafetyMetrics?.floodHazard || [];
   const floodDepths = floodCells.map((cell) => Number(cell.depthCm)).filter(Number.isFinite);
   const maxFloodDepth = floodDepths.length ? Math.max(...floodDepths) : undefined;
-  const accidentScore = empiricalPercentileScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference, "lower_is_better");
-  const floodScore = empiricalPercentileScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference, "lower_is_better");
+  const accidentScore = empiricalPercentileScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference, "lower_is_better")
+    ?? referenceRelativeScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference, "lower_is_better");
+  const floodScore = empiricalPercentileScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference, "lower_is_better")
+    ?? referenceRelativeScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference, "lower_is_better");
   for (const cell of floodCells) {
     c1Factors.push({
       category: "C1",
@@ -338,7 +383,7 @@ export function calculateAssessment(
 
   const c1ComponentScores = [accidentScore, floodScore]
     .filter((value): value is number => value !== null);
-  const c1: number | null = c1ComponentScores.length
+  const c1Observed: number | null = c1ComponentScores.length
     ? clampScore(average(c1ComponentScores))
     : null;
 
@@ -406,7 +451,13 @@ export function calculateAssessment(
         normalization?.c2Distances?.[indicator],
         "lower_is_better",
       );
-      return percentile ?? inverseDistanceScore(Number(value), 500);
+      return percentile
+        ?? referenceRelativeScore(
+          Number(value),
+          normalization?.c2Distances?.[indicator],
+          "lower_is_better",
+        )
+        ?? inverseDistanceScore(Number(value), 500);
     }).filter((value): value is number => value !== null);
   c2Factors.forEach((factor) => {
     if (factor.value == null) factor.availabilityReason = "no_observation";
@@ -414,7 +465,7 @@ export function calculateAssessment(
   if (poiDensityScore !== null) {
     c2ComponentScores.push(poiDensityScore);
   }
-  const c2: number | null = c2ComponentScores.length
+  const c2Observed: number | null = c2ComponentScores.length
     ? clampScore(average(c2ComponentScores))
     : null;
 
@@ -463,15 +514,20 @@ export function calculateAssessment(
         ? normalization?.c3BusDistances
         : normalization?.c3RailDistances;
       const percentile = empiricalPercentileScore(factor.value, reference, "lower_is_better");
-      return percentile ?? inverseDistanceScore(factor.value, 500);
+      return percentile
+        ?? referenceRelativeScore(factor.value, reference, "lower_is_better")
+        ?? inverseDistanceScore(factor.value, 500);
     })
     .filter((value): value is number => value !== null);
-  const c3: number | null = c3ComponentScores.length
+  const c3Observed: number | null = c3ComponentScores.length
     ? clampScore(average(c3ComponentScores))
     : null;
 
   // C4 combines only source-backed air quality and official green inventory metrics.
-  const airScore = weather?.aqi != null ? empiricalPercentileScore(weather.aqi, normalization?.c4Aqi, "lower_is_better") : null;
+  const airScore = weather?.aqi != null
+    ? (empiricalPercentileScore(weather.aqi, normalization?.c4Aqi, "lower_is_better")
+      ?? referenceRelativeScore(weather.aqi, normalization?.c4Aqi, "lower_is_better"))
+    : null;
   const c4Factors: ScoreFactor[] = [{
     category: "C4",
     indicator: "airQualityScore",
@@ -505,8 +561,10 @@ export function calculateAssessment(
       method: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
     },
   );
-  const streetTreeDensityScore = empiricalPercentileScore(streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference);
-  const parkTreeDensityScore = empiricalPercentileScore(parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference);
+  const streetTreeDensityScore = empiricalPercentileScore(streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference)
+    ?? referenceRelativeScore(streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference, "higher_is_better");
+  const parkTreeDensityScore = empiricalPercentileScore(parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference)
+    ?? referenceRelativeScore(parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference, "higher_is_better");
   c4Factors.push(
     {
       category: "C4", indicator: "streetTreeDensityPerKm2", value: Number.isFinite(Number(streetTreeDensityPerKm2)) ? Number(streetTreeDensityPerKm2) : null,
@@ -547,7 +605,10 @@ export function calculateAssessment(
   // Raw counts are preserved as facts. Density is calculated from the fixed 800m
   // observation radius (2.0106 km²). Nearest-park distance is scored only when
   // a real reference distribution contains at least 20 observations.
-  const nearestParkScore = empiricalPercentileScore(nearestParkDist, normalization?.c4NearestParkDistances, "lower_is_better");
+  const nearestParkScore = nearestParkDist == null
+    ? null
+    : (empiricalPercentileScore(nearestParkDist, normalization?.c4NearestParkDistances, "lower_is_better")
+      ?? referenceRelativeScore(nearestParkDist, normalization?.c4NearestParkDistances, "lower_is_better"));
   if (nearestParkScore !== null) {
     c4Factors.push({
       category: "C4",
@@ -566,18 +627,25 @@ export function calculateAssessment(
   }
   const greenScores = [streetTreeDensityScore, parkTreeDensityScore, nearestParkScore].filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
-  const c4: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
+  const c4Observed: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
 
   // C5 measures source-backed community/cultural access only. It does not
   // claim to measure subjective social trust or civic participation.
-  const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference);
+  const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference)
+    ?? referenceRelativeScore(c5CommunityCount, c5CommunityReference, "higher_is_better");
   const communityReferenceSize = c5CommunityReference?.filter(Number.isFinite).length ?? 0;
   const c5NearestDistanceReferenceSize = normalization?.c5NearestCommunityDistances?.filter(Number.isFinite).length ?? 0;
-  const c5NearestDistanceScore = empiricalPercentileScore(
-    c5NearestCommunityDistance,
-    normalization?.c5NearestCommunityDistances,
-    "lower_is_better",
-  );
+  const c5NearestDistanceScore = c5NearestCommunityDistance == null
+    ? null
+    : (empiricalPercentileScore(
+      c5NearestCommunityDistance,
+      normalization?.c5NearestCommunityDistances,
+      "lower_is_better",
+    ) ?? referenceRelativeScore(
+      c5NearestCommunityDistance,
+      normalization?.c5NearestCommunityDistances,
+      "lower_is_better",
+    ));
   const c5Factors: ScoreFactor[] = [{
     category: "C5",
     indicator: "communityCulturalPoiCount800m",
@@ -612,24 +680,186 @@ export function calculateAssessment(
       scoringMethod: "empirical_percentile",
     });
   }
-  const c5: number | null = c5Components.length ? clampScore(average(c5Components)) : null;
+  const c5Observed: number | null = c5Components.length ? clampScore(average(c5Components)) : null;
 
-  const categories: Record<Category, CategoryScore> = {
-    C1: { score: c1, factors: c1Factors },
-    C2: { score: c2, factors: c2Factors },
-    C3: { score: c3, factors: c3Factors },
-    C4: { score: c4, factors: c4Factors },
-    C5: { score: c5, factors: c5Factors },
+  const regionalPriors: Record<Category, { score: number | null; sampleSize: number }> = {
+    C1: {
+      score: regionalPriorScore([
+        referenceRelativeScore(
+          medianValue(c1SafetyMetrics?.accidentCountReference) ?? undefined,
+          c1SafetyMetrics?.accidentCountReference,
+          "lower_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(c1SafetyMetrics?.floodDepthReference) ?? undefined,
+          c1SafetyMetrics?.floodDepthReference,
+          "lower_is_better",
+        ),
+      ]),
+      sampleSize: Math.max(
+        c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
+        c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0,
+      ),
+    },
+    C2: {
+      score: regionalPriorScore([
+        ...c2Definitions.map(([indicator]) =>
+          referenceRelativeScore(
+            medianValue(normalization?.c2Distances?.[indicator]) ?? undefined,
+            normalization?.c2Distances?.[indicator],
+            "lower_is_better",
+          ),
+        ),
+        referenceRelativeScore(
+          medianValue(c2PoiDensityReference) ?? undefined,
+          c2PoiDensityReference,
+          "higher_is_better",
+        ),
+      ]),
+      sampleSize: Math.max(
+        ...c2Definitions.map(([indicator]) => normalization?.c2Distances?.[indicator]?.filter(Number.isFinite).length ?? 0),
+        c2PoiDensityReference?.filter(Number.isFinite).length ?? 0,
+      ),
+    },
+    C3: {
+      score: regionalPriorScore([
+        referenceRelativeScore(
+          medianValue(normalization?.c3RailDistances) ?? undefined,
+          normalization?.c3RailDistances,
+          "lower_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(normalization?.c3BusDistances) ?? undefined,
+          normalization?.c3BusDistances,
+          "lower_is_better",
+        ),
+      ]),
+      sampleSize: Math.max(
+        normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
+        normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
+      ),
+    },
+    C4: {
+      score: regionalPriorScore([
+        referenceRelativeScore(
+          medianValue(normalization?.c4Aqi) ?? undefined,
+          normalization?.c4Aqi,
+          "lower_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(c4GreenMetrics?.streetTreeDensityReference) ?? undefined,
+          c4GreenMetrics?.streetTreeDensityReference,
+          "higher_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(c4GreenMetrics?.parkTreeDensityReference) ?? undefined,
+          c4GreenMetrics?.parkTreeDensityReference,
+          "higher_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(normalization?.c4NearestParkDistances) ?? undefined,
+          normalization?.c4NearestParkDistances,
+          "lower_is_better",
+        ),
+      ]),
+      sampleSize: Math.max(
+        normalization?.c4Aqi?.filter(Number.isFinite).length ?? 0,
+        c4GreenMetrics?.streetTreeDensityReference?.filter(Number.isFinite).length ?? 0,
+        c4GreenMetrics?.parkTreeDensityReference?.filter(Number.isFinite).length ?? 0,
+        normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
+      ),
+    },
+    C5: {
+      score: regionalPriorScore([
+        referenceRelativeScore(
+          medianValue(c5CommunityReference) ?? undefined,
+          c5CommunityReference,
+          "higher_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(normalization?.c5NearestCommunityDistances) ?? undefined,
+          normalization?.c5NearestCommunityDistances,
+          "lower_is_better",
+        ),
+      ]),
+      sampleSize: Math.max(
+        c5CommunityReference?.filter(Number.isFinite).length ?? 0,
+        normalization?.c5NearestCommunityDistances?.filter(Number.isFinite).length ?? 0,
+      ),
+    },
   };
+
+  const observedScores: Record<Category, number | null> = {
+    C1: c1Observed,
+    C2: c2Observed,
+    C3: c3Observed,
+    C4: c4Observed,
+    C5: c5Observed,
+  };
+
+  const factorSets: Record<Category, ScoreFactor[]> = {
+    C1: c1Factors,
+    C2: c2Factors,
+    C3: c3Factors,
+    C4: c4Factors,
+    C5: c5Factors,
+  };
+
+  const categories: Record<Category, CategoryScore> = {} as Record<Category, CategoryScore>;
+  for (const category of Object.keys(observedScores) as Category[]) {
+    const observed = observedScores[category];
+    const prior = regionalPriors[category];
+
+    if (observed != null) {
+      categories[category] = {
+        score: observed,
+        factors: factorSets[category],
+        mode: "observed",
+      };
+      continue;
+    }
+
+    if (prior.score != null) {
+      factorSets[category].push({
+        category,
+        indicator: "regionalReferencePrior",
+        value: prior.score,
+        unit: "score",
+        direction: "higher_is_better",
+        source: "StreetLens persisted real reference observations",
+        method: "estimated",
+        confidence: "low",
+        status: "available",
+        referenceSampleSize: prior.sampleSize,
+        scoringMethod: "not_scored",
+        estimationMethod: "regional_real_data_prior",
+      });
+    }
+
+    categories[category] = {
+      score: prior.score,
+      factors: factorSets[category],
+      mode: prior.score != null ? "estimated" : "observed",
+      estimationMethod: prior.score != null ? "regional_real_data_prior" : undefined,
+      estimationReferenceSampleSize: prior.score != null ? prior.sampleSize : undefined,
+    };
+  }
 
   const allFactors = Object.values(categories).flatMap((category) => category.factors);
   const scoredCategories = Object.values(categories)
     .map((category) => category.score)
     .filter((score): score is number => score !== null);
-  const overall: number | null =
-    scoredCategories.length === Object.keys(categories).length
-      ? clampScore(average(scoredCategories))
-      : null;
+  const estimatedCategoryCount = Object.values(categories)
+    .filter((category) => category.mode === "estimated")
+    .length;
+  const overall: number | null = scoredCategories.length
+    ? clampScore(average(scoredCategories))
+    : null;
+  const overallMode: ScoreMode = estimatedCategoryCount > 0 ? "estimated" : "observed";
+  const baseConfidence = overallConfidence(allFactors);
+  const confidence = estimatedCategoryCount > 0 && baseConfidence === "high"
+    ? "medium"
+    : baseConfidence;
 
   return {
     c1: categories.C1,
@@ -638,7 +868,9 @@ export function calculateAssessment(
     c4: categories.C4,
     c5: categories.C5,
     overall,
+    overallMode,
+    estimatedCategoryCount,
     weights: DEFAULT_WEIGHTS,
-    confidence: overallConfidence(allFactors),
+    confidence,
   };
 }

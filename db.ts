@@ -1212,9 +1212,10 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   c3RailDistances: number[];
   c3BusDistances: number[];
   c3YouBikeDistances: number[];
+  c3BikeLaneLengths: number[];
   c4Aqi: number[];
 }> {
-  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c4Aqi: [] };
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c4Aqi: [] };
 
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
@@ -1227,6 +1228,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const c3RailByScope = new Map<string, number>();
   const c3BusByScope = new Map<string, number>();
   const c3YouBikeByScope = new Map<string, number>();
+  const c3BikeLaneByScope = new Map<string, number>();
   const c4Aqi: number[] = [];
 
   for (const row of result.rows) {
@@ -1299,6 +1301,14 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
 
     const bikes = await getNearbyExternalSpatialPoints("taipei_youbike", target.latitude, target.longitude, 1500, 200);
     if (bikes.length) c3YouBikeByScope.set(target.scopeKey, bikes[0].distanceMeters);
+
+    const bikeLanes = await getNearbyExternalSpatialLines("taipei_bike_lanes", target.latitude, target.longitude, 500, 5000);
+    if (bikeLanes.length) {
+      c3BikeLaneByScope.set(
+        target.scopeKey,
+        bikeLanes.reduce((sum, line) => sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0),
+      );
+    }
   }
 
   return {
@@ -1306,6 +1316,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     c3RailDistances: [...c3RailByScope.values()],
     c3BusDistances: [...c3BusByScope.values()],
     c3YouBikeDistances: [...c3YouBikeByScope.values()],
+    c3BikeLaneLengths: [...c3BikeLaneByScope.values()],
     c4Aqi,
   };
 }

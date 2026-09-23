@@ -985,6 +985,17 @@ export async function getNearestParkDistanceReference(excludeScopeKey?: string):
     }
   }
 
+  const targets = await listActiveAssessmentTargets();
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const parks = await getNearbyExternalSpatialPoints("taipei_parks", target.latitude, target.longitude, 1500, 500);
+    if (parks.length) {
+      const distance = parks[0].distanceMeters;
+      const current = nearestByScope.get(target.scopeKey);
+      if (current == null || distance < current) nearestByScope.set(target.scopeKey, distance);
+    }
+  }
+
   return [...nearestByScope.values()];
 }
 

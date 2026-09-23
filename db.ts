@@ -772,13 +772,8 @@ export async function replaceExternalSpatialPoints(
     for (let start = 0; start < points.length; start += batchSize) {
       const batch = points.slice(start, start + batchSize);
       const values: unknown[] = [];
-      const rows: string[] = [];
-      batch.forEach((point, index) => {
-        const offset = index * 8;
-        rows.push(
-          `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4},
-            ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`,
-        );
+      const correctedRows = batch.map((point, index) => {
+        const offset = index * 9;
         values.push(
           sourceKey,
           point.id,
@@ -790,8 +785,8 @@ export async function replaceExternalSpatialPoints(
           sourceUpdatedAt,
           sourceVersion,
         );
+        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
       });
-      const correctedRows = batch.map((_point, index) => {
         const offset = index * 9;
         return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
       });

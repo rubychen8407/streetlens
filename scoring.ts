@@ -389,20 +389,25 @@ export function calculateAssessment(
     const reference = normalization?.c2Distances?.[factor.indicator as keyof NonNullable<typeof normalization.c2Distances>];
     factor.referenceSampleSize = reference?.filter(Number.isFinite).length ?? 0;
     factor.retrievedAt = c2PoiMetrics?.retrievedAt;
-    factor.scoringMethod = factor.value != null && factor.referenceSampleSize >= 20
-      ? "empirical_percentile"
+    factor.scoringMethod = factor.value != null
+      ? (factor.referenceSampleSize >= 20 ? "empirical_percentile" : "raw_observation")
       : "not_scored";
     if (factor.value != null && factor.referenceSampleSize < 20) {
-      factor.availabilityReason = "insufficient_reference_data";
+      factor.availabilityReason = undefined;
     }
   }
 
   const poiDensityScore = empiricalPercentileScore(poiDensity, c2PoiDensityReference);
   const c2ComponentScores = c2Definitions
-    .map(([indicator, value]) => Number.isFinite(Number(value))
-      ? empiricalPercentileScore(Number(value), normalization?.c2Distances?.[indicator], "lower_is_better")
-      : null)
-    .filter((value): value is number => value !== null);
+    .map(([indicator, value]) => {
+      if (!Number.isFinite(Number(value))) return null;
+      const percentile = empiricalPercentileScore(
+        Number(value),
+        normalization?.c2Distances?.[indicator],
+        "lower_is_better",
+      );
+      return percentile ?? inverseDistanceScore(Number(value), 500);
+    });
   c2Factors.forEach((factor) => {
     if (factor.value == null) factor.availabilityReason = "no_observation";
   });
@@ -428,7 +433,9 @@ export function calculateAssessment(
       status: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? "available" : "unavailable",
       retrievedAt: c3TransitMetrics?.retrievedAt,
       referenceSampleSize: normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) && (normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist))
+        ? ((normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
+        : "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? undefined : "no_observation",
     },
     {
@@ -443,16 +450,21 @@ export function calculateAssessment(
       status: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? "available" : "unavailable",
       retrievedAt: c3TransitMetrics?.retrievedAt,
       referenceSampleSize: normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) && (normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.busStopDist))
+        ? ((normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
+        : "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? undefined : "no_observation",
     },
   ];
   const c3ComponentScores = c3Factors
-    .map((factor) => factor.value == null ? null : empiricalPercentileScore(
-      factor.value,
-      factor.indicator === "busStopDist" ? normalization?.c3BusDistances : normalization?.c3RailDistances,
-      "lower_is_better",
-    ))
+    .map((factor) => {
+      if (factor.value == null) return null;
+      const reference = factor.indicator === "busStopDist"
+        ? normalization?.c3BusDistances
+        : normalization?.c3RailDistances;
+      const percentile = empiricalPercentileScore(factor.value, reference, "lower_is_better");
+      return percentile ?? inverseDistanceScore(factor.value, 500);
+    })
     .filter((value): value is number => value !== null);
   const c3: number | null = c3ComponentScores.length
     ? clampScore(average(c3ComponentScores))

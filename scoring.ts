@@ -185,16 +185,14 @@ export function applyFieldObservationAdjustment(
     );
   }
 
-  const adjustment = clampScore(
-    Object.entries(categoryAdjustments).reduce(
-      (sum, [category, value]) => sum + OBSERVATION_WEIGHTS[category as Category] * value,
-      0,
-    ),
-  ) - (baselineCls == null ? 0 : clampScore(baselineCls));
+  const rawAdjustment = Object.entries(categoryAdjustments).reduce(
+    (sum, [category, value]) => sum + OBSERVATION_WEIGHTS[category as Category] * value,
+    0,
+  );
 
   const adjustedCls = baselineCls == null
     ? null
-    : clampScore(baselineCls + adjustment);
+    : clampScore(baselineCls + rawAdjustment);
 
   return {
     baselineCls: baselineCls == null ? null : clampScore(baselineCls),

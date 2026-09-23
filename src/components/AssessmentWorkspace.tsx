@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, X } from 'lucide-react';
+import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, X } from 'lucide-react';
 import { AssessmentEvidence, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 
@@ -72,7 +72,8 @@ export function AssessmentWorkspace({
   const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
   const [showScoreDetails, setShowScoreDetails] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
-  const evidenceInputRef = useRef<HTMLInputElement | null>(null);
+  const evidenceCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const evidenceLibraryInputRef = useRef<HTMLInputElement | null>(null);
 
   const factor = (indicator: string) => assessment?.factors.find(item => item.indicator === indicator);
 
@@ -325,21 +326,43 @@ export function AssessmentWorkspace({
                     <div className="text-xs font-bold text-slate-200">Evidence</div>
                     <div className="text-[10px] text-slate-500 mt-1">Photos are stored as evidence only. They never change CLS.</div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => evidenceInputRef.current?.click()}
-                    disabled={evidenceDrafts.length >= 6}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sky-500/15 border border-sky-400/20 text-[10px] font-bold text-sky-200 disabled:opacity-40"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    Add photo
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => evidenceCameraInputRef.current?.click()}
+                      disabled={evidenceDrafts.length >= 6}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sky-500/15 border border-sky-400/20 text-[10px] font-bold text-sky-200 disabled:opacity-40"
+                      title="Take a photo with your device camera"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      Take photo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => evidenceLibraryInputRef.current?.click()}
+                      disabled={evidenceDrafts.length >= 6}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 disabled:opacity-40"
+                    >
+                      <Images className="w-3.5 h-3.5" />
+                      Library
+                    </button>
+                  </div>
                   <input
-                    ref={evidenceInputRef}
+                    ref={evidenceCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={event => {
+                      onAddEvidencePhotos(event.target.files);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                  <input
+                    ref={evidenceLibraryInputRef}
                     type="file"
                     accept="image/*"
                     multiple
-                    capture="environment"
                     className="hidden"
                     onChange={event => {
                       onAddEvidencePhotos(event.target.files);

@@ -87,7 +87,7 @@ export function AssessmentWorkspace({
   const factor = (indicator: string) => assessment?.factors.find(item => item.indicator === indicator);
 
   const floodFactor = factor('floodHazard_100mmh') || factor('floodHazard_78.8mmh') || factor('floodHazard_130mmh');
-  const floodSourceStatus = assessment?.sourceStatus.find(item => item.source === 'taipei_flood');
+  const floodSourceStatus = assessment?.sourceStatus?.find(item => item.source === 'taipei_flood');
   const dataCards = [
     ['Safety', factor('trafficAccidentCount500m'), 'C1'],
     ['Flood risk', factor('floodHazard_100mmh') || factor('floodHazard_78.8mmh') || factor('floodHazard_130mmh'), 'C1'],

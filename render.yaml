@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: streetlens
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: TDX_CLIENT_ID
+        sync: false
+      - key: TDX_CLIENT_SECRET
+        sync: false
+      - key: STREETLENS_REFRESH_TOKEN
+        sync: false

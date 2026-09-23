@@ -196,7 +196,7 @@ function gradeForScore(score: number | null): "S" | "A" | "B" | "C" | "D" | null
 }
 
 export async function saveAssessmentSession(input: PersistedAssessmentInput): Promise<PersistedAssessmentRecord> {
-  if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
+  if (!dataDb) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
 
   const workspaceId = validateWorkspaceId(input.workspaceId);
   const assessment = input.assessment || {};
@@ -317,7 +317,7 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
 }
 
 export async function listAssessmentSessions(workspaceIdInput: unknown, limitInput: unknown = 100): Promise<PersistedAssessmentRecord[]> {
-  if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
+  if (!dataDb) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
   const workspaceId = validateWorkspaceId(workspaceIdInput);
   const limit = Math.min(100, Math.max(1, Number.isFinite(Number(limitInput)) ? Math.floor(Number(limitInput)) : 100));
 
@@ -372,7 +372,7 @@ export async function getAssessmentSession(
   workspaceIdInput: unknown,
   idInput: unknown,
 ): Promise<PersistedAssessmentRecord | null> {
-  if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
+  if (!dataDb) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
   const workspaceId = validateWorkspaceId(workspaceIdInput);
   const id = validateAssessmentId(idInput);
   const result = await dataDb.query(
@@ -387,7 +387,7 @@ export async function getAssessmentSession(
 }
 
 export async function deleteAssessmentSession(workspaceIdInput: unknown, idInput: unknown): Promise<boolean> {
-  if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
+  if (!dataDb) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
   const workspaceId = validateWorkspaceId(workspaceIdInput);
   const id = validateAssessmentId(idInput);
   const result = await dataDb.query(
@@ -404,7 +404,7 @@ export async function saveAssessmentPhoto(
   body: Buffer,
   mimeTypeInput: unknown,
 ): Promise<void> {
-  if (!dataDb) throw new Error("DATABASE_URL is required for Cloud SQL persistence");
+  if (!dataDb) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
   const workspaceId = validateWorkspaceId(workspaceIdInput);
   const assessmentId = validateAssessmentId(idInput);
   const evidenceId = String(evidenceIdInput ?? "").trim();

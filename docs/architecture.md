@@ -1,6 +1,6 @@
 # StreetLens architecture
 
-StreetLens uses a real-data backend with Cloud SQL persistence and Google AI Studio / Gemini as the explanation layer.
+StreetLens uses a real-data backend with Neon PostgreSQL persistence and Google AI Studio / Gemini as the explanation layer.
 
 ## Runtime flow
 
@@ -13,7 +13,7 @@ StreetLens uses a real-data backend with Cloud SQL persistence and Google AI Stu
         ├─ Taipei official green / safety / flood data
         └─ Open-Meteo air quality
         ↓
-    Cloud SQL
+    Neon PostgreSQL
         ├─ external_data_snapshots
         ├─ assessment_targets
         ├─ assessment_sessions
@@ -31,9 +31,9 @@ StreetLens uses a real-data backend with Cloud SQL persistence and Google AI Stu
 
 ## Data responsibilities
 
-### Cloud SQL
+### Neon PostgreSQL
 
-Cloud SQL is the durable source for:
+Neon PostgreSQL is the durable source for:
 
 - External-data snapshots and freshness metadata.
 - Saved assessment sessions.
@@ -41,7 +41,7 @@ Cloud SQL is the durable source for:
 - Evidence metadata, including capture time and coordinates.
 - Assessment photos in the current v1 implementation (`BYTEA`, max 5 MB per photo).
 
-The browser may keep a local copy for offline-friendly UX, but Cloud SQL is the durable persistence path.
+The browser may keep a local copy for offline-friendly UX, but Neon PostgreSQL is the durable persistence path.
 
 ### Google AI Studio / Gemini
 
@@ -70,15 +70,15 @@ The current `workspaceId` is a browser-generated anonymous owner key. It is inte
 
 ## Photo storage note
 
-Cloud SQL `BYTEA` is used for the current prototype because Cloud SQL is the selected persistence platform. At larger scale, photo blobs can be moved to object storage while retaining the same evidence metadata model in Cloud SQL.
+Neon PostgreSQL `BYTEA` is used for the current prototype because Neon PostgreSQL is the selected persistence platform. At larger scale, photo blobs can be moved to object storage while retaining the same evidence metadata model in Neon PostgreSQL.
 ## Gemini explanation layer
 
-Saved assessment explanations are generated only from the persisted assessment session in Cloud SQL.
+Saved assessment explanations are generated only from the persisted assessment session in Neon PostgreSQL.
 
 - POST /api/assessments/:id/explanation?workspaceId=... loads the saved session server-side before calling Gemini.
 - The prompt receives persisted category scores, factor provenance, source status, field-observation ratings, field adjustments, notes, and evidence notes.
 - Gemini is explicitly instructed not to calculate or change CLS, fill missing values, invent numeric facts, or rank streets.
 - A missing Gemini configuration returns an unavailable response; the server does not synthesize a fallback explanation.
-- The current UI exposes the explanation action only after the assessment has been saved to Cloud SQL.
+- The current UI exposes the explanation action only after the assessment has been saved to Neon PostgreSQL.
 
 This keeps Gemini in the explanation layer rather than the scoring layer. Gemini output is descriptive assistance, not a source of raw measurements or score calculations.

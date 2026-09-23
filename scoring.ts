@@ -63,6 +63,8 @@ export interface C1SafetyMetrics {
   floodSource?: string | null;
   accidentCountReference?: number[];
   floodDepthReference?: number[];
+  streetLightCount300m?: number;
+  streetLightCountReference?: number[];
 }
 
 export interface C2PoiMetrics {

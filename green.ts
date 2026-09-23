@@ -282,3 +282,152 @@ export async function fetchTaipeiGreenData(
     clearTimeout(timeoutId);
   }
 }
+
+
+export interface GreenRefreshTarget {
+  scopeKey: string;
+  latitude: number;
+  longitude: number;
+}
+
+export async function fetchTaipeiGreenDataForTargets(
+  targets: GreenRefreshTarget[],
+  radiusMeters = 800,
+): Promise<Record<string, GreenSourceResult>> {
+  const retrievedAt = new Date().toISOString();
+  const resultByScope: Record<string, GreenSourceResult> = {};
+
+  for (const target of targets) {
+    resultByScope[target.scopeKey] = {
+      streetTrees: [],
+      parkTrees: [],
+      source: "Taipei City Parks and Street Trees dataset",
+      status: "empty",
+      retrievedAt,
+    };
+  }
+
+  if (!targets.length) return resultByScope;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90_000);
+
+  try {
+    const radiusLat = radiusMeters / 111_320;
+    const targetBounds = targets.map((target) => ({
+      ...target,
+      minLat: target.latitude - radiusLat,
+      maxLat: target.latitude + radiusLat,
+      minLng: target.longitude - radiusMeters / (111_320 * Math.max(0.1, Math.cos(target.latitude * Math.PI / 180))),
+      maxLng: target.longitude + radiusMeters / (111_320 * Math.max(0.1, Math.cos(target.latitude * Math.PI / 180))),
+    }));
+
+    for (const resource of ["streetTrees", "parkTrees"] as const) {
+      let rows: any[];
+      let format: "json" | "csv";
+      try {
+        const url = resource === "streetTrees" ? STREET_TREE_URL : PARK_TREE_URL;
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            Accept: "application/json,text/csv,*/*",
+            "User-Agent": "StreetLens/1.0",
+          },
+        });
+        if (!response.ok) throw new Error(`${resource} resource HTTP ${response.status}`);
+        const text = await response.text();
+
+        try {
+          rows = extractRows(JSON.parse(text));
+          format = "json";
+        } catch {
+          rows = parseCsv(text);
+          format = "csv";
+        }
+
+        const coordinateColumns = rows.length
+          ? Object.keys(rows[0]).filter((key) => /^(TWD97X|TWD97Y|lat|latitude|lng|longitude)$/i.test(key))
+          : [];
+
+        const coordinateCounts: Record<string, number> = {};
+        for (const target of targets) coordinateCounts[target.scopeKey] = 0;
+
+        for (const row of rows) {
+          const coordinate = findCoordinate(row);
+          if (!coordinate) continue;
+
+          for (const target of targetBounds) {
+            if (
+              coordinate.lat < target.minLat
+              || coordinate.lat > target.maxLat
+              || coordinate.lng < target.minLng
+              || coordinate.lng > target.maxLng
+            ) continue;
+
+            const distanceMeters = haversineDistanceMeters(
+              target.latitude,
+              target.longitude,
+              coordinate.lat,
+              coordinate.lng,
+            );
+            if (distanceMeters > radiusMeters) continue;
+
+            coordinateCounts[target.scopeKey] += 1;
+            const nearby = {
+              lat: coordinate.lat,
+              lng: coordinate.lng,
+              distanceMeters,
+            };
+            if (resource === "streetTrees") {
+              resultByScope[target.scopeKey].streetTrees.push(nearby);
+            } else {
+              resultByScope[target.scopeKey].parkTrees.push(nearby);
+            }
+          }
+        }
+
+        console.log(JSON.stringify({
+          greenParserBatch: {
+            resource,
+            format,
+            rowCount: rows.length,
+            coordinateColumns,
+            targets: targets.map((target) => ({
+              scopeKey: target.scopeKey,
+              coordinateRowCount: coordinateCounts[target.scopeKey] ?? 0,
+              nearbyCount: resource === "streetTrees"
+                ? resultByScope[target.scopeKey].streetTrees.length
+                : resultByScope[target.scopeKey].parkTrees.length,
+            })),
+          },
+        }, null, 2));
+      } catch (error: any) {
+        for (const target of targets) {
+          const existing = resultByScope[target.scopeKey];
+          existing.error = existing.error
+            ? `${existing.error}; ${resource}: ${error?.message || String(error)}`
+            : `${resource}: ${error?.message || String(error)}`;
+        }
+      }
+    }
+
+    for (const target of targets) {
+      const result = resultByScope[target.scopeKey];
+      result.streetTrees.sort((a, b) => a.distanceMeters - b.distanceMeters);
+      result.parkTrees.sort((a, b) => a.distanceMeters - b.distanceMeters);
+      const hasData = result.streetTrees.length > 0 || result.parkTrees.length > 0;
+      const hasError = Boolean(result.error);
+      result.status = hasData
+        ? "available"
+        : hasError
+          ? controller.signal.aborted
+            ? "timeout"
+            : "error"
+          : "empty";
+    }
+
+    return resultByScope;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

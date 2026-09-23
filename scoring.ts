@@ -190,14 +190,15 @@ export function applyFieldObservationAdjustment(
     0,
   );
 
-  const adjustedCls = baselineCls == null
+  const normalizedBaseline = baselineCls == null ? null : clampScore(Number(baselineCls));
+  const adjustedCls = normalizedBaseline == null
     ? null
-    : clampScore(baselineCls + rawAdjustment);
+    : clampScore(normalizedBaseline + rawAdjustment);
 
   return {
-    baselineCls: baselineCls == null ? null : clampScore(baselineCls),
+    baselineCls: normalizedBaseline,
     adjustedCls,
-    adjustment: adjustedCls == null ? 0 : adjustedCls - clampScore(baselineCls),
+    adjustment: adjustedCls == null || normalizedBaseline == null ? 0 : adjustedCls - normalizedBaseline,
     categoryAdjustments,
     ratedItemCount,
   };

@@ -327,9 +327,10 @@ export function FloatingControls({
       </div>
 
       {/* BOTTOM FLOATING CONTROLS */}
-      <div className="relative pointer-events-auto pb-1 min-h-12">
-        {/* Unified address search + field assessment entry */}
-        <div className="relative w-[calc(100%-56px)] sm:w-full max-w-lg mx-auto" ref={searchContainerRef}>
+      <div className="pointer-events-auto pb-1 w-full">
+        <div className="w-full max-w-3xl mx-auto flex items-end gap-2 sm:gap-3">
+          {/* Unified address search + field assessment entry */}
+          <div className="relative flex-1 min-w-0" ref={searchContainerRef}>
           <div className="flex items-center gap-2">
             <div className="relative flex-1 min-w-0">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 pointer-events-none">
@@ -375,9 +376,10 @@ export function FloatingControls({
           </div>
         </div>
 
-        {/* Bottom-right map tools stay independent from the search bar on every breakpoint. */}
+        {/* Map tools share the bottom row but keep a fixed footprint, so resizing
+            never lets them overlap the search field or assessment button. */}
         <div
-          className="absolute right-0 bottom-0 flex flex-col bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
+          className="relative shrink-0 flex flex-col bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
           ref={layerMenuRef}
         >
             {/* Layer Button */}

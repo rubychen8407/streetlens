@@ -7,7 +7,7 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, OFFICIAL_SOURCE_URLS } from "./official";
+import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiLibraries, fetchTaipeiPublicToilets, OFFICIAL_SOURCE_URLS } from "./official";
 import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
@@ -674,6 +674,9 @@ const VALIDATOR_RESOURCES: Record<string, string[]> = {
     hospitals: OFFICIAL_SOURCE_URLS.taipeiHospitals,
   }),
   taipei_street_lights: [OFFICIAL_SOURCE_URLS.taipeiStreetLights],
+  taipei_bus_stops: [OFFICIAL_SOURCE_URLS.taipeiBusStops],
+  taipei_libraries: [OFFICIAL_SOURCE_URLS.taipeiLibraries],
+  taipei_public_toilets: [OFFICIAL_SOURCE_URLS.taipeiPublicToilets],
 };
 
 type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
@@ -771,6 +774,9 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   taipei_youbike: 24,
   taipei_medical: 168,
   taipei_street_lights: 168,
+  taipei_bus_stops: 168,
+  taipei_libraries: 8760,
+  taipei_public_toilets: 168,
   open_meteo_air_quality: 24,
 };
 
@@ -834,6 +840,9 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
       "taipei_youbike",
       "taipei_medical",
       "taipei_street_lights",
+      "taipei_bus_stops",
+      "taipei_libraries",
+      "taipei_public_toilets",
     ]);
     const batchSourceKeys = new Set(["taipei_green", "taipei_safety", "taipei_flood"]);
 
@@ -883,7 +892,13 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
           ? await fetchTaipeiYouBikeData()
           : sourceKey === "taipei_medical"
             ? await fetchTaipeiMedicalFacilities()
-            : await fetchTaipeiStreetLights();
+            : sourceKey === "taipei_street_lights"
+              ? await fetchTaipeiStreetLights()
+              : sourceKey === "taipei_bus_stops"
+                ? await fetchTaipeiBusStops()
+                : sourceKey === "taipei_libraries"
+                  ? await fetchTaipeiLibraries()
+                  : await fetchTaipeiPublicToilets();
 
         if (citywide.status === "available" || citywide.status === "empty") {
           await replaceExternalSpatialPoints(
@@ -1556,15 +1571,21 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     // Supplementary citywide official inventories are read only from persisted
     // spatial indexes. They do not block the core assessment when unavailable.
-    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot] = await Promise.all([
+    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot, busStopSnapshot, librarySnapshot, publicToiletSnapshot] = await Promise.all([
       getCachedSnapshot("taipei_youbike", "__citywide__"),
       getCachedSnapshot("taipei_medical", "__citywide__"),
       getCachedSnapshot("taipei_street_lights", "__citywide__"),
+      getCachedSnapshot("taipei_bus_stops", "__citywide__"),
+      getCachedSnapshot("taipei_libraries", "__citywide__"),
+      getCachedSnapshot("taipei_public_toilets", "__citywide__"),
     ]);
-    const [nearbyYouBike, nearbyMedical, nearbyStreetLights] = await Promise.all([
+    const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets] = await Promise.all([
       youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
       medicalSnapshot ? getNearbyExternalSpatialPoints("taipei_medical", lat, lng, 1500, 500) : Promise.resolve([]),
       streetLightSnapshot ? getNearbyExternalSpatialPoints("taipei_street_lights", lat, lng, 300, 5000) : Promise.resolve([]),
+      busStopSnapshot ? getNearbyExternalSpatialPoints("taipei_bus_stops", lat, lng, 1500, 1000) : Promise.resolve([]),
+      librarySnapshot ? getNearbyExternalSpatialPoints("taipei_libraries", lat, lng, 1000, 500) : Promise.resolve([]),
+      publicToiletSnapshot ? getNearbyExternalSpatialPoints("taipei_public_toilets", lat, lng, 800, 500) : Promise.resolve([]),
     ]);
 
     // A user request never fetches external scoring sources. Existing snapshots are
@@ -1658,12 +1679,21 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         return Number.isFinite(pLat) && Number.isFinite(pLng) ? distanceMetersFromTarget(lat, lng, pLat, pLng) : null;
       })
       .filter((x: any) => Number.isFinite(x) && x <= 1500);
+    const officialBusDistances = nearbyBusStops
+      .map((point) => point.distanceMeters)
+      .filter((distance) => Number.isFinite(distance) && distance <= 1500);
     const osmRail = pois.filter((x: any) => x.amenityType === "rail").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
     const osmBus = pois.filter((x: any) => x.amenityType === "bus").map((x: any) => x.distanceMeters).filter((x: any) => Number.isFinite(x));
     const railDist = railDistances.length ? Math.min(...railDistances) : (osmRail.length ? Math.min(...osmRail) : undefined);
-    const busDist = busDistances.length ? Math.min(...busDistances) : (osmBus.length ? Math.min(...osmBus) : undefined);
+    const busDistCandidates = [
+      ...(busDistances.length ? [Math.min(...busDistances)] : []),
+      ...(officialBusDistances.length ? [Math.min(...officialBusDistances)] : []),
+      ...(osmBus.length ? [Math.min(...osmBus)] : []),
+    ];
+    const busDist = busDistCandidates.length ? Math.min(...busDistCandidates) : undefined;
     const transitSources = [
       ...(railDistances.length || busDistances.length ? ["TDX / MOTC"] : []),
+      ...(officialBusDistances.length ? [busStopSnapshot?.payload?.source || "Taipei City Public Transportation Office official bus stops"] : []),
       ...(osmRail.length || osmBus.length ? [...new Set(pois.filter((x: any) => x.amenityType === "rail" || x.amenityType === "bus").map((x: any) => x.source).filter(Boolean))] : []),
     ];
     const c3RetrievedAt = transitSources.includes("TDX / MOTC")
@@ -1707,9 +1737,35 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const communityPois = pois.filter((x: any) =>
       (x.category === "C5" || /community|library|活動中心|圖書館|服務中心|公民/.test(String(x.name || "")))
       && Number.isFinite(x.distanceMeters)
+      && x.distanceMeters <= 800
     );
-    const nearestCommunityCulturalDistance = communityPois.length
-      ? Math.min(...communityPois.map((x: any) => x.distanceMeters))
+    const officialLibraryCommunity = nearbyLibraries.filter((point) => point.distanceMeters <= 800);
+    const communityKey = (name: string, latValue: number, lngValue: number) =>
+      `${name.trim().toLowerCase()}|${latValue.toFixed(5)}|${lngValue.toFixed(5)}`;
+    const communitySeen = new Set<string>();
+    const mergedCommunity = [
+      ...communityPois.map((poi: any) => ({
+        name: String(poi.name || ""),
+        lat: Number(poi.lat),
+        lng: Number(poi.lng),
+        distanceMeters: Number(poi.distanceMeters),
+        source: poi.source,
+      })),
+      ...officialLibraryCommunity.map((point) => ({
+        name: point.name,
+        lat: point.lat,
+        lng: point.lng,
+        distanceMeters: point.distanceMeters,
+        source: librarySnapshot?.payload?.source || "Taipei Public Library",
+      })),
+    ].filter((point) => {
+      const key = communityKey(point.name, point.lat, point.lng);
+      if (communitySeen.has(key)) return false;
+      communitySeen.add(key);
+      return true;
+    });
+    const nearestCommunityCulturalDistance = mergedCommunity.length
+      ? Math.min(...mergedCommunity.map((x) => x.distanceMeters))
       : undefined;
     const GREEN_RADIUS_METERS = 800;
     const GREEN_OBSERVATION_AREA_KM2 = Math.PI * (GREEN_RADIUS_METERS / 1000) ** 2;
@@ -1773,10 +1829,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
     c1SafetyMetrics.streetLightCountReference = streetLightReference;
-    const communityCount = pois.filter((poi: any) =>
-      poi.category === "C5"
-      || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
-    ).length;
+    const communityCount = mergedCommunity.length;
     const scores = calculateAssessment(
       null,
       {},
@@ -1810,6 +1863,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         ...sourceNames,
         ...(officialClinicDist != null ? [medicalSnapshot?.payload?.source || "Taipei City Health Department medical facilities"] : []),
         ...(youBikeSource ? [youBikeSource] : []),
+        ...(officialBusDistances.length ? [busStopSnapshot?.payload?.source || "Taipei City Public Transportation Office official bus stops"] : []),
+        ...(officialLibraryCommunity.length ? [librarySnapshot?.payload?.source || "Taipei Public Library"] : []),
+        ...(nearbyPublicToilets.length ? [publicToiletSnapshot?.payload?.source || "Taipei City Environmental Protection Department public toilet points"] : []),
         ...(streetLightSnapshot?.payload?.source ? [streetLightSnapshot.payload.source] : []),
       ].filter(Boolean))],
       sourceStatus: [
@@ -1841,6 +1897,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           ["taipei_youbike", youBikeSnapshot],
           ["taipei_medical", medicalSnapshot],
           ["taipei_street_lights", streetLightSnapshot],
+          ["taipei_bus_stops", busStopSnapshot],
+          ["taipei_libraries", librarySnapshot],
+          ["taipei_public_toilets", publicToiletSnapshot],
         ].map((entry) => {
           const source = String(entry[0]);
           const snapshot = entry[1] as any;
@@ -1862,7 +1921,18 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
       communityMetrics: {
         nearestCommunityCulturalDistance: nearestCommunityCulturalDistance ?? null,
-        communityCulturalPoiCount800m: communityPois.length,
+        communityCulturalPoiCount800m: communityCount,
+      },
+      officialServiceMetrics: {
+        youBikeNearestDistance: youBikeDistance ?? null,
+        youBikeAvailableBikes: Number.isFinite(youBikeAvailableBikes) ? youBikeAvailableBikes : null,
+        youBikeAvailableDocks: Number.isFinite(youBikeAvailableDocks) ? youBikeAvailableDocks : null,
+        medicalFacilityNearestDistance: c2ClinicDist ?? null,
+        busStopNearestDistance: officialBusDistances.length ? Math.min(...officialBusDistances) : null,
+        libraryCount800m: officialLibraryCommunity.length,
+        libraryNearestDistance800m: officialLibraryCommunity.length ? Math.min(...officialLibraryCommunity.map((point) => point.distanceMeters)) : null,
+        publicToiletCount800m: nearbyPublicToilets.length,
+        streetLightCount300m: streetLightCount300m ?? null,
       },
     });
   } catch (error: any) {

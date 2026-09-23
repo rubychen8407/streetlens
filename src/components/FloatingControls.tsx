@@ -3,10 +3,8 @@ import {
   Search,
   Navigation,
   Layers,
-  Binoculars,
   Sun,
   X,
-  MapPin,
   Loader2,
   Check,
   Compass,
@@ -14,9 +12,6 @@ import {
   Key,
   ShieldCheck,
   AlertCircle,
-  Crosshair,
-  Copy,
-  ExternalLink,
   UserCircle,
   Star,
   SlidersHorizontal,
@@ -304,38 +299,7 @@ export function FloatingControls({
           )}
         </div>
 
-        {/* Top-Center GPS Coordinates Pill */}
-        <button
-          type="button"
-          onClick={() => {
-            setCustomLat(currentLocation.lat.toFixed(6));
-            setCustomLng(currentLocation.lng.toFixed(6));
-            setShowCoordModal(true);
-          }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1c1c1e]/90 hover:bg-[#1c1c1e] backdrop-blur-xl text-white text-xs font-semibold shadow-lg border border-sky-400/30 transition-transform active:scale-95 group"
-          title="查看目前位置經緯度或手動輸入座標定位"
-        >
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
-          </span>
-          <span className="font-mono text-[11px] text-sky-300 font-bold">
-            {currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)}
-          </span>
-          <span className="text-[10px] text-sky-400/80 font-normal hidden sm:inline">經緯度</span>
-        </button>
-
-        {/* Top-Right account menu: navigation lives here, not inside assessment */}
-        <div className="relative">
-          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="Account">
-            <UserCircle className="w-5 h-5" />
-          </button>
-          {showProfileMenu && (
-            <div className="absolute top-full right-0 mt-2 w-60 rounded-2xl bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/10 shadow-2xl p-2 text-white">
-              <div className="px-3 py-2.5 border-b border-white/10 mb-1">
-                <div className="text-sm font-bold">StreetLens</div>
-                <div className="text-[10px] text-slate-500">Street assessment workspace</div>
-              </div>
+      </div>
               <button onClick={() => { onOpenSaved(); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-left">
                 <Star className="w-4 h-4 text-amber-300" /><div><div className="text-xs font-semibold">Favorites</div><div className="text-[10px] text-slate-500">Favorite streets & CLS list</div></div>
               </button>
@@ -346,46 +310,45 @@ export function FloatingControls({
           )}
         </div>
 
-        {/* Top-Right Quick Score Pill (tap opens sheet) */}
-        {!isSheetOpen && (
-          <button
-            type="button"
-            onClick={onOpenSheet}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1c1c1e]/90 hover:bg-[#1c1c1e] backdrop-blur-xl text-white text-xs shadow-lg border border-white/10 transition-all active:scale-95 group"
-            title="查看完整社區宜居指數"
-          >
-            <span className="font-bold text-slate-200 truncate max-w-[110px] sm:max-w-[160px]">
-              {currentStreetName}
-            </span>
-            <div className="flex items-center gap-1 pl-2 border-l border-white/15">
-              <span className="font-mono font-black text-indigo-400 text-sm">
-                {clsScore}
-              </span>
-              <span className="px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
-                {grade}級
-              </span>
-            </div>
+      </div>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
           </button>
         )}
       </div>
 
-      {/* BOTTOM FLOATING CONTROLS (Exactly matching Apple Maps layout) */}
-      <div className="flex flex-col gap-3 pointer-events-auto pb-1">
-        {/* Floating action buttons row (Binoculars on left, Capsule on right) */}
-        <div className="flex items-end justify-between px-1">
-          {/* Bottom-Left: Binoculars (Scout Look Around / Open Sheet button) */}
-          <button
-            type="button"
-            onClick={onOpenSheet}
-            className="w-12 h-12 rounded-full bg-[#1c1c1e]/90 hover:bg-[#1c1c1e] backdrop-blur-xl text-white shadow-xl border border-white/10 flex items-center justify-center transition-all active:scale-90"
-            title="開啟實勘評分面板"
-          >
-            <Binoculars className="w-5 h-5 text-indigo-400" />
-          </button>
+      {/* Unified bottom location / assessment entry */}
+      <div className="flex items-end gap-2 pointer-events-auto pb-1">
+        <div ref={searchContainerRef} className="relative flex-1 min-w-0">
+          <div className="flex items-center gap-2 rounded-2xl bg-[#1c1c1e]/92 backdrop-blur-xl border border-white/10 shadow-2xl px-3 py-2.5">
+            <MapPin className="w-4 h-4 text-rose-400 shrink-0" />
+            <input
+              value={searchQuery || currentStreetName}
+              onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
+              onFocus={() => setIsSearchOpen(true)}
+              placeholder="搜尋新的實勘點"
+              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
+              aria-label="搜尋實勘地址"
+            />
+            {isSearching ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <Search className="w-4 h-4 text-slate-500" />}
+          </div>
+          {isSearchOpen && (suggestions.length > 0 || searchQuery.trim().length >= 2) && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-auto rounded-2xl bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/10 shadow-2xl p-1.5">
+              {suggestions.map((item, index) => (
+                <button key={item.place_id || index} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-white/10 text-white text-xs">
+                  <div className="font-semibold truncate">{item.name || item.display_name?.split(',')[0]}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{item.display_name}</div>
+                </button>
+              ))}
+              {searchQuery.trim().length >= 2 && !isSearching && suggestions.length === 0 && <div className="px-3 py-4 text-xs text-slate-500">找不到符合的地址</div>}
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={onOpenSheet} className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white shadow-2xl border border-indigo-300/30 flex items-center justify-center transition-all active:scale-90" title="開始實勘">
+          <Compass className="w-5 h-5" />
+        </button>
+      </div>
 
-          {/* Bottom-Right: Vertical Glass Capsule (Layers + Locate buttons) */}
-          <div
+        <div
             className="relative flex flex-col bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
             ref={layerMenuRef}
           >

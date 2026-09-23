@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, X, ClipboardCheck, Database, Star, Trash2, ArrowLeft } from 'lucide-react';
+import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft } from 'lucide-react';
 import { FieldCheckItem, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 
 type View = 'assessment' | 'saved' | 'settings';
@@ -178,13 +178,26 @@ export function AssessmentWorkspace({
             {step === 3 && <>
               <section>
                 <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Review & save</label>
-              <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3 text-xs text-slate-300">Your observation is ready to be added to the CLS assessment.</div>
+              <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    Observation ready to save
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    Your field observations are stored separately from external source data.
+                  </div>
+                </div>
                 <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder="What did you observe? e.g. sidewalk blocked, good shade, heavy traffic..." className="mt-2 w-full rounded-2xl bg-white/5 border border-white/10 p-3 text-xs outline-none focus:border-sky-400/50 resize-none placeholder:text-slate-600" />
               </section>
 
               <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.06] p-3">
-              <div className="flex items-center gap-2 text-xs font-bold"><MapPin className="w-4 h-4 text-sky-300" /> {targetLocation.lat.toFixed(5)}, {targetLocation.lng.toFixed(5)}</div>
-              <div className="text-[10px] text-slate-500 mt-1">Observation will be stored with this location and assessment timestamp.</div>
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  <MapPin className="w-4 h-4 text-sky-300" />
+                  <span className="truncate">{streetName || 'Selected street'}</span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">
+                  {district} · {city} · Saved with the assessment timestamp
+                </div>
               </section>
             </>}
           </div>

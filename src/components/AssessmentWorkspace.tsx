@@ -194,9 +194,14 @@ export function AssessmentWorkspace({
                     const factors = assessment?.scores[categoryKey]?.factors || [];
                     return (
                       <div key={category} className="rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] font-bold text-slate-300">{category}</span>
-                          <span className="text-xs font-mono font-bold text-white">{score ?? '—'}</span>
+                          <div className="flex items-center gap-1.5">
+                            {assessment?.scores[categoryKey]?.mode === 'estimated' && (
+                              <span className="text-[9px] font-semibold text-amber-300">推估</span>
+                            )}
+                            <span className="text-xs font-mono font-bold text-white">{score ?? '—'}</span>
+                          </div>
                         </div>
                         <div className="mt-1.5 space-y-1">
                           {factors.slice(0, 4).map(item => (
@@ -265,6 +270,32 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
+              {assessment?.officialServiceMetrics && (
+                <div className="mt-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.04] p-3">
+                  <div className="text-xs font-bold text-emerald-100">Official local services</div>
+                  <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                    Persisted official inventories near this location. These values are source evidence; only metrics defined by the scoring model affect CLS.
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    {[
+                      ['YouBike', assessment.officialServiceMetrics.youBikeNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.youBikeNearestDistance) + ' m'],
+                      ['YouBike bikes', assessment.officialServiceMetrics.youBikeAvailableBikes == null ? '—' : String(assessment.officialServiceMetrics.youBikeAvailableBikes)],
+                      ['Medical', assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
+                      ['Bus stop', assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
+                      ['Libraries · 800m', String(assessment.officialServiceMetrics.libraryCount800m)],
+                      ['Public toilets · 800m', String(assessment.officialServiceMetrics.publicToiletCount800m)],
+                      ['Street lights · 300m', assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : String(assessment.officialServiceMetrics.streetLightCount300m)],
+                      ['Parks · 800m', String(assessment.officialServiceMetrics.officialParkCount800m)],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-xl bg-white/[0.03] border border-white/5 px-2.5 py-2">
+                        <div className="text-[9px] text-slate-600">{label}</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-slate-300">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {assessment?.historicalFloodEvents && (
                 <div className="mt-3 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] p-3">
                   <div className="text-xs font-bold text-cyan-100">Historical flood records</div>

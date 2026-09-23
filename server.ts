@@ -1287,11 +1287,16 @@ app.post("/api/assessment/field-adjustment", async (req: Request, res: Response)
       adjustedCls: result.adjustedCls,
       adjustment: result.adjustment,
       categoryAdjustments: result.categoryAdjustments,
+      itemAdjustments: result.itemAdjustments,
       ratedItemCount: result.ratedItemCount,
       model: {
-        ratingScale: "1=Poor, 2=Fair, 3=Good, 4=Great",
+        ratingScale: {
+          values: [1, 2, 3, 4],
+          labels: ["Poor", "Fair", "Good", "Great"],
+        },
         categoryCap: 10,
-        weighting: "equal C1-C5",
+        weighting: { C1: 0.2, C2: 0.2, C3: 0.2, C4: 0.2, C5: 0.2 },
+        evidenceRequirement: "note_recommended",
         note: "Field observations adjust the source-backed baseline; they do not replace external data.",
       },
     });

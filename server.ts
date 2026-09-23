@@ -8,7 +8,7 @@ import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, OFFICIAL_SOURCE_URLS } from "./official";
-import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -1554,6 +1554,19 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       });
     }
 
+    // Supplementary citywide official inventories are read only from persisted
+    // spatial indexes. They do not block the core assessment when unavailable.
+    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot] = await Promise.all([
+      getCachedSnapshot("taipei_youbike", "__citywide__"),
+      getCachedSnapshot("taipei_medical", "__citywide__"),
+      getCachedSnapshot("taipei_street_lights", "__citywide__"),
+    ]);
+    const [nearbyYouBike, nearbyMedical, nearbyStreetLights] = await Promise.all([
+      youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
+      medicalSnapshot ? getNearbyExternalSpatialPoints("taipei_medical", lat, lng, 1500, 500) : Promise.resolve([]),
+      streetLightSnapshot ? getNearbyExternalSpatialPoints("taipei_street_lights", lat, lng, 300, 5000) : Promise.resolve([]),
+    ]);
+
     // A user request never fetches external scoring sources. Existing snapshots are
     // returned even when stale; only genuinely absent source data is marked unavailable.
     const google = snapshots.google_places?.payload || { pois: [] };
@@ -1608,14 +1621,28 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
       return values.length ? Math.min(...values) : undefined;
     };
-    const sourceNames = [...new Set(pois.map((poi: any) => poi.source).filter(Boolean))];
+    const c2GoogleOsmSourceNames = [...new Set(
+      pois.filter((poi: any) => poi.category === "C2").map((poi: any) => poi.source).filter(Boolean),
+    )];
+    const officialClinicDist = nearbyMedical.length
+      ? Math.min(...nearbyMedical.map((point) => point.distanceMeters))
+      : undefined;
+    const localClinicDist = nearest("clinic");
+    const clinicDist = [officialClinicDist, localClinicDist]
+      .filter((value): value is number => Number.isFinite(value))
+      .reduce((min, value) => Math.min(min, value), Number.POSITIVE_INFINITY);
+    const c2ClinicDist = Number.isFinite(clinicDist) ? clinicDist : undefined;
+    const c2SourceNames = [
+      ...c2GoogleOsmSourceNames,
+      ...(officialClinicDist != null ? [medicalSnapshot?.payload?.source || "Taipei City Health Department medical facilities"] : []),
+    ];
     const c2PoiMetrics = {
-      supermarketDist: nearest("supermarket"), convenienceDist: nearest("convenience"), clinicDist: nearest("clinic"), schoolDist: nearest("school"), bankPostDist: nearest("bank_post"),
+      supermarketDist: nearest("supermarket"), convenienceDist: nearest("convenience"), clinicDist: c2ClinicDist, schoolDist: nearest("school"), bankPostDist: nearest("bank_post"),
       poiDensityCount: pois.filter((poi: any) => poi.category === "C2").length,
-      source: sourceNames.length ? sourceNames.join(" + ") : "unavailable", method: "calculated" as const,
-      confidence: sourceNames.length > 1 ? "high" as const : sourceNames.length === 1 ? "medium" as const : "low" as const,
-      status: sourceNames.length ? "available" as const : "empty" as const,
-      retrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt,
+      source: c2SourceNames.length ? [...new Set(c2SourceNames)].join(" + ") : "unavailable", method: "calculated" as const,
+      confidence: c2SourceNames.length > 1 ? "high" as const : c2SourceNames.length === 1 ? "medium" as const : "low" as const,
+      status: c2SourceNames.length ? "available" as const : "empty" as const,
+      retrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt || medicalSnapshot?.fetchedAt,
     };
 
     const railDistances = (officialTransit.railStations || [])
@@ -1641,12 +1668,37 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const c3RetrievedAt = transitSources.includes("TDX / MOTC")
       ? snapshots.tdx_transit?.fetchedAt
       : [...new Set(pois.filter((x: any) => x.amenityType === "rail" || x.amenityType === "bus").map((x: any) => x.retrievedAt).filter(Boolean))].join(" + ") || undefined;
+    const activeYouBike = nearbyYouBike.filter((point) => point.properties?.active !== false);
+    const nearestYouBike = activeYouBike.length ? activeYouBike[0] : undefined;
+    const youBikeSource = nearestYouBike
+      ? (youBikeSnapshot?.payload?.source || "Taipei City Transportation Department YouBike 2.0")
+      : undefined;
+    const youBikeRetrievedAt = nearestYouBike?.fetchedAt || undefined;
+    const youBikeAvailableBikes = nearestYouBike
+      ? Number(nearestYouBike.properties?.availableRentBikes)
+      : undefined;
+    const youBikeAvailableDocks = nearestYouBike
+      ? Number(nearestYouBike.properties?.availableReturnBikes)
+      : undefined;
+    const youBikeDistance = nearestYouBike?.distanceMeters;
+    const c3SourcesWithBike = [
+      ...transitSources,
+      ...(youBikeSource ? [youBikeSource] : []),
+    ];
     const c3TransitMetrics = {
-      mrtOrRailDist: railDist, busStopDist: busDist,
-      source: transitSources.length ? transitSources.join(" + ") : "unavailable", method: "calculated" as const,
-      confidence: railDistances.length && busDistances.length ? "high" as const : railDist != null || busDist != null ? "medium" as const : "low" as const,
-      status: railDist != null || busDist != null ? "available" as const : "empty" as const,
-      retrievedAt: c3RetrievedAt,
+      mrtOrRailDist: railDist,
+      busStopDist: busDist,
+      youBikeNearestDist: youBikeDistance,
+      youBikeAvailableBikes: Number.isFinite(youBikeAvailableBikes) ? youBikeAvailableBikes : undefined,
+      youBikeAvailableDocks: Number.isFinite(youBikeAvailableDocks) ? youBikeAvailableDocks : undefined,
+      source: c3SourcesWithBike.length ? [...new Set(c3SourcesWithBike)].join(" + ") : "unavailable", method: "calculated" as const,
+      confidence: railDistances.length && busDistances.length && youBikeDistance != null
+        ? "high" as const
+        : railDist != null || busDist != null || youBikeDistance != null
+          ? "medium" as const
+          : "low" as const,
+      status: railDist != null || busDist != null || youBikeDistance != null ? "available" as const : "empty" as const,
+      retrievedAt: c3RetrievedAt || youBikeRetrievedAt,
     };
 
     const parkPois = pois.filter((x: any) => x.amenityType === "park" && Number.isFinite(x.distanceMeters) && x.distanceMeters <= 800);
@@ -1683,29 +1735,43 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     };
 
     const accidents = safetyData.accidents || [];
+    const streetLightCount300m = streetLightSnapshot
+      ? nearbyStreetLights.reduce((sum, point) => {
+          const quantity = Number(point.properties?.quantity);
+          return sum + (Number.isFinite(quantity) ? quantity : 1);
+        }, 0)
+      : undefined;
+    const c1SourceNames = [
+      safetyData.source,
+      ...(streetLightSnapshot?.payload?.source ? [streetLightSnapshot.payload.source] : []),
+    ].filter(Boolean);
     const c1SafetyMetrics: C1SafetyMetrics = {
       accidentCount500m: accidents.length,
       fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
       injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
-      source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
-      status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.riskCells || [], floodSource: floodData.source || null,
-      accidentCountReference: [], floodDepthReference: [],
+      streetLightCount300m,
+      source: [...new Set(c1SourceNames)].join(" + ") || "unavailable",
+      method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
+      status: safetyData.status, retrievedAt: safetyData.retrievedAt || streetLightSnapshot?.fetchedAt, floodHazard: floodData.riskCells || [], floodSource: floodData.source || null,
+      accidentCountReference: [], floodDepthReference: [], streetLightCountReference: [],
     };
 
     const greenReference = await getGreenDensityReference();
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference, nearestCommunityReference] = await Promise.all([
+    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference, nearestCommunityReference, streetLightReference] = await Promise.all([
       getSafetyReference(),
       getPoiDensityReference(),
       getC5CommunityReference(),
       getDistanceAndAirQualityReferences(),
       getNearestParkDistanceReference(scopeKey),
       getNearestCommunityDistanceReference(scopeKey),
+      getSpatialPointPropertySumReference("taipei_street_lights", "quantity", 300, scopeKey),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
+    c1SafetyMetrics.streetLightCountReference = streetLightReference;
     const communityCount = pois.filter((poi: any) =>
       poi.category === "C5"
       || /community|library|活動中心|圖書館|服務中心|公民/.test(String(poi.name || "")),
@@ -1739,7 +1805,12 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
     return res.json({
       location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
-      dataSources: sourceNames,
+      dataSources: [...new Set([
+        ...sourceNames,
+        ...(officialClinicDist != null ? [medicalSnapshot?.payload?.source || "Taipei City Health Department medical facilities"] : []),
+        ...(youBikeSource ? [youBikeSource] : []),
+        ...(streetLightSnapshot?.payload?.source ? [streetLightSnapshot.payload.source] : []),
+      ].filter(Boolean))],
       sourceStatus: [
         ...sourceKeys.map((key) => ({
           source: key,
@@ -1765,6 +1836,18 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           sourceVersion: null,
           freshnessMethod: "spatial_index",
         },
+        ...[
+          ["taipei_youbike", youBikeSnapshot],
+          ["taipei_medical", medicalSnapshot],
+          ["taipei_street_lights", streetLightSnapshot],
+        ].map(([source, snapshot]: [string, any]) => ({
+          source,
+          status: snapshot?.status || "unavailable",
+          retrievedAt: snapshot?.fetchedAt || null,
+          checkedAt: snapshot?.checkedAt || null,
+          sourceVersion: snapshot?.sourceVersion || null,
+          freshnessMethod: snapshot?.freshnessMethod || "scheduled",
+        })),
       ],
       missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
       dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key]?.fetchedAt || null])),

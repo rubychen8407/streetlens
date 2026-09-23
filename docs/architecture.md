@@ -71,3 +71,14 @@ The current `workspaceId` is a browser-generated anonymous owner key. It is inte
 ## Photo storage note
 
 Cloud SQL `BYTEA` is used for the current prototype because Cloud SQL is the selected persistence platform. At larger scale, photo blobs can be moved to object storage while retaining the same evidence metadata model in Cloud SQL.
+## Gemini explanation layer
+
+Saved assessment explanations are generated only from the persisted assessment session in Cloud SQL.
+
+- POST /api/assessments/:id/explanation?workspaceId=... loads the saved session server-side before calling Gemini.
+- The prompt receives persisted category scores, factor provenance, source status, field-observation ratings, field adjustments, notes, and evidence notes.
+- Gemini is explicitly instructed not to calculate or change CLS, fill missing values, invent numeric facts, or rank streets.
+- A missing Gemini configuration returns an unavailable response; the server does not synthesize a fallback explanation.
+- The current UI exposes the explanation action only after the assessment has been saved to Cloud SQL.
+
+This keeps Gemini in the explanation layer rather than the scoring layer. Gemini output is descriptive assistance, not a source of raw measurements or score calculations.

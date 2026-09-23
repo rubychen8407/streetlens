@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateAssessment, validateAssessmentIntegrity } from "../scoring.ts";
+import { applyFieldObservationAdjustment, calculateAssessment, validateAssessmentIntegrity } from "../scoring.ts";
 
 const baseline = {};
 const emptyAssessment = calculateAssessment(baseline, {});
@@ -32,5 +32,45 @@ const unavailableAssessment = {
 };
 const unavailableValidation = validateAssessmentIntegrity(unavailableAssessment);
 assert.equal(unavailableValidation.valid, false, "unavailable factors must not carry numeric values");
+
+const unchanged = applyFieldObservationAdjustment(80, {});
+assert.equal(unchanged.adjustedCls, 80);
+assert.equal(unchanged.adjustment, 0);
+assert.equal(unchanged.ratedItemCount, 0);
+
+const positiveObservation = applyFieldObservationAdjustment(80, {
+  c3_sidewalk_quality: 4,
+});
+assert.equal(positiveObservation.adjustedCls, 88);
+assert.equal(positiveObservation.adjustment, 8);
+assert.equal(positiveObservation.categoryAdjustments.C3, 8);
+
+const negativeObservation = applyFieldObservationAdjustment(80, {
+  c3_sidewalk_blocked: 4,
+});
+assert.equal(negativeObservation.adjustedCls, 70);
+assert.equal(negativeObservation.adjustment, -10);
+assert.equal(negativeObservation.categoryAdjustments.C3, -10);
+
+const balancedObservation = applyFieldObservationAdjustment(80, {
+  c3_sidewalk_quality: 4,
+  c3_sidewalk_blocked: 4,
+});
+assert.equal(balancedObservation.adjustedCls, 80);
+assert.equal(balancedObservation.adjustment, 0);
+
+const cappedObservation = applyFieldObservationAdjustment(80, {
+  c1_lighting: 4,
+  c1_cctv: 4,
+  c1_flood_mark: 4,
+});
+assert.equal(cappedObservation.categoryAdjustments.C1, 10, "category observation adjustment must be capped at +10");
+assert.equal(cappedObservation.adjustedCls, 82, "C1 cap should contribute +2 to equal-weight CLS");
+
+const unavailableBaseline = applyFieldObservationAdjustment(null, {
+  c1_lighting: 4,
+});
+assert.equal(unavailableBaseline.adjustedCls, null);
+assert.equal(unavailableBaseline.adjustment, 0);
 
 console.log("Score integrity checks passed.");

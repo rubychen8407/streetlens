@@ -106,7 +106,7 @@ export default function App() {
   const clsScore = fieldAdjustment !== null ? fieldAdjustment.adjustedCls : assessment?.scores.overall ?? null;
   const baselineClsScore = fieldAdjustment !== null ? fieldAdjustment.baselineCls : assessment?.scores.overall ?? null;
   const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
-  const baselineScores = { cls: clsScore, c1: assessment?.scores.c1.score ?? null, c2: assessment?.scores.c2.score ?? null, c3: assessment?.scores.c3.score ?? null, c4: assessment?.scores.c4.score ?? null, c5: assessment?.scores.c5.score ?? null };
+
 
   // Fetch real-time weather & air quality for coordinate
   const fetchWeather = async (coord: LocationCoord) => {
@@ -167,6 +167,11 @@ export default function App() {
       setObservationRatings({});
       setFieldNotes('');
       setFieldAdjustment(null);
+      setAssessment(null);
+      setBaselineSummary('正在載入新的街道資料…');
+      setWeatherData(null);
+      setNearbyPois([]);
+      setRealStreetSegments([]);
     }
     setIsLoadingBaseline(true);
     try {
@@ -248,8 +253,28 @@ export default function App() {
     if (saved.c4Data) setC4(saved.c4Data);
     if (saved.c5Data) setC5(saved.c5Data);
     if (saved.weights) setWeights(saved.weights);
-    setFieldNotes(saved.fieldNotes || '');
-    setObservationRatings(saved.observationRatings || {});
+    let restoredNotes = saved.fieldNotes || '';
+    let restoredRatings = saved.observationRatings || {};
+    if (!saved.observationRatings && restoredNotes.trim().startsWith('{')) {
+      try {
+        const legacy = JSON.parse(restoredNotes) as {
+          notes?: unknown;
+          observationRatings?: Record<string, unknown>;
+        };
+        if (typeof legacy.notes === 'string') restoredNotes = legacy.notes;
+        if (legacy.observationRatings && typeof legacy.observationRatings === 'object') {
+          restoredRatings = Object.fromEntries(
+            Object.entries(legacy.observationRatings)
+              .filter(([, value]) => Number.isFinite(Number(value)))
+              .map(([key, value]) => [key, Number(value)]),
+          );
+        }
+      } catch {
+        // Keep the original field note when an older saved record is not JSON.
+      }
+    }
+    setFieldNotes(restoredNotes);
+    setObservationRatings(restoredRatings);
     setAssessment(saved.assessmentSnapshot || null);
     setFieldAdjustment(
       saved.baselineClsScore != null || saved.fieldAdjustmentDetails

@@ -37,6 +37,13 @@ import {
   prepareEvidencePhoto,
   storeEvidencePhoto,
 } from './utils/evidenceStore';
+import {
+  deletePersistedAssessment,
+  getRemoteEvidencePhotoUrl,
+  getWorkspaceId,
+  listPersistedAssessments,
+  persistAssessment,
+} from './utils/assessmentApi';
 
 export default function App() {
   // Default coordinates: Taipei Daan Yongkang Area
@@ -76,6 +83,7 @@ export default function App() {
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_saved_locations') || '[]'); } catch { return []; }
   });
+  const [workspaceId] = useState(() => getWorkspaceId());
 
   // Weights
   const [weights, setWeights] = useState<CLSWeights>(DEFAULT_CLS_WEIGHTS);
@@ -89,6 +97,44 @@ export default function App() {
   const [savedEvidenceUrls, setSavedEvidenceUrls] = useState<Record<string, string>>({});
   const savedEvidenceUrlsRef = useRef<Record<string, string>>({});
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void listPersistedAssessments(workspaceId).then((remote) => {
+      if (cancelled || remote.length === 0) return;
+
+      setSavedLocations((current) => {
+        const localById = new Map(current.map((item) => [item.id, item]));
+        const remoteIds = new Set(remote.map((item) => item.id));
+        const merged = [...remote.map((item) => {
+          const local = localById.get(item.id);
+          const localEvidence = new Map((local?.evidence || []).map((evidence) => [evidence.id, evidence]));
+          return {
+            ...item,
+            evidence: (item.evidence || []).map((evidence) => ({
+              ...evidence,
+              storageKey: localEvidence.get(evidence.id)?.storageKey,
+            })),
+          };
+        }), ...current.filter((item) => !remoteIds.has(item.id))]
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        try {
+          localStorage.setItem('cls_saved_locations', JSON.stringify(merged));
+        } catch {
+          // Cloud SQL remains the durable copy when local persistence is unavailable.
+        }
+        return merged;
+      });
+    }).catch((error) => {
+      console.warn('Cloud SQL assessment history load error:', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
 
   // Source-backed assessment state. Scores are returned by the backend only.
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
@@ -373,17 +419,27 @@ export default function App() {
     void (async () => {
       const entries: Record<string, string> = {};
       for (const item of savedEvidence) {
-        if (item.type !== 'photo' || !item.storageKey) continue;
-        try {
-          const url = await loadEvidencePhotoUrl(item.storageKey);
-          if (url) entries[item.storageKey] = url;
-        } catch (error) {
-          console.warn('Saved evidence preview error:', error);
+        if (item.type !== 'photo') continue;
+
+        if (item.storageKey) {
+          try {
+            const url = await loadEvidencePhotoUrl(item.storageKey);
+            if (url) {
+              entries[item.id] = url;
+              entries[item.storageKey] = url;
+            }
+          } catch (error) {
+            console.warn('Saved evidence preview error:', error);
+          }
+        }
+
+        if (!entries[item.id]) {
+          entries[item.id] = getRemoteEvidencePhotoUrl(workspaceId, saved.id, item.id);
         }
       }
       savedEvidenceUrlsRef.current = entries;
       setSavedEvidenceUrls(entries);
-    })();
+    })();;
 
     setAssessment(saved.assessmentSnapshot || null);
     setFieldAdjustment(
@@ -540,6 +596,7 @@ export default function App() {
 
   const handleSaveAssessment = useCallback(async (name: string, notes: string): Promise<boolean> => {
     setIsSavingAssessment(true);
+    setEvidenceError(null);
     let adjustment = fieldAdjustment;
 
     if (baselineClsScore != null || Object.keys(observationRatings).length > 0) {
@@ -578,7 +635,7 @@ export default function App() {
         await storeEvidencePhoto(storageKey, draft.blob);
         storedPhotoKeys.push(storageKey);
         evidence.push({
-          id: 'evidence_' + crypto.randomUUID(),
+          id: draft.id,
           type: 'photo',
           capturedAt: draft.capturedAt,
           location: draft.location,
@@ -599,7 +656,7 @@ export default function App() {
 
     const savedClsScore = adjustment?.adjustedCls ?? baselineClsScore;
     const savedGrade = savedClsScore == null ? null : savedClsScore >= 90 ? 'S' : savedClsScore >= 80 ? 'A' : savedClsScore >= 70 ? 'B' : savedClsScore >= 60 ? 'C' : 'D';
-    const entry: SavedLocation = {
+    let entry: SavedLocation = {
       id: 'saved_' + crypto.randomUUID(),
       name,
       streetName: streetName || 'Selected street',
@@ -635,23 +692,52 @@ export default function App() {
       timestamp: Date.now(),
     };
 
+    let cloudPersisted = false;
+    try {
+      const cloudResult = await persistAssessment(workspaceId, entry, evidenceDrafts);
+      if (cloudResult.ok && cloudResult.record) {
+        cloudPersisted = true;
+        entry = {
+          ...entry,
+          clsScore: cloudResult.record.clsScore,
+          baselineClsScore: cloudResult.record.baselineClsScore,
+          fieldAdjustment: cloudResult.record.fieldAdjustment,
+          fieldAdjustmentDetails: cloudResult.record.fieldAdjustmentDetails,
+          grade: cloudResult.record.grade,
+        };
+      } else {
+        console.warn('Cloud SQL assessment persistence unavailable:', cloudResult.error);
+        setEvidenceError('Cloud SQL 尚未同步；此筆 Assessment 已保留在本機。');
+      }
+    } catch (error) {
+      console.warn('Cloud SQL assessment persistence error:', error);
+      setEvidenceError('Cloud SQL 暫時無法同步；此筆 Assessment 已保留在本機。');
+    }
+
     const nextSavedLocations = [entry, ...savedLocations];
     try {
       localStorage.setItem('cls_saved_locations', JSON.stringify(nextSavedLocations));
     } catch (error) {
-      console.warn('Saved assessment persistence error:', error);
-      if (storedPhotoKeys.length > 0) void deleteEvidencePhotos(storedPhotoKeys).catch(() => {});
-      setEvidenceError('Assessment 無法寫入瀏覽器儲存空間，因此沒有儲存。');
+      console.warn('Saved assessment local persistence error:', error);
+      if (!cloudPersisted && storedPhotoKeys.length > 0) {
+        void deleteEvidencePhotos(storedPhotoKeys).catch(() => {});
+      }
+      setSavedLocations(nextSavedLocations);
+      setSelectedSavedEvidence(evidence);
       setIsSavingAssessment(false);
+      if (cloudPersisted) {
+        setEvidenceError('Cloud SQL 已儲存，但瀏覽器本機歷史無法寫入。');
+        return true;
+      }
+      setEvidenceError('Assessment 無法寫入瀏覽器儲存空間，因此沒有儲存。');
       return false;
     }
 
     setSavedLocations(nextSavedLocations);
     setSelectedSavedEvidence(evidence);
     setIsSavingAssessment(false);
-    setEvidenceError(null);
     return true;
-  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, savedLocations]);
+  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, savedLocations, workspaceId]);
 
   const handleToggleFavorite = useCallback(() => {
     const key = favoriteKey(targetLocation, streetName);
@@ -662,7 +748,16 @@ export default function App() {
     });
   }, [targetLocation, streetName]);
 
-  const handleDeleteSaved = useCallback((id: string) => {
+  const handleDeleteSaved = useCallback(async (id: string) => {
+    try {
+      const deletedRemotely = await deletePersistedAssessment(workspaceId, id);
+      if (!deletedRemotely) {
+        console.warn('Cloud SQL assessment delete was not confirmed for:', id);
+      }
+    } catch (error) {
+      console.warn('Cloud SQL assessment delete error:', error);
+    }
+
     const saved = savedLocations.find(item => item.id === id);
     const photoKeys = (saved?.evidence || [])
       .filter(item => item.type === 'photo' && item.storageKey)
@@ -674,7 +769,7 @@ export default function App() {
       try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
       return next;
     });
-  }, [savedLocations]);
+  }, [savedLocations, workspaceId]);
 
   // Map POIs & Street Segments (100% real Google Routes & OSRM road geometry)
   const streetSegments: StreetSegmentScore[] = useMemo(() => {

@@ -87,6 +87,7 @@ export interface C3TransitMetrics {
   youBikeNearestDist?: number;
   youBikeAvailableBikes?: number;
   youBikeAvailableDocks?: number;
+  bikeLaneLength500m?: number;
   source: string;
   method: "api" | "osm" | "calculated";
   confidence: "high" | "medium" | "low";
@@ -598,10 +599,33 @@ export function calculateAssessment(
       retrievedAt: c3TransitMetrics?.retrievedAt,
       scoringMethod: "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? undefined : "no_observation",
+    {
+      category: "C3",
+      indicator: "bikeLaneLength500m",
+      value: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? Number(c3TransitMetrics?.bikeLaneLength500m) : null,
+      unit: "m",
+      direction: "higher_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
+        ? (c3TransitMetrics?.source || "unavailable")
+        : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
+        ? (c3TransitMetrics?.method || "calculated")
+        : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
+        ? (c3TransitMetrics?.confidence || "low")
+        : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      referenceSampleSize: normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
+        ? ((normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
+        : "not_scored",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? undefined : "no_observation",
+    },
     },
   ];
   const c3ComponentScores = c3Factors
-    .filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist"].includes(factor.indicator))
+.filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist", "bikeLaneLength500m"].includes(factor.indicator))
     .map((factor) => {
       if (factor.value == null) return null;
       const reference = factor.indicator === "busStopDist"
@@ -610,7 +634,9 @@ export function calculateAssessment(
           ? normalization?.c3RailDistances
           : factor.indicator === "youBikeNearestDist"
             ? normalization?.c3YouBikeDistances
-            : undefined;
+            : factor.indicator === "bikeLaneLength500m"
+              ? normalization?.c3BikeLaneLengths
+              : undefined;
       const percentile = empiricalPercentileScore(factor.value, reference, "lower_is_better");
       return percentile
         ?? referenceRelativeScore(factor.value, reference, "lower_is_better")
@@ -836,11 +862,17 @@ export function calculateAssessment(
           normalization?.c3YouBikeDistances,
           "lower_is_better",
         ),
+        referenceRelativeScore(
+          medianValue(normalization?.c3BikeLaneLengths) ?? undefined,
+          normalization?.c3BikeLaneLengths,
+          "higher_is_better",
+        ),
       ]),
       sampleSize: Math.max(
         normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
         normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
         normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0,
+        normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0,
       ),
     },
     C4: {

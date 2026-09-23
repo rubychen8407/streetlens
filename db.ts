@@ -97,7 +97,7 @@ export async function ensureDataCacheSchema(): Promise<void> {
         source TEXT NOT NULL,
         source_version TEXT,
         source_updated_at TIMESTAMPTZ,
-        geom geometry(Polygon, 4326) NOT NULL
+        geom geometry(Geometry, 4326) NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_flood_hazard_polygons_geom
@@ -117,6 +117,10 @@ export async function ensureDataCacheSchema(): Promise<void> {
         source_updated_at TIMESTAMPTZ,
         geom geometry(Polygon, 4326) NOT NULL
       );
+
+      ALTER TABLE historical_flood_events
+        ALTER COLUMN geom TYPE geometry(Geometry, 4326)
+        USING geom::geometry(Geometry, 4326);
 
       CREATE INDEX IF NOT EXISTS idx_historical_flood_events_geom
         ON historical_flood_events USING GIST (geom);
@@ -235,6 +239,14 @@ function floodPolygonWkt(coordinates: Array<[number, number]>): string | null {
   return "POLYGON((" + closed.map(([lng, lat]) => `${lng} ${lat}`).join(",") + "))";
 }
 
+function historicalFloodGeometryWkt(coordinates: Array<[number, number]>): string | null {
+  if (coordinates.length === 1) {
+    const [lng, lat] = coordinates[0];
+    return `POINT(${lng} ${lat})`;
+  }
+  return floodPolygonWkt(coordinates);
+}
+
 export interface HistoricalFloodEventRecord {
   eventDate?: string | null;
   townName?: string | null;
@@ -264,7 +276,7 @@ export async function replaceHistoricalFloodEvents(
       let p = 1;
 
       for (const event of batch) {
-        const wkt = floodPolygonWkt(event.coordinates);
+        const wkt = historicalFloodGeometryWkt(event.coordinates);
         if (!wkt) continue;
 
         let eventDate: Date | null = null;

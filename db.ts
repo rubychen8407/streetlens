@@ -122,6 +122,42 @@ export async function getCachedSnapshot(sourceKey: string, scopeKey: string): Pr
   return result.rows[0] || null;
 }
 
+export async function getNearestCachedSnapshot(
+  sourceKey: string,
+  lat: number,
+  lng: number,
+  maxDistanceMeters = 250,
+): Promise<(CachedSnapshot & { scopeDistanceMeters: number }) | null> {
+  if (!dataDb) return null;
+
+  const result = await dataDb.query(
+    `SELECT s.source_key AS "sourceKey", s.scope_key AS "scopeKey", s.payload,
+            s.etag, s.last_modified AS "lastModified", s.content_hash AS "contentHash",
+            s.fetched_at AS "fetchedAt", s.checked_at AS "checkedAt",
+            s.source_updated_at AS "sourceUpdatedAt", s.source_version AS "sourceVersion",
+            s.freshness_method AS "freshnessMethod", s.status,
+            6371000 * 2 * ASIN(SQRT(
+              POWER(SIN(RADIANS(t.latitude - $2) / 2), 2) +
+              COS(RADIANS($2)) * COS(RADIANS(t.latitude)) *
+              POWER(SIN(RADIANS(t.longitude - $3) / 2), 2)
+            )) AS "scopeDistanceMeters"
+     FROM external_data_snapshots s
+     JOIN assessment_targets t ON t.scope_key = s.scope_key
+     WHERE s.source_key = $1
+       AND s.status IN ('available', 'empty')
+       AND t.active = TRUE
+     ORDER BY "scopeDistanceMeters" ASC
+     LIMIT 1`,
+    [sourceKey, lat, lng],
+  );
+
+  const row = result.rows[0];
+  if (!row || !Number.isFinite(Number(row.scopeDistanceMeters)) || Number(row.scopeDistanceMeters) > maxDistanceMeters) {
+    return null;
+  }
+  return row;
+}
+
 export function shouldPreserveExistingSnapshot(
   existing: Pick<CachedSnapshot, "contentHash"> | null,
   incomingContentHash: string,

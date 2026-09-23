@@ -759,6 +759,8 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   open_meteo_air_quality: 24,
 };
 
+const REFRESH_SOURCE_KEYS = Object.keys(REFRESH_INTERVAL_HOURS);
+
 function refreshPayloadForSource(sourceKey: string, lat: number, lng: number): Promise<any> {
   if (sourceKey === "google_places") return fetchGooglePlacesNearby(lat, lng);
   if (sourceKey === "openstreetmap") return fetchOsmPoisNearby(lat, lng);
@@ -796,16 +798,27 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
+  const requestedSource = typeof req.query.sourceKey === "string" ? req.query.sourceKey : null;
+  if (requestedSource && !REFRESH_SOURCE_KEYS.includes(requestedSource)) {
+    return res.status(400).json({
+      error: "Unknown sourceKey",
+      sourceKey: requestedSource,
+      allowedSourceKeys: REFRESH_SOURCE_KEYS,
+    });
+  }
+
   try {
     await ensureDataCacheSchema();
     const targets = await listActiveAssessmentTargets();
     const results: any[] = [];
     const now = Date.now();
+    const sourceKeys = requestedSource ? [requestedSource] : REFRESH_SOURCE_KEYS;
 
     for (const target of targets) {
       const { latitude: lat, longitude: lng, scopeKey } = target;
 
-      for (const sourceKey of Object.keys(REFRESH_INTERVAL_HOURS)) {
+      for (const sourceKey of sourceKeys) {
+        console.log(`[refresh] target=${scopeKey} source=${sourceKey} start`);
         const existing = await getCachedSnapshot(sourceKey, scopeKey);
         const due = !existing
           || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
@@ -821,12 +834,16 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
             fetchedAt: existing.fetchedAt,
             checkedAt: existing.checkedAt,
           });
+          console.log(`[refresh] target=${scopeKey} source=${sourceKey} skipped=cadence`);
           continue;
         }
 
+        // A first refresh has no prior validator state, so do not probe static
+        // resources before fetching the real payload.
         const validator = existing
           ? await checkStaticResourceValidators(sourceKey, existing)
           : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
+
         if (existing && validator.decision === "unchanged") {
           await markSnapshotChecked(sourceKey, scopeKey, {
             sourceVersion: validator.version,
@@ -843,6 +860,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
             fetchedAt: existing.fetchedAt,
             sourceVersion: validator.version,
           });
+          console.log(`[refresh] target=${scopeKey} source=${sourceKey} skipped=source-unchanged`);
           continue;
         }
 
@@ -872,6 +890,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
             preservedExisting: Boolean(existing),
             freshnessMethod: validator.method,
           });
+          console.warn(`[refresh] target=${scopeKey} source=${sourceKey} error=${fetchError}`);
           continue;
         }
 
@@ -891,12 +910,14 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
           freshnessMethod: validator.method,
           sourceVersion: validator.version,
         });
+        console.log(`[refresh] target=${scopeKey} source=${sourceKey} complete changed=${saved.changed}`);
       }
     }
 
     return res.json({
       refreshedAt: new Date().toISOString(),
       targetCount: targets.length,
+      sourceKeys,
       snapshots: results,
     });
   } catch (error: any) {

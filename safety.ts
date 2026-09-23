@@ -78,7 +78,7 @@ function parseKmlPolygonEvents(kml: string, source: string): HistoricalFloodEven
       .filter((pair) => Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
       .map(([lng, lat]) => [lng, lat] as [number, number]);
 
-    if (coordinates.length < 3) continue;
+    if (coordinates.length < 1) continue;
 
     const depthCm = depthRaw ? Number(depthRaw.replace(/,/g, "")) : null;
     const area = areaRaw ? Number(areaRaw.replace(/,/g, "")) : null;

@@ -88,6 +88,8 @@ export interface C3TransitMetrics {
   youBikeAvailableBikes?: number;
   youBikeAvailableDocks?: number;
   bikeLaneLength500m?: number;
+  sidewalkCoverage500mPct?: number;
+  sidewalkFeatureCount500m?: number;
   source: string;
   method: "api" | "osm" | "calculated";
   confidence: "high" | "medium" | "low";
@@ -624,7 +626,29 @@ export function calculateAssessment(
         : "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? undefined : "no_observation",
     },
-  ];
+    {
+      category: "C3",
+      indicator: "sidewalkCoverage500mPct",
+      value: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? Number(c3TransitMetrics?.sidewalkCoverage500mPct) : null,
+      unit: "%",
+      direction: "higher_is_better",
+      source: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
+        ? (c3TransitMetrics?.source || "unavailable")
+        : "unavailable",
+      method: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
+        ? (c3TransitMetrics?.method || "calculated")
+        : "calculated",
+      confidence: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
+        ? (c3TransitMetrics?.confidence || "low")
+        : "low",
+      status: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? "available" : "unavailable",
+      retrievedAt: c3TransitMetrics?.retrievedAt,
+      referenceSampleSize: normalization?.c3SidewalkCoveragePcts?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
+        ? ((normalization?.c3SidewalkCoveragePcts?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
+        : "not_scored",
+      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? undefined : "no_observation",
+    },  ];
   const c3ComponentScores = c3Factors
 .filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist", "bikeLaneLength500m"].includes(factor.indicator))
     .map((factor) => {
@@ -637,7 +661,9 @@ export function calculateAssessment(
             ? normalization?.c3YouBikeDistances
             : factor.indicator === "bikeLaneLength500m"
               ? normalization?.c3BikeLaneLengths
-              : undefined;
+              : factor.indicator === "sidewalkCoverage500mPct"
+                ? normalization?.c3SidewalkCoveragePcts
+                : undefined;
       const direction = factor.indicator === "bikeLaneLength500m" ? "higher_is_better" : "lower_is_better";
       const percentile = empiricalPercentileScore(factor.value, reference, direction);
       return percentile
@@ -869,12 +895,18 @@ export function calculateAssessment(
           normalization?.c3BikeLaneLengths,
           "higher_is_better",
         ),
+        referenceRelativeScore(
+          medianValue(normalization?.c3SidewalkCoveragePcts) ?? undefined,
+          normalization?.c3SidewalkCoveragePcts,
+          "higher_is_better",
+        ),
       ]),
       sampleSize: Math.max(
         normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
         normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
         normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0,
         normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0,
+        normalization?.c3SidewalkCoveragePcts?.filter(Number.isFinite).length ?? 0,
       ),
     },
     C4: {

@@ -242,6 +242,11 @@ export default function App() {
     if (saved.c5Data) setC5(saved.c5Data);
     if (saved.weights) setWeights(saved.weights);
     if (saved.fieldNotes) setFieldNotes(saved.fieldNotes);
+    setFieldAdjustment(
+      saved.baselineClsScore != null
+        ? { baselineCls: saved.baselineClsScore, adjustedCls: saved.clsScore, adjustment: saved.fieldAdjustment ?? 0 }
+        : null,
+    );
     // Refresh weather for this coordinate
     fetchWeather(saved.coords);
     setGpsSuccessMsg(`已切換至已存地點【${saved.name || saved.streetName}】(CLS: ${saved.clsScore}分)`);

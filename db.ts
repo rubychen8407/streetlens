@@ -50,6 +50,22 @@ export async function ensureDataCacheSchema(): Promise<void> {
   }
 
   await dataDb.query(`
+    CREATE TABLE IF NOT EXISTS external_spatial_points (
+      source_key TEXT NOT NULL,
+      feature_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source_updated_at TIMESTAMPTZ,
+      source_version TEXT,
+      PRIMARY KEY (source_key, feature_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_external_spatial_points_source_lat_lng
+      ON external_spatial_points(source_key, latitude, longitude);
+
     CREATE TABLE IF NOT EXISTS assessment_targets (
       id BIGSERIAL PRIMARY KEY,
       latitude DOUBLE PRECISION NOT NULL,
@@ -713,6 +729,182 @@ export async function getGreenDensityReference(
     if (Number.isFinite(parkCount)) park.push(parkCount / areaKm2);
   }
   return { street, park };
+}
+
+export interface ExternalSpatialPointRecord {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  properties: Record<string, unknown>;
+  fetchedAt: string;
+  sourceUpdatedAt: string | null;
+  sourceVersion: string | null;
+}
+
+export async function replaceExternalSpatialPoints(
+  sourceKey: string,
+  points: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    properties?: Record<string, unknown>;
+  }>,
+  metadata: { fetchedAt?: string; sourceUpdatedAt?: string | null; sourceVersion?: string | null } = {},
+): Promise<void> {
+  if (!dataDb) return;
+
+  await dataDb.query("BEGIN");
+  try {
+    await dataDb.query(
+      "DELETE FROM external_spatial_points WHERE source_key = $1",
+      [sourceKey],
+    );
+
+    const fetchedAt = metadata.fetchedAt || new Date().toISOString();
+    const sourceUpdatedAt = metadata.sourceUpdatedAt ?? null;
+    const sourceVersion = metadata.sourceVersion ?? null;
+
+    // Keep inserts batched to reduce round trips for citywide inventories.
+    const batchSize = 500;
+    for (let start = 0; start < points.length; start += batchSize) {
+      const batch = points.slice(start, start + batchSize);
+      const values: unknown[] = [];
+      const rows: string[] = [];
+      batch.forEach((point, index) => {
+        const offset = index * 8;
+        rows.push(
+          `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4},
+            ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`,
+        );
+        values.push(
+          sourceKey,
+          point.id,
+          point.name,
+          point.lat,
+          point.lng,
+          JSON.stringify(point.properties || {}),
+          fetchedAt,
+          sourceUpdatedAt,
+          sourceVersion,
+        );
+      });
+      // NOTE: 9 placeholders per point; the offset above intentionally uses
+      // 9 fields so metadata remains explicit and query-safe.
+      const correctedRows = batch.map((_point, index) => {
+        const offset = index * 9;
+        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
+      });
+      await dataDb.query(
+        `INSERT INTO external_spatial_points
+          (source_key, feature_id, name, latitude, longitude, properties, fetched_at, source_updated_at, source_version)
+         VALUES ${correctedRows.join(",")}
+         ON CONFLICT (source_key, feature_id) DO UPDATE SET
+           name = EXCLUDED.name,
+           latitude = EXCLUDED.latitude,
+           longitude = EXCLUDED.longitude,
+           properties = EXCLUDED.properties,
+           fetched_at = EXCLUDED.fetched_at,
+           source_updated_at = EXCLUDED.source_updated_at,
+           source_version = EXCLUDED.source_version`,
+        values,
+      );
+    }
+
+    await dataDb.query("COMMIT");
+  } catch (error) {
+    await dataDb.query("ROLLBACK");
+    throw error;
+  }
+}
+
+export async function getNearbyExternalSpatialPoints(
+  sourceKey: string,
+  lat: number,
+  lng: number,
+  maxDistanceMeters = 1500,
+  limit = 2000,
+): Promise<ExternalSpatialPointRecord[]> {
+  if (!dataDb) return [];
+
+  const latDelta = maxDistanceMeters / 111_320;
+  const lngDelta = maxDistanceMeters / (111_320 * Math.max(0.35, Math.cos(lat * Math.PI / 180)));
+
+  const result = await dataDb.query(
+    `SELECT
+       feature_id AS "id",
+       name,
+       latitude AS lat,
+       longitude AS lng,
+       properties,
+       fetched_at AS "fetchedAt",
+       source_updated_at AS "sourceUpdatedAt",
+       source_version AS "sourceVersion",
+       6371000 * 2 * ASIN(SQRT(
+         POWER(SIN(RADIANS(latitude - $2) / 2), 2) +
+         COS(RADIANS($2)) * COS(RADIANS(latitude)) *
+         POWER(SIN(RADIANS(longitude - $3) / 2), 2)
+       )) AS "distanceMeters"
+     FROM external_spatial_points
+     WHERE source_key = $1
+       AND latitude BETWEEN $4 AND $5
+       AND longitude BETWEEN $6 AND $7
+     ORDER BY "distanceMeters" ASC
+     LIMIT $8`,
+    [
+      sourceKey,
+      lat,
+      lng,
+      lat - latDelta,
+      lat + latDelta,
+      lng - lngDelta,
+      lng + lngDelta,
+      limit,
+    ],
+  );
+
+  return result.rows
+    .filter((row) => Number.isFinite(Number(row.distanceMeters)) && Number(row.distanceMeters) <= maxDistanceMeters)
+    .map((row) => ({
+      id: String(row.id),
+      name: String(row.name || row.id),
+      lat: Number(row.lat),
+      lng: Number(row.lng),
+      properties: row.properties || {},
+      fetchedAt: new Date(row.fetchedAt).toISOString(),
+      sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
+      sourceVersion: row.sourceVersion || null,
+    }));
+}
+
+export async function getSpatialPointMetricReference(
+  sourceKey: string,
+  maxDistanceMeters = 300,
+  radiusMode: "count" | "nearest" = "count",
+  excludeScopeKey?: string,
+): Promise<number[]> {
+  if (!dataDb) return [];
+  const targets = await listActiveAssessmentTargets();
+  const values: number[] = [];
+
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const rows = await getNearbyExternalSpatialPoints(sourceKey, target.latitude, target.longitude, maxDistanceMeters, 5000);
+    if (radiusMode === "nearest") {
+      if (rows.length) {
+        const nearest = rows.reduce((best, row) => {
+          const distance = Math.sqrt((row.lat - target.latitude) ** 2 + (row.lng - target.longitude) ** 2);
+          return Math.min(best, distance);
+        }, Number.POSITIVE_INFINITY);
+        if (Number.isFinite(nearest)) values.push(nearest);
+      }
+    } else {
+      values.push(rows.length);
+    }
+  }
+
+  return values;
 }
 
 export async function closeDataDb(): Promise<void> {

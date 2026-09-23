@@ -1428,7 +1428,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         scopeDistanceMeters: Number(primary.scopeDistanceMeters ?? 0),
         reused: candidates.length > 1 || Number(primary.scopeDistanceMeters ?? 0) > 0,
       };
-    });
+    }));
 
     const floodSpatialIndexReady = await hasFloodHazardPolygons();
     const availabilitySnapshots = floodSpatialIndexReady

@@ -996,6 +996,7 @@ export default function App() {
         aiExplanationError={aiExplanationError}
         onGenerateAiExplanation={handleGenerateAiExplanation}
         pendingAssessmentSources={pendingAssessmentSources}
+        baselineSummary={baselineSummary}
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);

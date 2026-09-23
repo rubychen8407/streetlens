@@ -251,7 +251,7 @@ export function FloatingControls({
             type="button"
             onClick={() => setShowWeatherDetail((v) => !v)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1c1c1e]/85 hover:bg-[#1c1c1e] backdrop-blur-xl text-white text-xs font-semibold shadow-lg border border-white/10 transition-transform active:scale-95"
-            title="天氣、濕度與即時空品"
+            title="天氣" aria-label="天氣"
           >
             <Sun className="w-4 h-4 text-amber-400" />
             <span className="font-bold font-mono">{weatherData ? `${weatherData.temperature}°` : '26°'}</span>
@@ -305,7 +305,7 @@ export function FloatingControls({
 
         {/* Top-Right account menu: navigation lives here, not inside assessment */}
         <div className="relative">
-          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="Account">
+          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="帳戶" aria-label="帳戶">
             <UserCircle className="w-5 h-5" />
           </button>
           {showProfileMenu && (
@@ -342,11 +342,11 @@ export function FloatingControls({
                 onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
                 onFocus={() => setIsSearchOpen(true)}
                 placeholder="搜尋新的實勘點..."
-                className="w-full pl-11 pr-10 py-3 bg-[#1c1c1e]/92 backdrop-blur-xl border border-white/15 rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
+                className="w-full h-12 pl-11 pr-10 bg-[#1c1c1e]/92 backdrop-blur-xl border border-white/15 rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
                 aria-label="搜尋新的實勘點"
               />
               {searchQuery && (
-                <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white" aria-label="清除搜尋">
+                <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white" aria-label="清除搜尋" title="清除">
                   <X className="w-4 h-4" />
                 </button>
               )}
@@ -370,7 +370,7 @@ export function FloatingControls({
                 </div>
               )}
             </div>
-            <button type="button" onClick={onOpenSheet} className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white shadow-2xl border border-indigo-300/30 flex items-center justify-center transition-all active:scale-90" title="開始實勘" aria-label="開始實勘">
+            <button type="button" onClick={onOpenSheet} className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white shadow-2xl border border-indigo-300/30 flex items-center justify-center transition-all active:scale-90" title="實勘" aria-label="實勘">
               <Compass className="w-5 h-5" />
             </button>
           </div>
@@ -379,17 +379,17 @@ export function FloatingControls({
         {/* Map tools share the bottom row but keep a fixed footprint, so resizing
             never lets them overlap the search field or assessment button. */}
         <div
-          className="relative shrink-0 flex items-center bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
+          className="relative shrink-0 h-12 flex items-center bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
           ref={layerMenuRef}
         >
             {/* Layer Button */}
             <button
               type="button"
               onClick={() => setShowLayerMenu((v) => !v)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
                 showLayerMenu ? 'text-indigo-400 bg-white/10' : 'text-slate-300 hover:text-white'
               }`}
-              title="圖層與樣式切換"
+              title="圖層" aria-label="圖層"
             >
               <Layers className="w-5 h-5" />
             </button>
@@ -406,7 +406,7 @@ export function FloatingControls({
                   ? 'text-sky-400 bg-white/10'
                   : 'text-slate-300 hover:text-white active:scale-95'
               }`}
-              title="定位我的目前位置"
+              title="定位" aria-label="定位"
             >
               {isLocatingGPS ? (
                 <Loader2 className="w-5 h-5 animate-spin text-sky-400" />

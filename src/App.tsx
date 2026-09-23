@@ -518,6 +518,42 @@ export default function App() {
       }
     }
 
+    const evidence: AssessmentEvidence[] = [];
+    if (notes.trim()) {
+      evidence.push({
+        id: 'evidence_note_' + crypto.randomUUID(),
+        type: 'note',
+        capturedAt: Date.now(),
+        location: targetLocation,
+        note: notes.trim(),
+      });
+    }
+
+    const storedPhotoKeys: string[] = [];
+    try {
+      for (const draft of evidenceDrafts) {
+        await storeEvidencePhoto(draft.id, draft.blob);
+        storedPhotoKeys.push(draft.id);
+        evidence.push({
+          id: draft.id,
+          type: 'photo',
+          capturedAt: draft.capturedAt,
+          location: draft.location,
+          note: draft.note.trim() || undefined,
+          storageKey: draft.id,
+          mimeType: draft.mimeType,
+          width: draft.width || undefined,
+          height: draft.height || undefined,
+        });
+      }
+    } catch (error) {
+      console.warn('Evidence storage error:', error);
+      if (storedPhotoKeys.length > 0) void deleteEvidencePhotos(storedPhotoKeys).catch(() => {});
+      setEvidenceError('照片儲存失敗，Assessment 尚未儲存。請重試。');
+      setIsSavingAssessment(false);
+      return false;
+    }
+
     const savedClsScore = adjustment?.adjustedCls ?? baselineClsScore;
     const savedGrade = savedClsScore == null ? null : savedClsScore >= 90 ? 'S' : savedClsScore >= 80 ? 'A' : savedClsScore >= 70 ? 'B' : savedClsScore >= 60 ? 'C' : 'D';
     const entry: SavedLocation = {
@@ -537,6 +573,7 @@ export default function App() {
       } : undefined,
       observationRatings,
       assessmentSnapshot: assessment ?? undefined,
+      evidence,
       grade: savedGrade,
       scores: {
         c1: assessment?.scores.c1.score ?? null,
@@ -554,44 +591,25 @@ export default function App() {
       fieldNotes: notes,
       timestamp: Date.now(),
     };
-    setSavedLocations(prev => {
-      const next = [entry, ...prev];
-      try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
-      return next;
-    });
+
+    const nextSavedLocations = [entry, ...savedLocations];
+    try {
+      localStorage.setItem('cls_saved_locations', JSON.stringify(nextSavedLocations));
+    } catch (error) {
+      console.warn('Saved assessment persistence error:', error);
+      if (storedPhotoKeys.length > 0) void deleteEvidencePhotos(storedPhotoKeys).catch(() => {});
+      setEvidenceError('Assessment 無法寫入瀏覽器儲存空間，因此沒有儲存。');
+      setIsSavingAssessment(false);
+      return false;
+    }
+
+    setSavedLocations(nextSavedLocations);
+    setSelectedSavedEvidence(evidence);
     setIsSavingAssessment(false);
+    setEvidenceError(null);
     return true;
-  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, assessment, c1, c2, c3, c4, c5, weights]);
-  useEffect(() => {
-    if (!isSheetOpen || workspaceView !== 'assessment') return;
+  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, savedLocations]);
 
-    const requestId = ++fieldAdjustmentRequestRef.current;
-    const timer = window.setTimeout(async () => {
-      if (baselineClsScore == null && Object.keys(observationRatings).length === 0) {
-        setFieldAdjustment(null);
-        setIsPreviewingFieldAdjustment(false);
-        return;
-      }
-
-      setIsPreviewingFieldAdjustment(true);
-      try {
-        const response = await fetch('/api/assessment/field-adjustment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ baselineCls: baselineClsScore, ratings: observationRatings }),
-        });
-        if (!response.ok) throw new Error('field adjustment preview failed: ' + response.status);
-        const result = await response.json() as FieldObservationAdjustment;
-        if (requestId === fieldAdjustmentRequestRef.current) setFieldAdjustment(result);
-      } catch (error) {
-        if (requestId === fieldAdjustmentRequestRef.current) console.warn('Field observation adjustment preview error:', error);
-      } finally {
-        if (requestId === fieldAdjustmentRequestRef.current) setIsPreviewingFieldAdjustment(false);
-      }
-    }, 180);
-
-    return () => window.clearTimeout(timer);
-  }, [isSheetOpen, workspaceView, observationRatings, baselineClsScore]);
   const handleToggleFavorite = useCallback(() => {
     const key = favoriteKey(targetLocation, streetName);
     setFavoriteLocations(prev => {

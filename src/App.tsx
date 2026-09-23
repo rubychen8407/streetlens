@@ -60,7 +60,12 @@ export default function App() {
   // Bottom Sheet Visibility
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<'assessment' | 'saved' | 'settings'>('assessment');
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLocations, setFavoriteLocations] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]'); } catch { return []; }
+  });
+  const favoriteKey = (coord: LocationCoord, name: string) =>
+    coord.lat.toFixed(5) + ':' + coord.lng.toFixed(5) + ':' + name.trim().toLowerCase();
+  const isFavorite = favoriteLocations.includes(favoriteKey(targetLocation, streetName));
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_saved_locations') || '[]'); } catch { return []; }
   });
@@ -408,6 +413,15 @@ export default function App() {
     });
   }, [streetName, district, city, targetLocation, clsScore, clsGrade, assessment, c1, c2, c3, c4, c5, weights]);
 
+  const handleToggleFavorite = useCallback(() => {
+    const key = favoriteKey(targetLocation, streetName);
+    setFavoriteLocations(prev => {
+      const next = prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key];
+      try { localStorage.setItem('cls_favorite_locations', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [targetLocation, streetName]);
+
   const handleDeleteSaved = useCallback((id: string) => {
     setSavedLocations(prev => {
       const next = prev.filter(item => item.id !== id);
@@ -533,7 +547,7 @@ export default function App() {
         onDeleteSaved={handleDeleteSaved}
         onOpenDataLogs={() => setWorkspaceView('settings')}
         isFavorite={isFavorite}
-        onToggleFavorite={() => setIsFavorite(v => !v)}
+        onToggleFavorite={handleToggleFavorite}
       />
     </div>
   );

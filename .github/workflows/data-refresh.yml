@@ -1,0 +1,16 @@
+name: Data refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '20 19 * * *' # 03:20 Asia/Taipei (UTC+8)
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh persisted source snapshots
+        env:
+          STREETLENS_BASE_URL: ${{ secrets.STREETLENS_BASE_URL }}
+          STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}
+        run: npx tsx scripts/refresh-data.ts

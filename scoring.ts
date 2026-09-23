@@ -1,5 +1,8 @@
 export type Category = "C1" | "C2" | "C3" | "C4" | "C5";
 
+import { FieldObservationAdjustment } from "./src/types";
+import { FIELD_OBSERVATION_DEFINITIONS } from "./src/data/fieldIndicators";
+
 export interface ScoreFactor {
   category: Category;
   indicator: string;
@@ -128,45 +131,22 @@ function empiricalPercentileScore(value: number | undefined, referenceValues: nu
   return clampScore(direction === "lower_is_better" ? 100 - percentile : percentile);
 }
 
-export interface FieldObservationAdjustment {
-  baselineCls: number | null;
-  adjustedCls: number | null;
-  adjustment: number;
-  categoryAdjustments: Record<Category, number>;
-  ratedItemCount: number;
-}
-
-const FIELD_OBSERVATION_IMPACTS: Record<string, { category: Category; scoreImpact: number }> = {
-  c1_lighting: { category: "C1", scoreImpact: 5 },
-  c1_cctv: { category: "C1", scoreImpact: 5 },
-  c1_fire_access: { category: "C1", scoreImpact: -10 },
-  c1_flood_mark: { category: "C1", scoreImpact: 4 },
-  c2_supermarket: { category: "C2", scoreImpact: 7 },
-  c2_convenience: { category: "C2", scoreImpact: 6 },
-  c2_medical: { category: "C2", scoreImpact: 5 },
-  c2_retail_gap: { category: "C2", scoreImpact: -8 },
-  c3_sidewalk_quality: { category: "C3", scoreImpact: 8 },
-  c3_sidewalk_blocked: { category: "C3", scoreImpact: -10 },
-  c3_youbike: { category: "C3", scoreImpact: 6 },
-  c3_blind_corner: { category: "C3", scoreImpact: -7 },
-  c4_park_walk: { category: "C4", scoreImpact: 8 },
-  c4_street_trees: { category: "C4", scoreImpact: 5 },
-  c4_traffic_noise: { category: "C4", scoreImpact: -10 },
-  c4_odor_exhaust: { category: "C4", scoreImpact: -8 },
-  c5_neighborhood_vibe: { category: "C5", scoreImpact: 6 },
-  c5_community_board: { category: "C5", scoreImpact: 5 },
-  c5_store_vacant: { category: "C5", scoreImpact: -8 },
-  c5_senior_friendly: { category: "C5", scoreImpact: 5 },
-};
-
 const OBSERVATION_CATEGORY_CAP = 10;
 const OBSERVATION_WEIGHTS: Record<Category, number> = DEFAULT_WEIGHTS;
+const FIELD_OBSERVATION_IMPACTS: Record<string, { category: Category; scoreImpact: number }> =
+  Object.fromEntries(
+    FIELD_OBSERVATION_DEFINITIONS.map((item) => [
+      item.id,
+      { category: item.category, scoreImpact: item.scoreImpact },
+    ]),
+  ) as Record<string, { category: Category; scoreImpact: number }>;
 
 export function applyFieldObservationAdjustment(
   baselineCls: number | null,
   ratings: Record<string, number>,
 ): FieldObservationAdjustment {
   const categoryAdjustments: Record<Category, number> = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0 };
+  const itemAdjustments: Record<string, number> = {};
   let ratedItemCount = 0;
 
   for (const [id, rawRating] of Object.entries(ratings || {})) {
@@ -174,7 +154,9 @@ export function applyFieldObservationAdjustment(
     const rating = Number(rawRating);
     if (!definition || !Number.isFinite(rating) || rating < 1 || rating > 4) continue;
     const centeredRating = (rating - 2.5) / 1.5;
-    categoryAdjustments[definition.category] += definition.scoreImpact * centeredRating;
+    const itemAdjustment = definition.scoreImpact * centeredRating;
+    categoryAdjustments[definition.category] += itemAdjustment;
+    itemAdjustments[id] = Math.round(itemAdjustment * 100) / 100;
     ratedItemCount += 1;
   }
 
@@ -200,6 +182,7 @@ export function applyFieldObservationAdjustment(
     adjustedCls,
     adjustment: adjustedCls == null || normalizedBaseline == null ? 0 : adjustedCls - normalizedBaseline,
     categoryAdjustments,
+    itemAdjustments,
     ratedItemCount,
   };
 }

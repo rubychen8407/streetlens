@@ -262,6 +262,34 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
+              {assessment?.historicalFloodEvents && (
+                <div className="mt-3 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] p-3">
+                  <div className="text-xs font-bold text-cyan-100">Historical flood records</div>
+                  <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                    Official historical inundation records near this location. These records are shown as evidence and do not directly change CLS.
+                  </div>
+                  {assessment.historicalFloodEvents.length > 0 ? (
+                    <div className="mt-2 space-y-1.5">
+                      {assessment.historicalFloodEvents.slice(0, 5).map((event, index) => (
+                        <div key={event.eventDate + '|' + event.address + '|' + index} className="rounded-xl bg-white/[0.03] px-2.5 py-2">
+                          <div className="flex items-center justify-between gap-2 text-[10px]">
+                            <span className="font-semibold text-slate-300">{event.eventDate || 'Date unavailable'}</span>
+                            <span className="shrink-0 text-cyan-200">
+                              {event.depthCm != null ? event.depthCm + ' cm' : 'Depth unavailable'}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[9px] text-slate-500">
+                            {(event.address || event.townName || 'Location unavailable') + ' · ' + Math.round(event.distanceMeters) + ' m'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[10px] text-slate-500">No historical inundation polygon was recorded within 500 m.</div>
+                  )}
+                  <div className="mt-2 text-[9px] text-slate-600">Source: Taipei City Water Resources Department · historical inundation records</div>
+                </div>
+              )}
             </section>}
             {step === 2 && <section>
               <div className="mb-3">

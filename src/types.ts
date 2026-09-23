@@ -81,14 +81,36 @@ export interface CLSWeights {
   wC5: number; // 社會與活力 (預設 0.2)
 }
 
-// 實勘現場勾選與校正項目
-export interface FieldCheckItem {
+export type FieldObservationEvidenceRequirement =
+  | 'none'
+  | 'note_recommended'
+  | 'photo_recommended'
+  | 'note_or_photo';
+
+export interface FieldObservationDefinition {
   id: string;
   category: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
   title: string;
   description: string;
+  ratingScale: readonly [1, 2, 3, 4];
+  ratingLabels: readonly ['Poor', 'Fair', 'Good', 'Great'];
+  scoreImpact: number;
+  evidenceRequirement: FieldObservationEvidenceRequirement;
+}
+
+// Legacy compatibility shape for existing callers. New assessment UI uses
+// FieldObservationDefinition so an unrated item is never implicitly selected.
+export interface FieldCheckItem extends FieldObservationDefinition {
   checked: boolean;
-  scoreImpact: number | null; // 分數加減影響 (例如人行道被佔用 -10, 有夜間巡守隊 +5)
+}
+
+export interface FieldObservationAdjustment {
+  baselineCls: number | null;
+  adjustedCls: number | null;
+  adjustment: number;
+  categoryAdjustments: Record<'C1' | 'C2' | 'C3' | 'C4' | 'C5', number>;
+  itemAdjustments: Record<string, number>;
+  ratedItemCount: number;
 }
 
 // 地圖上的 POI 標記
@@ -185,7 +207,10 @@ export interface SavedLocation {
   coords: LocationCoord;
   clsScore: number | null;
   baselineClsScore?: number | null;
-  fieldAdjustment?: number;
+  fieldAdjustment?: number | null;
+  fieldAdjustmentDetails?: Pick<FieldObservationAdjustment, 'categoryAdjustments' | 'itemAdjustments' | 'ratedItemCount'>;
+  observationRatings?: Record<string, number>;
+  assessmentSnapshot?: StreetAssessmentResponse;
   grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   scores: {
     c1: number | null;

@@ -642,7 +642,15 @@ export default function App() {
         onUpdateNotes={setFieldNotes}
         onSave={handleSaveAssessment}
         observationRatings={observationRatings}
-        onRatingChange={(id, rating) => setObservationRatings(prev => ({ ...prev, [id]: rating }))}
+        onRatingChange={(id, rating) => setObservationRatings(prev => {
+          const next = { ...prev };
+          if (next[id] === rating) {
+            delete next[id];
+          } else {
+            next[id] = rating;
+          }
+          return next;
+        })}
         fieldAdjustment={fieldAdjustment}
         isPreviewingFieldAdjustment={isPreviewingFieldAdjustment}
         isSaving={isSavingAssessment}

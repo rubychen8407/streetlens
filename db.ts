@@ -66,6 +66,21 @@ export async function ensureDataCacheSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_external_spatial_points_source_lat_lng
       ON external_spatial_points(source_key, latitude, longitude);
 
+    CREATE TABLE IF NOT EXISTS external_spatial_lines (
+      source_key TEXT NOT NULL,
+      feature_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source_updated_at TIMESTAMPTZ,
+      source_version TEXT,
+      geom geometry(LineString, 4326) NOT NULL,
+      PRIMARY KEY (source_key, feature_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_external_spatial_lines_source_geom
+      ON external_spatial_lines USING GIST (geom);
+
     CREATE TABLE IF NOT EXISTS assessment_targets (
       id BIGSERIAL PRIMARY KEY,
       latitude DOUBLE PRECISION NOT NULL,
@@ -824,6 +839,157 @@ export async function replaceExternalSpatialPoints(
     await dataDb.query("ROLLBACK");
     throw error;
   }
+}
+
+
+export async function replaceExternalSpatialLines(
+  sourceKey: string,
+  lines: Array<{
+    id: string;
+    name: string;
+    coordinates: Array<[number, number]>;
+    properties?: Record<string, unknown>;
+  }>,
+  metadata: { fetchedAt?: string; sourceUpdatedAt?: string | null; sourceVersion?: string | null } = {},
+): Promise<void> {
+  if (!dataDb || !postgisAvailable) return;
+
+  const client = await dataDb.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "DELETE FROM external_spatial_lines WHERE source_key = $1",
+      [sourceKey],
+    );
+
+    const fetchedAt = metadata.fetchedAt || new Date().toISOString();
+    const sourceUpdatedAt = metadata.sourceUpdatedAt ?? null;
+    const sourceVersion = metadata.sourceVersion ?? null;
+    const values: unknown[] = [];
+    const rows = lines
+      .filter((line) => line.coordinates.length >= 2)
+      .map((line, index) => {
+        const offset = index * 8;
+        const coordinateText = line.coordinates
+          .map(([lng, lat]) => `${lng} ${lat}`)
+          .join(",");
+        values.push(
+          sourceKey,
+          line.id,
+          line.name,
+          JSON.stringify(line.properties || {}),
+          fetchedAt,
+          sourceUpdatedAt,
+          sourceVersion,
+          `LINESTRING(${coordinateText})`,
+        );
+        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}::jsonb, ${offset + 5}, ${offset + 6}, ${offset + 7}, ST_SetSRID(ST_GeomFromText(${offset + 8}), 4326))`;
+      });
+
+    for (let start = 0; start < rows.length; start += 200) {
+      const rowBatch = rows.slice(start, start + 200);
+      const batchValues = values.splice(0, rowBatch.length * 8);
+      if (!rowBatch.length) continue;
+      const renumbered = rowBatch.map((row, index) => {
+        const currentOffset = index * 8;
+        return `(${currentOffset + 1}, ${currentOffset + 2}, ${currentOffset + 3}, ${currentOffset + 4}::jsonb, ${currentOffset + 5}, ${currentOffset + 6}, ${currentOffset + 7}, ST_SetSRID(ST_GeomFromText(${currentOffset + 8}), 4326))`;
+      });
+      await client.query(
+        `INSERT INTO external_spatial_lines
+           (source_key, feature_id, name, properties, fetched_at, source_updated_at, source_version, geom)
+         VALUES ${renumbered.join(",")}`,
+        batchValues,
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getNearbyExternalSpatialLines(
+  sourceKey: string,
+  lat: number,
+  lng: number,
+  maxDistanceMeters = 500,
+  limit = 2000,
+): Promise<Array<{
+  id: string;
+  name: string;
+  distanceMeters: number;
+  lengthMeters: number;
+  properties: Record<string, unknown>;
+  fetchedAt: string;
+  sourceUpdatedAt: string | null;
+  sourceVersion: string | null;
+}>> {
+  if (!dataDb || !postgisAvailable) return [];
+
+  const result = await dataDb.query(
+    `SELECT
+       feature_id AS "id",
+       name,
+       properties,
+       fetched_at AS "fetchedAt",
+       source_updated_at AS "sourceUpdatedAt",
+       source_version AS "sourceVersion",
+       ST_Length(geom::geography) AS "lengthMeters",
+       ST_Distance(
+         geom::geography,
+         ST_SetSRID(ST_Point($3, $2), 4326)::geography
+       ) AS "distanceMeters"
+     FROM external_spatial_lines
+     WHERE source_key = $1
+       AND ST_DWithin(
+         geom::geography,
+         ST_SetSRID(ST_Point($3, $2), 4326)::geography,
+         $4
+       )
+     ORDER BY "distanceMeters" ASC
+     LIMIT $5`,
+    [sourceKey, lat, lng, maxDistanceMeters, limit],
+  );
+
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name || row.id),
+    distanceMeters: Number(row.distanceMeters),
+    lengthMeters: Number(row.lengthMeters),
+    properties: row.properties || {},
+    fetchedAt: new Date(row.fetchedAt).toISOString(),
+    sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
+    sourceVersion: row.sourceVersion || null,
+  }));
+}
+
+export async function getSpatialLineLengthReference(
+  sourceKey: string,
+  maxDistanceMeters = 500,
+  excludeScopeKey?: string,
+): Promise<number[]> {
+  if (!dataDb || !postgisAvailable) return [];
+  const targets = await listActiveAssessmentTargets();
+  const values: number[] = [];
+
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const lines = await getNearbyExternalSpatialLines(
+      sourceKey,
+      target.latitude,
+      target.longitude,
+      maxDistanceMeters,
+      5000,
+    );
+    const total = lines.reduce((sum, line) =>
+      sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0);
+    values.push(total);
+  }
+
+  return values;
 }
 
 export async function getNearbyExternalSpatialPoints(

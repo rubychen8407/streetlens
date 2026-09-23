@@ -1645,9 +1645,32 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
-    return res.json({
-      location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
-      dataSources: sourceNames,
+    const sourceStatus = [
+      ...sourceKeys.map((key) => ({
+        source: key,
+        status: key === "taipei_flood" && floodSpatialIndexReady
+          ? (indexedFloodHazards.length ? "available" : "empty")
+          : snapshots[key]?.status || "unavailable",
+        retrievedAt: key === "taipei_flood" && floodSpatialIndexReady
+          ? (indexedFloodHazards[0]?.retrievedAt || null)
+          : snapshots[key]?.fetchedAt || null,
+        checkedAt: snapshots[key]?.checkedAt || null,
+        sourceVersion: snapshots[key]?.sourceVersion || null,
+        freshnessMethod: key === "taipei_flood" && floodSpatialIndexReady
+          ? "spatial_index"
+          : (snapshots[key]?.freshnessMethod || "unknown"),
+        cacheScopeDistanceMeters: snapshotOrigins[key]?.scopeDistanceMeters ?? 0,
+        reusedNearbySnapshot: snapshotOrigins[key]?.reused ?? false,
+      })),
+      {
+        source: "taipei_historical_flood",
+        status: historicalFloodEvents.length ? "available" : "empty",
+        retrievedAt: historicalFloodEvents.length ? new Date().toISOString() : null,
+        checkedAt: null,
+        sourceVersion: null,
+        freshnessMethod: "spatial_index",
+      },
+    ];
       sourceStatus: [
         ...sourceKeys.map((key) => ({
 
@@ -1673,212 +1696,3 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           freshnessMethod: "spatial_index",
         },
       ],
-      missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
-      dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key]?.fetchedAt || null])),
-      c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
-      c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.riskCells || [],
-      historicalFloodEvents,
-      parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
-      communityMetrics: {
-        nearestCommunityCulturalDistance: nearestCommunityCulturalDistance ?? null,
-        communityCulturalPoiCount800m: communityPois.length,
-      },
-    });
-  } catch (error: any) {
-    console.error("Assessment error:", error);
-    return res.status(500).json({ error: error.message || "Failed to calculate assessment" });
-  }
-});
-
-// 實勘結果綜合分析與診斷報告
-app.post("/api/assessment/field-adjustment", async (req: Request, res: Response) => {
-  try {
-    const baselineCls = req.body?.baselineCls;
-    const ratings = req.body?.ratings;
-    if (baselineCls !== null && (!Number.isFinite(Number(baselineCls)) || Number(baselineCls) < 0 || Number(baselineCls) > 100)) {
-      return res.status(400).json({ error: "baselineCls must be null or a number from 0 to 100" });
-    }
-    if (!ratings || typeof ratings !== "object" || Array.isArray(ratings)) {
-      return res.status(400).json({ error: "ratings must be an object" });
-    }
-
-    const result = applyFieldObservationAdjustment(
-      baselineCls === null ? null : Number(baselineCls),
-      ratings as Record<string, number>,
-    );
-
-    return res.json({
-      baselineCls: result.baselineCls,
-      adjustedCls: result.adjustedCls,
-      adjustment: result.adjustment,
-      categoryAdjustments: result.categoryAdjustments,
-      itemAdjustments: result.itemAdjustments,
-      ratedItemCount: result.ratedItemCount,
-      model: {
-        ratingScale: {
-          values: [1, 2, 3, 4],
-          labels: ["Poor", "Fair", "Good", "Great"],
-        },
-        categoryCap: 10,
-        weighting: { C1: 0.2, C2: 0.2, C3: 0.2, C4: 0.2, C5: 0.2 },
-        evidenceRequirement: "note_recommended",
-        note: "Field observations adjust the source-backed baseline; they do not replace external data.",
-      },
-    });
-  } catch (error) {
-    console.error("Field observation adjustment error:", error);
-    return res.status(500).json({ error: "Unable to calculate field observation adjustment" });
-  }
-});
-
-function normalizeGeminiList(value: unknown, maxItems = 3): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, maxItems);
-}
-
-function normalizeGeminiExplanation(value: any) {
-  const summary = typeof value?.summary === "string" ? value.summary.trim().slice(0, 500) : "";
-  if (!summary) {
-    throw new Error("Gemini returned an explanation without a summary");
-  }
-  return {
-    summary,
-    strengths: normalizeGeminiList(value?.strengths),
-    limitations: normalizeGeminiList(value?.limitations),
-    fieldObservations: normalizeGeminiList(value?.fieldObservations),
-    followUpChecks: normalizeGeminiList(value?.followUpChecks),
-  };
-}
-
-app.post("/api/assessments/:id/explanation", async (req: Request, res: Response) => {
-  try {
-    await waitForPersistenceSchema();
-
-    const workspaceId = req.query.workspaceId;
-    const record = await getAssessmentSession(workspaceId, req.params.id);
-    if (!record) {
-      return res.status(404).json({ error: "Saved assessment not found" });
-    }
-
-    const ai = getGeminiClient();
-    if (!ai) {
-      return res.status(503).json({ error: "Gemini explanation service is not configured" });
-    }
-
-    const snapshot = record.assessmentSnapshot && typeof record.assessmentSnapshot === "object"
-      ? record.assessmentSnapshot
-      : {};
-    const factors = Array.isArray((snapshot as any).factors)
-      ? (snapshot as any).factors.slice(0, 100)
-      : [];
-    const sourceStatus = Array.isArray((snapshot as any).sourceStatus)
-      ? (snapshot as any).sourceStatus.slice(0, 30)
-      : [];
-
-    const explanationInput = {
-      location: {
-        streetName: record.streetName,
-        district: record.district,
-        city: record.city,
-        latitude: record.coords.lat,
-        longitude: record.coords.lng,
-      },
-      persistedAssessment: {
-        categoryScores: record.scores,
-        baselineCls: record.baselineClsScore,
-        adjustedCls: record.clsScore,
-        fieldAdjustment: record.fieldAdjustment,
-        sourceDataStatus: (snapshot as any).dataStatus ?? "unknown",
-        factors,
-        sourceStatus,
-      },
-      fieldObservation: {
-        ratings: record.observationRatings || {},
-        categoryAdjustments: record.fieldAdjustmentDetails?.categoryAdjustments || {
-          C1: 0, C2: 0, C3: 0, C4: 0, C5: 0,
-        },
-        ratedItemCount: record.fieldAdjustmentDetails?.ratedItemCount || 0,
-        note: record.fieldNotes || "",
-        evidenceNotes: (record.evidence || [])
-          .filter((item) => item.note)
-          .map((item) => ({
-            type: item.type,
-            capturedAt: item.capturedAt,
-            note: item.note,
-          })),
-      },
-    };
-
-    const prompt = `You are the explanation layer for StreetLens, a street-level livability assessment product.
-
-Use ONLY the persisted assessment data provided below.
-
-Hard rules:
-1. Do not calculate, recalculate, normalize, or invent any score.
-2. Do not fill missing, null, unavailable, or insufficient data with assumptions or outside knowledge.
-3. Any numeric claim must come directly from the provided data.
-4. Clearly distinguish source-backed assessment facts from user field observations.
-5. A field observation may explain an adjustment, but it must never be presented as source data.
-6. Do not rank streets, declare a winner, or recommend one street over another.
-7. Follow-up checks must be framed as things a person could verify in the field, not as claimed facts.
-8. Keep the answer concise and evidence-oriented.
-
-Persisted data:
-${JSON.stringify(explanationInput)}
-
-Return JSON only with this exact shape:
-{
-  "summary": "A concise explanation of what the saved session shows and what remains uncertain.",
-  "strengths": ["up to 3 source-backed or explicitly observed strengths"],
-  "limitations": ["up to 3 important data limitations or uncertainties"],
-  "fieldObservations": ["up to 3 relevant observations from the saved field session"],
-  "followUpChecks": ["up to 3 concrete things to verify on a future visit"]
-}`;
-
-    const textResponse = await generateGeminiContentWithFallback(
-      ai,
-      prompt,
-      "application/json",
-    );
-    const cleaned = String(textResponse || "")
-      .replace(/^\s*\`\`\`json\s*/i, "")
-      .replace(/\s*\`\`\`\s*$/i, "")
-      .trim();
-    const parsed = normalizeGeminiExplanation(JSON.parse(cleaned));
-
-    return res.json({
-      source: "gemini_ai",
-      generatedAt: new Date().toISOString(),
-      ...parsed,
-    });
-  } catch (error: any) {
-    console.error("Persisted assessment explanation error:", error);
-    return res.status(500).json({ error: error?.message || "Failed to generate assessment explanation" });
-  }
-});
-
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
-
-startServer();

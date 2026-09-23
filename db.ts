@@ -34,8 +34,21 @@ export function hashPayload(payload: unknown): string {
   return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
+let postgisAvailable = false;
+
 export async function ensureDataCacheSchema(): Promise<void> {
   if (!dataDb) return;
+
+  // PostGIS is optional so local/CI environments without the extension can
+  // still use the regular snapshot cache. Neon supports PostGIS for spatial
+  // point-in-polygon queries used by the flood-risk index.
+  try {
+    await dataDb.query(`CREATE EXTENSION IF NOT EXISTS postgis;`);
+    postgisAvailable = true;
+  } catch (error) {
+    console.warn("PostGIS is not available; global flood spatial index disabled:", error);
+  }
+
   await dataDb.query(`
     CREATE TABLE IF NOT EXISTS assessment_targets (
       id BIGSERIAL PRIMARY KEY,
@@ -74,6 +87,25 @@ export async function ensureDataCacheSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_assessment_targets_active
       ON assessment_targets(active, last_requested_at DESC);
   `);
+
+  if (postgisAvailable) {
+    await dataDb.query(`
+      CREATE TABLE IF NOT EXISTS flood_hazard_polygons (
+        id BIGSERIAL PRIMARY KEY,
+        scenario_mmh DOUBLE PRECISION NOT NULL,
+        depth_cm DOUBLE PRECISION,
+        source TEXT NOT NULL,
+        source_version TEXT,
+        source_updated_at TIMESTAMPTZ,
+        geom geometry(Polygon, 4326) NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_flood_hazard_polygons_geom
+        ON flood_hazard_polygons USING GIST (geom);
+      CREATE INDEX IF NOT EXISTS idx_flood_hazard_polygons_scenario
+        ON flood_hazard_polygons(scenario_mmh);
+    `);
+  }
 }
 
 export function spatialScopeKey(lat: number, lng: number): string {
@@ -157,6 +189,118 @@ export async function getNearestCachedSnapshot(
   }
   return row;
 }
+
+export interface FloodHazardPolygonRecord {
+  scenarioMmH: 78.8 | 100 | 130;
+  depthCm: number | null;
+  source: string;
+  sourceVersion?: string | null;
+  sourceUpdatedAt?: string | null;
+  coordinates: Array<[number, number]>;
+}
+
+function floodPolygonWkt(coordinates: Array<[number, number]>): string | null {
+  if (coordinates.length < 3) return null;
+  const closed = coordinates[0][0] === coordinates[coordinates.length - 1][0]
+    && coordinates[0][1] === coordinates[coordinates.length - 1][1]
+    ? coordinates
+    : [...coordinates, coordinates[0]];
+  return "POLYGON((" + closed.map(([lng, lat]) => `${lng} ${lat}`).join(",") + "))";
+}
+
+export async function replaceFloodHazardPolygons(
+  polygons: FloodHazardPolygonRecord[],
+): Promise<boolean> {
+  if (!dataDb || !postgisAvailable || !polygons.length) return false;
+
+  const client = await dataDb.connect();
+  try {
+    await client.query("BEGIN");
+
+    const scenarios = [...new Set(polygons.map((polygon) => polygon.scenarioMmH))];
+    await client.query(
+      "DELETE FROM flood_hazard_polygons WHERE scenario_mmh = ANY($1::double precision[])",
+      [scenarios],
+    );
+
+    for (let i = 0; i < polygons.length; i += 50) {
+      const batch = polygons.slice(i, i + 50);
+      const values: string[] = [];
+      const params: any[] = [];
+      let p = 1;
+
+      for (const polygon of batch) {
+        const wkt = floodPolygonWkt(polygon.coordinates);
+        if (!wkt) continue;
+        values.push(
+          `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, ST_SetSRID(ST_GeomFromText($${p++}), 4326))`,
+        );
+        params.push(
+          polygon.scenarioMmH,
+          polygon.depthCm,
+          polygon.source,
+          polygon.sourceVersion ?? null,
+          polygon.sourceUpdatedAt ? new Date(polygon.sourceUpdatedAt) : null,
+          wkt,
+        );
+      }
+
+      if (values.length) {
+        await client.query(
+          `INSERT INTO flood_hazard_polygons
+             (scenario_mmh, depth_cm, source, source_version, source_updated_at, geom)
+           VALUES ${values.join(",")}`,
+          params,
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getFloodHazardsAtPoint(
+  lat: number,
+  lng: number,
+): Promise<Array<{
+  scenarioMmPerHour: 78.8 | 100 | 130;
+  depthCm: number | null;
+  distanceMeters: number;
+  source: string;
+  sourceType: "official_model";
+  retrievedAt: string;
+}>> {
+  if (!dataDb || !postgisAvailable) return [];
+
+  const result = await dataDb.query(
+    `SELECT scenario_mmh AS "scenarioMmPerHour",
+            depth_cm AS "depthCm",
+            source
+     FROM flood_hazard_polygons
+     WHERE ST_Covers(
+       geom,
+       ST_SetSRID(ST_Point($2, $1), 4326)
+     )
+     ORDER BY scenario_mmh ASC`,
+    [lat, lng],
+  );
+
+  return result.rows.map((row: any) => ({
+    scenarioMmPerHour: Number(row.scenarioMmPerHour) as 78.8 | 100 | 130,
+    depthCm: row.depthCm == null ? null : Number(row.depthCm),
+    distanceMeters: 0,
+    source: row.source,
+    sourceType: "official_model" as const,
+    retrievedAt: new Date().toISOString(),
+  }));
+}
+
 
 export function shouldPreserveExistingSnapshot(
   existing: Pick<CachedSnapshot, "contentHash"> | null,

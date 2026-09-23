@@ -161,7 +161,16 @@ export default function App() {
     }
 
     if (additions.length > 0) {
-      setEvidenceDrafts(prev => [...prev, ...additions].slice(0, 6));
+      setEvidenceDrafts(prev => {
+        const available = Math.max(0, 6 - prev.length);
+        const kept = additions.slice(0, available);
+        const discarded = additions.slice(available);
+        revokeDraftEvidence(discarded);
+        if (discarded.length > 0) {
+          setEvidenceError('每次 assessment 最多保留 6 張照片。多出的照片未加入。');
+        }
+        return [...prev, ...kept];
+      });
     }
   }, [targetLocation]);
 

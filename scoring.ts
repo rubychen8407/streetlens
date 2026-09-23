@@ -294,6 +294,7 @@ export function calculateAssessment(
     c3RailDistances?: number[];
     c3BusDistances?: number[];
     c3YouBikeDistances?: number[];
+    c3BikeLaneLengths?: number[];
     c4Aqi?: number[];
     c4NearestParkDistances?: number[];
     c5NearestCommunityDistances?: number[];

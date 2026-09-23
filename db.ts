@@ -674,6 +674,22 @@ export async function getC5CommunityReference(excludeScopeKey?: string): Promise
       scopePois.set(id, poi);
     }
   }
+
+  const targets = await listActiveAssessmentTargets();
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const libraries = await getNearbyExternalSpatialPoints("taipei_libraries", target.latitude, target.longitude, 800, 500);
+    if (!libraries.length) continue;
+    const scopePois = byScope.get(target.scopeKey) || new Map<string, any>();
+    for (const library of libraries) {
+      scopePois.set(
+        `official-library|${library.name}|${library.lat.toFixed(5)}|${library.lng.toFixed(5)}`,
+        library,
+      );
+    }
+    byScope.set(target.scopeKey, scopePois);
+  }
+
   return [...byScope.values()].map((pois) => pois.size);
 }
 
@@ -999,6 +1015,18 @@ export async function getNearestCommunityCulturalDistanceReference(excludeScopeK
       if (current == null || distance < current) nearestByScope.set(row.scopeKey, distance);
     }
   }
+
+  const targets = await listActiveAssessmentTargets();
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const libraries = await getNearbyExternalSpatialPoints("taipei_libraries", target.latitude, target.longitude, 1000, 200);
+    const nearestLibrary = libraries.length ? libraries[0].distanceMeters : null;
+    if (nearestLibrary != null) {
+      const current = nearestByScope.get(target.scopeKey);
+      if (current == null || nearestLibrary < current) nearestByScope.set(target.scopeKey, nearestLibrary);
+    }
+  }
+
   return [...nearestByScope.values()];
 }
 
@@ -1006,9 +1034,10 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
   c3RailDistances: number[];
   c3BusDistances: number[];
+  c3YouBikeDistances: number[];
   c4Aqi: number[];
 }> {
-  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c4Aqi: [] };
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c4Aqi: [] };
 
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
@@ -1020,6 +1049,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const c2ByScope = new Map<string, Map<string, number>>();
   const c3RailByScope = new Map<string, number>();
   const c3BusByScope = new Map<string, number>();
+  const c3YouBikeByScope = new Map<string, number>();
   const c4Aqi: number[] = [];
 
   for (const row of result.rows) {
@@ -1076,10 +1106,31 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     }
   }
 
+  const targets = await listActiveAssessmentTargets();
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+
+    const medical = await getNearbyExternalSpatialPoints("taipei_medical", target.latitude, target.longitude, 1500, 500);
+    if (medical.length) {
+      const distance = medical[0].distanceMeters;
+      const byType = c2ByScope.get(target.scopeKey) || new Map<string, number>();
+      const current = byType.get("clinic");
+      if (current == null || distance < current) byType.set("clinic", distance);
+      c2ByScope.set(target.scopeKey, byType);
+    }
+
+    const busStops = await getNearbyExternalSpatialPoints("taipei_bus_stops", target.latitude, target.longitude, 1500, 1000);
+    if (busStops.length) c3BusByScope.set(target.scopeKey, busStops[0].distanceMeters);
+
+    const bikes = await getNearbyExternalSpatialPoints("taipei_youbike", target.latitude, target.longitude, 1500, 200);
+    if (bikes.length) c3YouBikeByScope.set(target.scopeKey, bikes[0].distanceMeters);
+  }
+
   return {
     c2Distances,
     c3RailDistances: [...c3RailByScope.values()],
     c3BusDistances: [...c3BusByScope.values()],
+    c3YouBikeDistances: [...c3YouBikeByScope.values()],
     c4Aqi,
   };
 }

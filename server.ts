@@ -7,7 +7,7 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -874,16 +874,21 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
               sourceUpdatedAt: validator.sourceUpdatedAt,
             })),
           );
-          const saved = await saveSnapshot(sourceKey, "__citywide__", {
-            source: historical.source,
-            eventCount: historical.events.length,
-            retrievedAt: historical.retrievedAt,
-          }, {
-            status: "available",
-            sourceVersion: validator.version,
-            sourceUpdatedAt: validator.sourceUpdatedAt,
-            freshnessMethod: validator.method,
-          });
+          const saved = await saveSnapshot(
+            sourceKey,
+            "__citywide__",
+            {
+              source: historical.source,
+              eventCount: historical.events.length,
+              retrievedAt: historical.retrievedAt,
+            },
+            {
+              status: "available",
+              sourceVersion: validator.version,
+              sourceUpdatedAt: validator.sourceUpdatedAt,
+              freshnessMethod: validator.method,
+            },
+          );
           results.push({
             scopeKey: "__citywide__",
             sourceKey,
@@ -1088,42 +1093,13 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
     const scopeKey = await registerAssessmentTarget(lat, lng);
     if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured" });
-    const [googleExact, osmExact] = await Promise.all([
-      getCachedSnapshot("google_places", scopeKey),
-      getCachedSnapshot("openstreetmap", scopeKey),
-    ]);
-    const [googleNearby, osmNearby] = await Promise.all([
-      getNearbyCachedSnapshots("google_places", lat, lng, 1000, 6),
-      getNearbyCachedSnapshots("openstreetmap", lat, lng, 1000, 6),
-    ]);
-    const googleSources = [
-      ...(googleExact ? [googleExact] : []),
-      ...googleNearby.filter((item) => item.scopeKey !== scopeKey),
-    ];
-    const osmSources = [
-      ...(osmExact ? [osmExact] : []),
-      ...osmNearby.filter((item) => item.scopeKey !== scopeKey),
-    ];
-    if (!googleSources.length && !osmSources.length) {
-      return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
-    }
-    const pois = mergePois(
-      lat,
-      lng,
-      [
-        ...googleSources.map((item) => item.payload),
-        ...osmSources.map((item) => item.payload),
-      ],
-    );
-    return res.json({
-      pois,
-      dataStatus: "cached",
-      scopeKey,
-      sources: [
-        ...googleSources.map((item) => ({ source: item.sourceKey, status: item.status, retrievedAt: item.fetchedAt })),
-        ...osmSources.map((item) => ({ source: item.sourceKey, status: item.status, retrievedAt: item.fetchedAt })),
-      ],
-    });
+    const [google, osm] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey)]);
+    if (!google && !osm) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
+    const pois = mergePois(lat, lng, [google?.payload, osm?.payload].filter(Boolean));
+    return res.json({ pois, dataStatus: "cached", scopeKey, sources: [
+      google ? { source: google.sourceKey, status: google.status, retrievedAt: google.fetchedAt } : { source: "google_places", status: "unavailable" },
+      osm ? { source: osm.sourceKey, status: osm.status, retrievedAt: osm.fetchedAt } : { source: "openstreetmap", status: "unavailable" },
+    ] });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to load cached POIs" });
   }
@@ -1401,13 +1377,21 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
       if (!nearbyCacheSources.has(key)) {
         snapshots[key] = exact;
-        if (exact) {
-          snapshotOrigins[key] = { scopeKey: exact.scopeKey, scopeDistanceMeters: 0, reused: false };
-        }
+        if (exact) snapshotOrigins[key] = {
+          scopeKey: exact.scopeKey,
+          scopeDistanceMeters: 0,
+          reused: false,
+        };
         return;
       }
 
-      const nearby = await getNearbyCachedSnapshots(key, lat, lng, 1000, key === "taipei_green" || key === "taipei_safety" ? 3 : 6);
+      const nearby = await getNearbyCachedSnapshots(
+        key,
+        lat,
+        lng,
+        1000,
+        key === "taipei_green" || key === "taipei_safety" ? 3 : 6,
+      );
       const candidates = [
         ...(exact ? [exact] : []),
         ...nearby.filter((item) => item.scopeKey !== scopeKey),
@@ -1645,32 +1629,30 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
-    const sourceStatus = [
-      ...sourceKeys.map((key) => ({
-        source: key,
-        status: key === "taipei_flood" && floodSpatialIndexReady
-          ? (indexedFloodHazards.le      sourceStatus,
-Names,
+    return res.json({
+      location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
+      dataSources: sourceNames,
       sourceStatus: [
         ...sourceKeys.map((key) => ({
-
-        source: key,
-        status: key === "taipei_flood" && floodSpatialIndexReady
-          ? (indexedFloodHazards.length ? "available" : "empty")
-          : snapshots[key]?.status || "unavailable",
-        retrievedAt: key === "taipei_flood" && floodSpatialIndexReady
-          ? (indexedFloodHazards[0]?.retrievedAt || null)
-          : snapshots[key]?.fetchedAt || null,
-        checkedAt: snapshots[key]?.checkedAt || null,
-        sourceVersion: snapshots[key]?.sourceVersion || null,
-        freshnessMethod: key === "taipei_flood" && floodSpatialIndexReady ? "spatial_index" : (snapshots[key]?.freshnessMethod || "unknown"),
-        cacheScopeDistanceMeters: snapshotOrigins[key]?.scopeDistanceMeters ?? 0,
-        reusedNearbySnapshot: snapshotOrigins[key]?.reused ?? false,
+          source: key,
+          status: key === "taipei_flood" && floodSpatialIndexReady
+            ? (indexedFloodHazards.length ? "available" : "empty")
+            : snapshots[key]?.status || "unavailable",
+          retrievedAt: key === "taipei_flood" && floodSpatialIndexReady
+            ? (indexedFloodHazards[0]?.retrievedAt || null)
+            : snapshots[key]?.fetchedAt || null,
+          checkedAt: snapshots[key]?.checkedAt || null,
+          sourceVersion: snapshots[key]?.sourceVersion || null,
+          freshnessMethod: key === "taipei_flood" && floodSpatialIndexReady
+            ? "spatial_index"
+            : (snapshots[key]?.freshnessMethod || "unknown"),
+          cacheScopeDistanceMeters: snapshotOrigins[key]?.scopeDistanceMeters ?? 0,
+          reusedNearbySnapshot: snapshotOrigins[key]?.reused ?? false,
         })),
         {
           source: "taipei_historical_flood",
           status: historicalFloodEvents.length ? "available" : "empty",
-          retrievedAt: historicalFloodEvents[0] ? new Date().toISOString() : null,
+          retrievedAt: historicalFloodEvents.length ? new Date().toISOString() : null,
           checkedAt: null,
           sourceVersion: null,
           freshnessMethod: "spatial_index",

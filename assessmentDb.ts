@@ -286,7 +286,7 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     ],
   );
 
-  if (persisted.rowCount === 0) {
+  if ((persisted.rowCount ?? 0) === 0) {
     throw new Error("assessment id belongs to another workspace");
   }
 
@@ -376,7 +376,7 @@ export async function deleteAssessmentSession(workspaceIdInput: unknown, idInput
     "DELETE FROM assessment_sessions WHERE id = $1 AND workspace_id = $2",
     [id, workspaceId],
   );
-  return result.rowCount > 0;
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function saveAssessmentPhoto(

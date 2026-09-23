@@ -28,6 +28,9 @@ const sourceKeys = [
   "taipei_flood",
   "open_meteo_air_quality",
   "taipei_historical_flood",
+  "taipei_youbike",
+  "taipei_medical",
+  "taipei_street_lights",
 ];
 
 async function requestRefresh(sourceKey: string): Promise<Response> {

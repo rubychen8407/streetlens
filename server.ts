@@ -1425,8 +1425,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       };
       snapshotOrigins[key] = {
         scopeKey: candidates.map((item) => item.scopeKey).join(","),
-        scopeDistanceMeters: Number(primary.scopeDistanceMeters ?? 0),
-        reused: candidates.length > 1 || Number(primary.scopeDistanceMeters ?? 0) > 0,
+        scopeDistanceMeters: Number((primary as any).scopeDistanceMeters ?? 0),
+        reused: candidates.length > 1 || Number((primary as any).scopeDistanceMeters ?? 0) > 0,
       };
     }));
 

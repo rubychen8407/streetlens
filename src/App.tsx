@@ -787,6 +787,13 @@ export default function App() {
         fieldAdjustment={fieldAdjustment}
         isPreviewingFieldAdjustment={isPreviewingFieldAdjustment}
         isSaving={isSavingAssessment}
+        evidenceDrafts={evidenceDrafts}
+        onAddEvidencePhotos={handleAddEvidencePhotos}
+        onRemoveEvidencePhoto={handleRemoveEvidencePhoto}
+        onUpdateEvidenceNote={handleUpdateEvidenceNote}
+        selectedSavedEvidence={selectedSavedEvidence}
+        savedEvidenceUrls={savedEvidenceUrls}
+        evidenceError={evidenceError}
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);

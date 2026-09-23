@@ -599,6 +599,7 @@ export function calculateAssessment(
       retrievedAt: c3TransitMetrics?.retrievedAt,
       scoringMethod: "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? undefined : "no_observation",
+    },
     {
       category: "C3",
       indicator: "bikeLaneLength500m",
@@ -637,9 +638,10 @@ export function calculateAssessment(
             : factor.indicator === "bikeLaneLength500m"
               ? normalization?.c3BikeLaneLengths
               : undefined;
-      const percentile = empiricalPercentileScore(factor.value, reference, "lower_is_better");
+      const direction = factor.indicator === "bikeLaneLength500m" ? "higher_is_better" : "lower_is_better";
+      const percentile = empiricalPercentileScore(factor.value, reference, direction);
       return percentile
-        ?? referenceRelativeScore(factor.value, reference, "lower_is_better")
+        ?? referenceRelativeScore(factor.value, reference, direction)
         ?? inverseDistanceScore(factor.value, 500);
     })
     .filter((value): value is number => value !== null);

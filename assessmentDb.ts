@@ -411,7 +411,7 @@ export async function saveAssessmentPhoto(
     [body, mimeType, body.length, assessmentId, evidenceId, workspaceId],
   );
 
-  if (result.rowCount === 0) {
+  if ((result.rowCount ?? 0) === 0) {
     throw new Error("Assessment or photo evidence was not found");
   }
 }

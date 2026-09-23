@@ -620,12 +620,18 @@ export default function App() {
   }, [targetLocation, streetName]);
 
   const handleDeleteSaved = useCallback((id: string) => {
+    const saved = savedLocations.find(item => item.id === id);
+    const photoKeys = (saved?.evidence || [])
+      .filter(item => item.type === 'photo' && item.storageKey)
+      .map(item => item.storageKey as string);
+    if (photoKeys.length > 0) void deleteEvidencePhotos(photoKeys).catch(error => console.warn('Evidence cleanup error:', error));
+
     setSavedLocations(prev => {
       const next = prev.filter(item => item.id !== id);
       try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
       return next;
     });
-  }, []);
+  }, [savedLocations]);
 
   // Map POIs & Street Segments (100% real Google Routes & OSRM road geometry)
   const streetSegments: StreetSegmentScore[] = useMemo(() => {

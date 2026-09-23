@@ -386,15 +386,19 @@ export function AssessmentWorkspace({
                   <div className="mt-3 pt-3 border-t border-white/10">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Saved with this session</div>
                     <div className="mt-2 grid grid-cols-3 gap-2">
-                      {selectedSavedEvidence.filter(item => item.type === 'photo').map(item => (
-                        <div key={item.id} className="relative aspect-square overflow-hidden rounded-lg bg-black/20 border border-white/5">
-                          {item.storageKey && savedEvidenceUrls[item.storageKey] ? (
-                            <img src={savedEvidenceUrls[item.storageKey]} alt="Saved assessment evidence" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-600">Photo unavailable</div>
-                          )}
-                        </div>
-                      ))}
+                      {selectedSavedEvidence.filter(item => item.type === 'photo').map(item => {
+                        const savedEvidenceUrl = savedEvidenceUrls[item.id]
+                          || (item.storageKey ? savedEvidenceUrls[item.storageKey] : undefined);
+                        return (
+                          <div key={item.id} className="relative aspect-square overflow-hidden rounded-lg bg-black/20 border border-white/5">
+                            {savedEvidenceUrl ? (
+                              <img src={savedEvidenceUrl} alt="Saved assessment evidence" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-600">Photo unavailable</div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     {selectedSavedEvidence.filter(item => item.type === 'note' && item.note).map(item => (
                       <div key={item.id} className="mt-2 rounded-lg bg-white/[0.03] px-2.5 py-2 text-[10px] text-slate-400">

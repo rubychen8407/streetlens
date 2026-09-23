@@ -327,7 +327,17 @@ export default function App() {
         setBaselineSummary('此座標尚無已儲存的外部資料快照；等待背景資料更新。');
         return;
       }
-      if (!res.ok) throw new Error('assessment request failed: ' + res.status);
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        if (res.status === 503 && errorBody?.dataStatus === 'database_required') {
+          setAssessment(null);
+          setFieldAdjustment(null);
+          setPendingAssessmentSources([]);
+          setBaselineSummary('PostgreSQL 尚未連線；請先設定 Neon DATABASE_URL。');
+          return;
+        }
+        throw new Error('assessment request failed: ' + res.status);
+      }
       const data: StreetAssessmentResponse = await res.json();
       setAssessment(data);
       setFieldAdjustment(null);
@@ -985,6 +995,7 @@ export default function App() {
         isGeneratingAiExplanation={isGeneratingAiExplanation}
         aiExplanationError={aiExplanationError}
         onGenerateAiExplanation={handleGenerateAiExplanation}
+        pendingAssessmentSources={pendingAssessmentSources}
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);

@@ -7,7 +7,7 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
+import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -1461,6 +1461,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const indexedFloodHazards = floodSpatialIndexReady
       ? await getFloodHazardsAtPoint(lat, lng)
       : [];
+    const historicalFloodEvents = await getHistoricalFloodEventsAtPoint(lat, lng, 500);
     const floodData = floodSpatialIndexReady
       ? {
           riskCells: indexedFloodHazards,
@@ -1558,7 +1559,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
       injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
       source: safetyData.source, method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
-      status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.cells || [], floodSource: floodData.source || null,
+      status: safetyData.status, retrievedAt: safetyData.retrievedAt, floodHazard: floodData.riskCells || [], floodSource: floodData.source || null,
       accidentCountReference: [], floodDepthReference: [],
     };
 
@@ -1610,7 +1611,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     return res.json({
       location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
       dataSources: sourceNames,
-      sourceStatus: sourceKeys.map((key) => ({
+      sourceStatus: [
+        ...sourceKeys.map((key) => ({
+
         source: key,
         status: key === "taipei_flood" && floodSpatialIndexReady
           ? (indexedFloodHazards.length ? "available" : "empty")
@@ -1623,11 +1626,21 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         freshnessMethod: key === "taipei_flood" && floodSpatialIndexReady ? "spatial_index" : (snapshots[key]?.freshnessMethod || "unknown"),
         cacheScopeDistanceMeters: snapshotOrigins[key]?.scopeDistanceMeters ?? 0,
         reusedNearbySnapshot: snapshotOrigins[key]?.reused ?? false,
-      })),
+        })),
+        {
+          source: "taipei_historical_flood",
+          status: historicalFloodEvents.length ? "available" : "empty",
+          retrievedAt: historicalFloodEvents[0] ? new Date().toISOString() : null,
+          checkedAt: null,
+          sourceVersion: null,
+          freshnessMethod: "spatial_index",
+        },
+      ],
       missingSources: missing, weatherStatus: weather?.status || "unavailable", generatedAt: new Date().toISOString(),
       dataRetrievedAt: Object.fromEntries(sourceKeys.map((key) => [key, snapshots[key]?.fetchedAt || null])),
       c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: pois.filter((x: any) => x.category === "C2").length,
-      c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.cells || [],
+      c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.riskCells || [],
+      historicalFloodEvents,
       parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
       communityMetrics: {
         nearestCommunityCulturalDistance: nearestCommunityCulturalDistance ?? null,

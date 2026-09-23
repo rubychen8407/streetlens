@@ -1361,9 +1361,10 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   c3BusDistances: number[];
   c3YouBikeDistances: number[];
   c3BikeLaneLengths: number[];
+  c3SidewalkCoveragePcts: number[];
   c4Aqi: number[];
 }> {
-  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c4Aqi: [] };
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [] };
 
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
@@ -1377,6 +1378,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const c3BusByScope = new Map<string, number>();
   const c3YouBikeByScope = new Map<string, number>();
   const c3BikeLaneByScope = new Map<string, number>();
+  const c3SidewalkByScope = new Map<string, number>();
   const c4Aqi: number[] = [];
 
   for (const row of result.rows) {
@@ -1457,6 +1459,9 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
         bikeLanes.reduce((sum, line) => sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0),
       );
     }
+
+    const sidewalk = await getNearbyExternalSpatialAreaCoverage("taipei_sidewalk_areas", target.latitude, target.longitude, 500);
+    if (sidewalk.featureCount > 0) c3SidewalkByScope.set(target.scopeKey, sidewalk.coveragePct);
   }
 
   return {
@@ -1465,6 +1470,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     c3BusDistances: [...c3BusByScope.values()],
     c3YouBikeDistances: [...c3YouBikeByScope.values()],
     c3BikeLaneLengths: [...c3BikeLaneByScope.values()],
+    c3SidewalkCoveragePcts: [...c3SidewalkByScope.values()],
     c4Aqi,
   };
 }

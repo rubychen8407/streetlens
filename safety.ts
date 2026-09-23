@@ -56,7 +56,7 @@ function extractKmlValue(placemark: string, names: string[]): string | null {
 
 function parseKmlPolygonEvents(kml: string, source: string): HistoricalFloodEvent[] {
   const events: HistoricalFloodEvent[] = [];
-  const placemarks = kml.match(/<Placemark[\\s\\S]*?<\\/Placemark>/gi) || [];
+  const placemarks = kml.match(/<Placemark[\s\S]*?<\/Placemark>/gi) || [];
 
   for (const placemark of placemarks) {
     const eventDate = extractKmlValue(placemark, ["FDATE", "fdate", "date"]);
@@ -66,14 +66,14 @@ function parseKmlPolygonEvents(kml: string, source: string): HistoricalFloodEven
     const areaRaw = extractKmlValue(placemark, ["area", "AREA"]);
 
     const outer =
-      /<outerBoundaryIs[\\s\\S]*?<coordinates[^>]*>([\\s\\S]*?)<\\/coordinates>[\\s\\S]*?<\\/outerBoundaryIs>/i.exec(placemark)?.[1]
-      || /<coordinates[^>]*>([\\s\\S]*?)<\\/coordinates>/i.exec(placemark)?.[1];
+      /<outerBoundaryIs[\s\S]*?<coordinates[^>]*>([\s\S]*?)<\/coordinates>[\s\S]*?<\/outerBoundaryIs>/i.exec(placemark)?.[1]
+      || /<coordinates[^>]*>([\s\S]*?)<\/coordinates>/i.exec(placemark)?.[1];
 
     if (!outer) continue;
 
     const coordinates = outer
       .trim()
-      .split(/\\s+/)
+      .split(/\s+/)
       .map((token) => token.split(",").map(Number))
       .filter((pair) => Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
       .map(([lng, lat]) => [lng, lat] as [number, number]);

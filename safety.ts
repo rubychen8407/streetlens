@@ -504,3 +504,150 @@ export async function fetchTaipeiSafetyDataForTargets(
     clearTimeout(timeoutId);
   }
 }
+
+export interface FloodRefreshTarget {
+  scopeKey: string;
+  latitude: number;
+  longitude: number;
+}
+
+export async function fetchTaipeiFloodHazardDataForTargets(
+  targets: FloodRefreshTarget[],
+): Promise<Record<string, FloodSourceResult>> {
+  const retrievedAt = new Date().toISOString();
+  const resultByScope: Record<string, FloodSourceResult> = {};
+
+  for (const target of targets) {
+    resultByScope[target.scopeKey] = {
+      riskCells: [],
+      source: "Taipei City official rainfall inundation simulation (112 revision)",
+      status: "empty",
+      retrievedAt,
+    };
+  }
+
+  if (!targets.length) return resultByScope;
+
+  const targetBounds = targets.map((target) => {
+    const radiusLat = 0.01;
+    const radiusLng = 0.01 / Math.max(0.1, Math.cos(target.latitude * Math.PI / 180));
+    return {
+      ...target,
+      minLat: target.latitude - radiusLat,
+      maxLat: target.latitude + radiusLat,
+      minLng: target.longitude - radiusLng,
+      maxLng: target.longitude + radiusLng,
+    };
+  });
+
+  const errors: string[] = [];
+
+  for (const resource of FLOOD_RESOURCES) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45_000);
+
+    try {
+      const response = await fetch(resource.url, {
+        signal: controller.signal,
+        headers: {
+          Accept: "application/vnd.google-earth.kml+xml,application/xml,text/xml,*/*",
+          "User-Agent": "StreetLens/1.0",
+        },
+      });
+      if (!response.ok) throw new Error(`Taipei flood KML HTTP ${response.status}`);
+
+      const kml = await response.text();
+      let cursor = 0;
+      let parsedPolygonCount = 0;
+
+      while (cursor < kml.length) {
+        const start = kml.indexOf("<Placemark", cursor);
+        if (start < 0) break;
+        const endTag = kml.indexOf("</Placemark>", start);
+        if (endTag < 0) break;
+
+        const placemark = kml.slice(start, endTag + "</Placemark>".length);
+        cursor = endTag + "</Placemark>".length;
+
+        const depthCm = parseDepthCm(placemark);
+        const coordinateBlocks = placemark.match(/<coordinates[^>]*>[\s\S]*?<\/coordinates>/gi) || [];
+
+        for (const block of coordinateBlocks) {
+          const raw = block.replace(/<\/?coordinates[^>]*>/gi, "").trim();
+          const polygon = raw.split(/\s+/).map((token) => {
+            const [lng, lat] = token.split(",").map(Number);
+            return [lng, lat] as [number, number];
+          }).filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+
+          if (polygon.length < 3) continue;
+          parsedPolygonCount += 1;
+
+          let minLng = Infinity;
+          let maxLng = -Infinity;
+          let minLat = Infinity;
+          let maxLat = -Infinity;
+          for (const [pLng, pLat] of polygon) {
+            minLng = Math.min(minLng, pLng);
+            maxLng = Math.max(maxLng, pLng);
+            minLat = Math.min(minLat, pLat);
+            maxLat = Math.max(maxLat, pLat);
+          }
+
+          for (const target of targetBounds) {
+            if (
+              target.longitude < minLng
+              || target.longitude > maxLng
+              || target.latitude < minLat
+              || target.latitude > maxLat
+            ) continue;
+
+            if (!pointInPolygon(target.longitude, target.latitude, polygon)) continue;
+
+            resultByScope[target.scopeKey].riskCells.push({
+              scenarioMmPerHour: resource.scenario,
+              depthCm,
+              distanceMeters: 0,
+              source: "Taipei City official rainfall inundation simulation (112 revision)",
+              sourceType: "official_model",
+              retrievedAt,
+            });
+          }
+        }
+      }
+
+      console.log(JSON.stringify({
+        floodParserBatch: {
+          scenario: resource.scenario,
+          parsedPolygonCount,
+          targets: targets.map((target) => ({
+            scopeKey: target.scopeKey,
+            matchedCount: resultByScope[target.scopeKey].riskCells.filter(
+              (item) => item.scenarioMmPerHour === resource.scenario,
+            ).length,
+          })),
+        },
+      }, null, 2));
+    } catch (error: any) {
+      errors.push(
+        `${resource.scenario}: ${error?.name === "AbortError" ? "timeout" : error?.message || String(error)}`,
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  for (const target of targets) {
+    const result = resultByScope[target.scopeKey];
+    result.riskCells.sort((a, b) => a.scenarioMmPerHour - b.scenarioMmPerHour);
+    if (result.riskCells.length) {
+      result.status = "available";
+    } else if (errors.length) {
+      result.status = errors.some((error) => error.includes("timeout")) ? "timeout" : "error";
+      result.error = errors.join("; ");
+    } else {
+      result.status = "empty";
+    }
+  }
+
+  return resultByScope;
+}

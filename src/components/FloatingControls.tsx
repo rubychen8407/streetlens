@@ -379,14 +379,14 @@ export function FloatingControls({
         {/* Map tools share the bottom row but keep a fixed footprint, so resizing
             never lets them overlap the search field or assessment button. */}
         <div
-          className="relative shrink-0 flex flex-col bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
+          className="relative shrink-0 flex items-center bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
           ref={layerMenuRef}
         >
             {/* Layer Button */}
             <button
               type="button"
               onClick={() => setShowLayerMenu((v) => !v)}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
                 showLayerMenu ? 'text-indigo-400 bg-white/10' : 'text-slate-300 hover:text-white'
               }`}
               title="圖層與樣式切換"
@@ -394,14 +394,14 @@ export function FloatingControls({
               <Layers className="w-5 h-5" />
             </button>
 
-            <div className="w-6 h-px bg-white/10 mx-auto" />
+            <div className="h-6 w-px bg-white/10 mx-0.5" />
 
             {/* Locate Me Button */}
             <button
               type="button"
               onClick={onLocateMe}
               disabled={isLocatingGPS}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
                 isLocatingGPS
                   ? 'text-sky-400 bg-white/10'
                   : 'text-slate-300 hover:text-white active:scale-95'

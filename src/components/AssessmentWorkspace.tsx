@@ -27,6 +27,7 @@ interface AssessmentWorkspaceProps {
   onOpenDataLogs: () => void;
   isFavorite: boolean;
   onToggleFavorite: () => void;
+  favoriteLocationKeys: string[];
 }
 
 const ratingLabels = ['Poor', 'Fair', 'Good', 'Great'];
@@ -41,12 +42,14 @@ function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
 export function AssessmentWorkspace({
   view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, fieldChecks, onToggleFieldCheck, fieldNotes,
-  onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite,
+  onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys,
 }: AssessmentWorkspaceProps) {
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [savedFilter, setSavedFilter] = useState<'all' | 'favorites'>('all');
+  const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
 
   const grouped = useMemo(() => {
     return ['C1','C2','C3','C4','C5'].map(category => ({
@@ -66,6 +69,20 @@ export function AssessmentWorkspace({
     ['Green space', factor('nearestParkDist') || factor('parkCount800m'), 'C4'],
     ['Community', factor('communityCulturalPoiCount800m'), 'C5'],
   ] as const;
+
+  const savedList = useMemo(() => {
+    const gradeRank: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
+    const favoriteKeyFor = (saved: SavedLocation) =>
+      saved.coords.lat.toFixed(5) + ':' + saved.coords.lng.toFixed(5) + ':' + saved.streetName.trim().toLowerCase();
+    const filtered = savedFilter === 'favorites'
+      ? savedLocations.filter(saved => favoriteLocationKeys.includes(favoriteKeyFor(saved)))
+      : savedLocations;
+    return [...filtered].sort((a, b) => {
+      if (savedSort === 'score') return (b.clsScore ?? -1) - (a.clsScore ?? -1);
+      if (savedSort === 'grade') return (gradeRank[b.grade ?? ''] ?? 0) - (gradeRank[a.grade ?? ''] ?? 0);
+      return b.timestamp - a.timestamp;
+    });
+  }, [savedLocations, savedFilter, savedSort, favoriteLocationKeys]);
 
   const handleSave = () => {
     onSave(name.trim() || `${district ? district + ' ' : ''}${streetName || 'Street assessment'}`, ratings, fieldNotes);
@@ -176,11 +193,21 @@ export function AssessmentWorkspace({
         {view === 'saved' && (
           <div className="space-y-3">
             <div className="mb-4">
-              <h2 className="text-xl font-bold">Saved streets</h2>
-              <p className="text-xs text-slate-500 mt-1">Your saved assessments are kept separately from the live assessment panel.</p>
+              <h2 className="text-xl font-bold">Street library</h2>
+              <p className="text-xs text-slate-500 mt-1">Favorites help you track streets; saved assessments preserve individual field sessions.</p>
             </div>
-            {savedLocations.length === 0 && <div className="py-16 text-center text-sm text-slate-500">No saved assessments yet.</div>}
-            {savedLocations.map(saved => (
+            <div className="flex gap-1.5 mb-3">
+              {([['all','All'],['favorites','Favorites']] as const).map(([value, label]) => (
+                <button key={value} onClick={() => setSavedFilter(value)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border ${savedFilter === value ? 'bg-amber-400/15 border-amber-300/30 text-amber-200' : 'bg-white/[0.03] border-white/5 text-slate-500'}`}>{label}</button>
+              ))}
+              <select value={savedSort} onChange={e => setSavedSort(e.target.value as typeof savedSort)} className="ml-auto px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] text-slate-300 outline-none">
+                <option value="recent">Recent</option>
+                <option value="score">CLS high → low</option>
+                <option value="grade">Grade high → low</option>
+              </select>
+            </div>
+            {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-500">{savedFilter === 'favorites' ? 'No favorite streets yet.' : 'No saved assessments yet.'}</div>}
+            {savedList.map(saved => (
               <div key={saved.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <button onClick={() => onSelectSaved(saved)} className="text-left min-w-0 flex-1">

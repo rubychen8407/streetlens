@@ -315,6 +315,16 @@ export interface AssessmentSourceStatus {
   freshnessMethod: string;
 }
 
+export interface HistoricalFloodEvent {
+  eventDate: string | null;
+  townName: string | null;
+  address: string | null;
+  depthCm: number | null;
+  area: number | null;
+  distanceMeters: number;
+  source: string;
+}
+
 export interface StreetAssessmentResponse {
   location: LocationCoord & {
     city: string;
@@ -329,5 +339,6 @@ export interface StreetAssessmentResponse {
   missingSources?: string[];
   sourceStatus?: AssessmentSourceStatus[];
   dataStatus?: 'cached' | 'pending_refresh' | 'database_required';
+  historicalFloodEvents?: HistoricalFloodEvent[];
 }
 

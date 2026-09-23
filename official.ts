@@ -25,6 +25,7 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiBusStops: "https://tcgbusfs.blob.core.windows.net/blobbus/TstStop.json",
   taipeiLibraries: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=fb6cc268-e2b8-43a7-86f2-e79702291a2b",
   taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
+  taipeiParks: "https://parks.gov.taipei/parks/api/",
 };
 
 const USER_AGENT = "StreetLens/1.0";
@@ -329,6 +330,61 @@ export async function fetchTaipeiLibraries(): Promise<OfficialCitywideSourceResu
     }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
 
     return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+
+export async function fetchTaipeiParks(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Park Administration official park basic data";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiParks);
+    const rows = findSpatialRows(JSON.parse(text));
+    const points: OfficialSpatialPoint[] = rows.map((row: any, index) => {
+      const lat = Number(row.pm_Latitude ?? row.latitude ?? row.lat ?? row.Latitude);
+      const lng = Number(row.pm_Longitude ?? row.longitude ?? row.lng ?? row.Longitude);
+      const name = String(row.pm_name ?? row.name ?? row.公園名稱 ?? `park-${index}`);
+      const id = [
+        name,
+        lat.toFixed(6),
+        lng.toFixed(6),
+      ].join("|");
+      return {
+        id,
+        name,
+        lat,
+        lng,
+        properties: {
+          district: row.pm_regions ?? row.district ?? null,
+          areaM2: Number(row.pm_area) || null,
+          managementUnit: row.pm_unit ?? null,
+          constructionYear: Number(row.pm_const_year) || null,
+          openingStart: row.pm_opening_s ?? null,
+          openingEnd: row.pm_opening_e ?? null,
+          ecologyPark: row.pm_ecology ?? null,
+          parkType: row.pm_type ?? null,
+          sports: row.pm_sports ?? null,
+          recreation: row.pm_recreation ?? null,
+          services: row.pm_service ?? null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+    return {
+      points,
+      source,
+      status: points.length ? "available" : "empty",
+      retrievedAt,
+      sourceUpdatedAt: lastModified,
+    };
   } catch (error: any) {
     return {
       points: [],

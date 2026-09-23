@@ -1113,10 +1113,8 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     const medical = await getNearbyExternalSpatialPoints("taipei_medical", target.latitude, target.longitude, 1500, 500);
     if (medical.length) {
       const distance = medical[0].distanceMeters;
-      const byType = c2ByScope.get(target.scopeKey) || new Map<string, number>();
-      const current = byType.get("clinic");
-      if (current == null || distance < current) byType.set("clinic", distance);
-      c2ByScope.set(target.scopeKey, byType);
+      c2Distances.clinicDist ||= [];
+      c2Distances.clinicDist.push(distance);
     }
 
     const busStops = await getNearbyExternalSpatialPoints("taipei_bus_stops", target.latitude, target.longitude, 1500, 1000);

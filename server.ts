@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, C4GreenMetrics } from "./scoring";
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
-import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
+import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, saveSnapshot } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
@@ -663,6 +663,7 @@ const VALIDATOR_RESOURCES: Record<string, string[]> = {
   taipei_green: Object.values(GREEN_RESOURCE_URLS),
   taipei_safety: [SAFETY_RESOURCE_URLS.taipeiTrafficAccidentPoints2025],
   taipei_flood: Object.values(FLOOD_RESOURCE_URLS),
+  taipei_historical_flood: [SAFETY_RESOURCE_URLS.taipeiHistoricalFlood],
 };
 
 type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
@@ -756,6 +757,7 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   taipei_green: 168,
   taipei_safety: 168,
   taipei_flood: 168,
+  taipei_historical_flood: 168,
   open_meteo_air_quality: 24,
 };
 
@@ -819,6 +821,88 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     const batchSourceKeys = new Set(["taipei_green", "taipei_safety", "taipei_flood"]);
 
     for (const sourceKey of sourceKeys) {
+      if (sourceKey === "taipei_historical_flood") {
+        const existing = await getCachedSnapshot(sourceKey, "__citywide__");
+        const due = !existing
+          || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+
+        if (!due) {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing.fetchedAt,
+            checkedAt: existing.checkedAt,
+          });
+          continue;
+        }
+
+        const validator = existing
+          ? await checkStaticResourceValidators(sourceKey, existing)
+          : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
+
+        if (existing && validator.decision === "unchanged") {
+          await markSnapshotChecked(sourceKey, "__citywide__", {
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing.fetchedAt,
+          });
+          continue;
+        }
+
+        const historical = await fetchTaipeiHistoricalFloodEvents();
+        if (historical.status === "available") {
+          await replaceHistoricalFloodEvents(
+            historical.events.map((event) => ({
+              ...event,
+              sourceVersion: validator.version,
+              sourceUpdatedAt: validator.sourceUpdatedAt,
+            })),
+          );
+          const saved = await saveSnapshot(sourceKey, "__citywide__", {
+            source: historical.source,
+            eventCount: historical.events.length,
+            retrievedAt: historical.retrievedAt,
+          }, {
+            status: "available",
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: saved.changed,
+            status: "available",
+            skipped: false,
+            eventCount: historical.events.length,
+          });
+        } else {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: historical.status,
+            skipped: false,
+            error: historical.error || "Historical flood source unavailable",
+            preservedExisting: Boolean(existing),
+          });
+        }
+        continue;
+      }
+
       const targetStates = await Promise.all(targets.map(async (target) => ({
         target,
         existing: await getCachedSnapshot(sourceKey, target.scopeKey),

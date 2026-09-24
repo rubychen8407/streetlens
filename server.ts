@@ -7,7 +7,7 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, OFFICIAL_SOURCE_URLS } from "./official";
+import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, fetchTaipeiAed, fetchTaipeiFireHydrants, OFFICIAL_SOURCE_URLS } from "./official";
 import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
@@ -682,6 +682,8 @@ const VALIDATOR_RESOURCES: Record<string, string[]> = {
   taipei_sidewalk_areas: [OFFICIAL_SOURCE_URLS.wheelRouteFacility11, OFFICIAL_SOURCE_URLS.wheelRouteFacility12],
   taipei_markets: [OFFICIAL_SOURCE_URLS.taipeiMarkets],
   taipei_cooling_points: [OFFICIAL_SOURCE_URLS.taipeiCoolingPoints],
+  taipei_aed: [OFFICIAL_SOURCE_URLS.taipeiAed],
+  taipei_fire_hydrants: [OFFICIAL_SOURCE_URLS.taipeiFireHydrants],
 };
 
 type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
@@ -787,6 +789,8 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   taipei_sidewalk_areas: 168,
   taipei_markets: 8760,
   taipei_cooling_points: 168,
+  taipei_aed: 168,
+  taipei_fire_hydrants: 2160,
   open_meteo_air_quality: 24,
 };
 
@@ -858,6 +862,8 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
       "taipei_sidewalk_areas",
       "taipei_markets",
       "taipei_cooling_points",
+      "taipei_aed",
+      "taipei_fire_hydrants",
     ]);
     const batchSourceKeys = new Set(["taipei_green", "taipei_safety", "taipei_flood"]);
 
@@ -923,7 +929,11 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
                           ? await fetchTaipeiSidewalkAreas()
                           : sourceKey === "taipei_markets"
                             ? await fetchTaipeiMarkets()
-                            : await fetchTaipeiCoolingPoints();
+                            : sourceKey === "taipei_cooling_points"
+                              ? await fetchTaipeiCoolingPoints()
+                              : sourceKey === "taipei_aed"
+                                ? await fetchTaipeiAed()
+                                : await fetchTaipeiFireHydrants();
 
         if (citywide.status === "available" || citywide.status === "empty") {
           if (Array.isArray(citywide.points)) {
@@ -1623,7 +1633,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     // Supplementary citywide official inventories are read only from persisted
     // spatial indexes. They do not block the core assessment when unavailable.
-    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot, busStopSnapshot, librarySnapshot, publicToiletSnapshot, parkSnapshot, bikeLaneSnapshot, sidewalkSnapshot, marketSnapshot, coolingPointSnapshot] = await Promise.all([
+    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot, busStopSnapshot, librarySnapshot, publicToiletSnapshot, parkSnapshot, bikeLaneSnapshot, sidewalkSnapshot, marketSnapshot, coolingPointSnapshot, aedSnapshot, hydrantSnapshot] = await Promise.all([
       getCachedSnapshot("taipei_youbike", "__citywide__"),
       getCachedSnapshot("taipei_medical", "__citywide__"),
       getCachedSnapshot("taipei_street_lights", "__citywide__"),
@@ -1635,6 +1645,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getCachedSnapshot("taipei_sidewalk_areas", "__citywide__"),
       getCachedSnapshot("taipei_markets", "__citywide__"),
       getCachedSnapshot("taipei_cooling_points", "__citywide__"),
+      getCachedSnapshot("taipei_aed", "__citywide__"),
+      getCachedSnapshot("taipei_fire_hydrants", "__citywide__"),
     ]);
     const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints] = await Promise.all([
       youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
@@ -1650,6 +1662,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         : Promise.resolve(null),
       marketSnapshot ? getNearbyExternalSpatialPoints("taipei_markets", lat, lng, 1200, 300) : Promise.resolve([]),
       coolingPointSnapshot ? getNearbyExternalSpatialPoints("taipei_cooling_points", lat, lng, 1200, 300) : Promise.resolve([]),
+      aedSnapshot ? getNearbyExternalSpatialPoints("taipei_aed", lat, lng, 500, 500) : Promise.resolve([]),
+      hydrantSnapshot ? getNearbyExternalSpatialPoints("taipei_fire_hydrants", lat, lng, 500, 1000) : Promise.resolve([]),
     ]);
 
     // A user request never fetches external scoring sources. Existing snapshots are
@@ -1885,6 +1899,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     };
 
     const accidents = safetyData.accidents || [];
+    const aedCount500m = nearbyAed.length;
+    const fireHydrantCount500m = nearbyHydrants.length;
     const streetLightCount300m = streetLightSnapshot
       ? nearbyStreetLights.reduce((sum, point) => {
           const quantity = Number(point.properties?.quantity);
@@ -1900,10 +1916,13 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
       injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
       streetLightCount300m,
+      aedCount500m,
+      fireHydrantCount500m,
       source: [...new Set(c1SourceNames)].join(" + ") || "unavailable",
       method: "official" as const, confidence: safetyData.status === "available" || safetyData.status === "empty" ? "high" as const : "low" as const,
       status: safetyData.status, retrievedAt: safetyData.retrievedAt || streetLightSnapshot?.fetchedAt, floodHazard: floodData.riskCells || [], floodSource: floodData.source || null,
       accidentCountReference: [], floodDepthReference: [], streetLightCountReference: [],
+      aedCountReference: [], fireHydrantCountReference: [],
     };
 
     const greenReference = await getGreenDensityReference();
@@ -1924,6 +1943,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
     c1SafetyMetrics.streetLightCountReference = streetLightReference;
+    c1SafetyMetrics.aedCountReference = normalizationReferences.c1AedCounts;
+    c1SafetyMetrics.fireHydrantCountReference = normalizationReferences.c1HydrantCounts;
     c4GreenMetrics.coolingPointCountReference = coolingPointCountReference;
 
     const communityCount = mergedCommunity.length;

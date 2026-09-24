@@ -678,6 +678,31 @@ export async function getPoiDensityReference(excludeScopeKey?: string): Promise<
       scopePois.set(id, poi);
     }
   }
+  const targets = await listActiveAssessmentTargets();
+  for (const target of targets) {
+    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
+    const scopePois = byScope.get(target.scopeKey) || new Map<string, any>();
+
+    const [medical, markets] = await Promise.all([
+      getNearbyExternalSpatialPoints("taipei_medical", target.latitude, target.longitude, 1200, 1000),
+      getNearbyExternalSpatialPoints("taipei_markets", target.latitude, target.longitude, 1200, 500),
+    ]);
+
+    for (const point of medical) {
+      scopePois.set(
+        `official-clinic|${point.name.toLowerCase().replace(/\s+/g, "")}|${point.lat.toFixed(4)}|${point.lng.toFixed(4)}`,
+        point,
+      );
+    }
+    for (const point of markets) {
+      scopePois.set(
+        `official-market|${point.name.toLowerCase().replace(/\s+/g, "")}|${point.lat.toFixed(4)}|${point.lng.toFixed(4)}`,
+        point,
+      );
+    }
+    byScope.set(target.scopeKey, scopePois);
+  }
+
   return [...byScope.values()].map((pois) => pois.size);
 }
 
@@ -1464,6 +1489,15 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
 
     const busStops = await getNearbyExternalSpatialPoints("taipei_bus_stops", target.latitude, target.longitude, 1500, 1000);
     if (busStops.length) c3BusByScope.set(target.scopeKey, busStops[0].distanceMeters);
+
+    const mrtStations = await getNearbyExternalSpatialPoints("taipei_mrt_stations", target.latitude, target.longitude, 2000, 300);
+    if (mrtStations.length) {
+      const existingRail = c3RailByScope.get(target.scopeKey);
+      const officialRail = mrtStations[0].distanceMeters;
+      if (existingRail == null || officialRail < existingRail) {
+        c3RailByScope.set(target.scopeKey, officialRail);
+      }
+    }
 
     const bikes = await getNearbyExternalSpatialPoints("taipei_youbike", target.latitude, target.longitude, 1500, 200);
     if (bikes.length) c3YouBikeByScope.set(target.scopeKey, bikes[0].distanceMeters);

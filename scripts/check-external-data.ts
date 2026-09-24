@@ -115,7 +115,7 @@ async function main() {
   // Some data.taipei CSV endpoints can reject/timeout generic CI fetches even
   // though the adapter request succeeds, so do not fail before exercising it.
 
-  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints, aed, hydrants] = await Promise.all([
+  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints, aed, hydrants, officialAqi] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
     fetchTaipeiSafetyData(TEST_LAT, TEST_LNG, 500),

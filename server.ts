@@ -7,7 +7,7 @@ import { applyFieldObservationAdjustment, calculateAssessment, C1SafetyMetrics, 
 import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
-import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, fetchTaipeiAed, fetchTaipeiFireHydrants, OFFICIAL_SOURCE_URLS } from "./official";
+import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, fetchTaipeiAed, fetchTaipeiFireHydrants, fetchTaipeiOfficialAirQuality, OFFICIAL_SOURCE_URLS } from "./official";
 import { ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
@@ -1654,7 +1654,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getCachedSnapshot("taipei_fire_hydrants", "__citywide__"),
       getCachedSnapshot("taipei_official_aqi", "__citywide__"),
     ]);
-    const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints, nearbyAed, nearbyHydrants] = await Promise.all([
+    const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints, nearbyAed, nearbyHydrants, nearbyOfficialAqi] = await Promise.all([
       youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
       medicalSnapshot ? getNearbyExternalSpatialPoints("taipei_medical", lat, lng, 1500, 500) : Promise.resolve([]),
       streetLightSnapshot ? getNearbyExternalSpatialPoints("taipei_street_lights", lat, lng, 300, 5000) : Promise.resolve([]),
@@ -1719,11 +1719,9 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         }
       : (snapshots.taipei_flood?.payload || { riskCells: [], status: "unavailable" });
     const nearestOfficialAqi = officialAqiSnapshot
-      ? officialAqiSnapshot
-        ? nearbyOfficialAqi
-            .filter((point) => Number.isFinite(Number(point.properties?.aqi)))
-            .sort((a, b) => a.distanceMeters - b.distanceMeters)[0]
-        : undefined
+      ? nearbyOfficialAqi
+        .filter((point) => Number.isFinite(Number(point.properties?.aqi)))
+        .sort((a, b) => a.distanceMeters - b.distanceMeters)[0]
       : undefined;
     const officialAqiValue = nearestOfficialAqi ? Number(nearestOfficialAqi.properties?.aqi) : undefined;
     const officialPm25Value = nearestOfficialAqi ? Number(nearestOfficialAqi.properties?.pm25) : undefined;

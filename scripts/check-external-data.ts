@@ -17,6 +17,7 @@ import {
   fetchTaipeiAed,
   fetchTaipeiFireHydrants,
   fetchTaipeiOfficialAirQuality,
+  fetchTaipeiFireStations,
 } from "../official";
 
 const TEST_LAT = Number(process.env.STREETLENS_TEST_LAT || "25.033964");
@@ -100,6 +101,7 @@ async function main() {
     OFFICIAL_SOURCE_URLS.wheelRouteFacility12,
     OFFICIAL_SOURCE_URLS.taipeiOfficialAqi,
     OFFICIAL_SOURCE_URLS.taipeiAirStations,
+    OFFICIAL_SOURCE_URLS.taipeiFireStations,
   ].map(checkHttpResource));
 
   for (const result of resourceResults) {
@@ -115,7 +117,7 @@ async function main() {
   // Some data.taipei CSV endpoints can reject/timeout generic CI fetches even
   // though the adapter request succeeds, so do not fail before exercising it.
 
-  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints, aed, hydrants, officialAqi] = await Promise.all([
+  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints, aed, hydrants, officialAqi, fireStations] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
     fetchTaipeiSafetyData(TEST_LAT, TEST_LNG, 500),
@@ -133,6 +135,7 @@ async function main() {
     fetchOfficialWithRetry("AED", fetchTaipeiAed),
     fetchOfficialWithRetry("hydrants", fetchTaipeiFireHydrants),
     fetchOfficialWithRetry("officialAQI", fetchTaipeiOfficialAirQuality),
+    fetchOfficialWithRetry("fireStations", fetchTaipeiFireStations),
   ]);
 
   console.log(JSON.stringify({
@@ -178,6 +181,11 @@ async function main() {
         points: officialAqi.points.length,
         error: officialAqi.error || null,
       },
+      fireStations: {
+        status: fireStations.status,
+        points: fireStations.points.length,
+        error: fireStations.error || null,
+      },
     },
   }, null, 2));
 
@@ -211,6 +219,7 @@ async function main() {
     ["aed", aed],
     ["hydrants", hydrants],
     ["officialAQI", officialAqi],
+    ["fireStations", fireStations],
   ] as const;
 
   for (const [name, result] of officialResults) {
@@ -232,6 +241,7 @@ async function main() {
   assert(Array.isArray(aed.points), "AED adapter returned invalid points");
   assert(Array.isArray(hydrants.points), "Hydrant adapter returned invalid points");
   assert(Array.isArray(officialAqi.points), "Official AQI adapter returned invalid points");
+  assert(Array.isArray(fireStations.points), "Fire station adapter returned invalid points");
 
   console.log("External data health check passed.");
 }

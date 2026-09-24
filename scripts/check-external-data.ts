@@ -16,6 +16,7 @@ import {
   fetchTaipeiCoolingPoints,
   fetchTaipeiAed,
   fetchTaipeiFireHydrants,
+  fetchTaipeiOfficialAirQuality,
 } from "../official";
 
 const TEST_LAT = Number(process.env.STREETLENS_TEST_LAT || "25.033964");
@@ -97,6 +98,8 @@ async function main() {
     OFFICIAL_SOURCE_URLS.taipeiBikeLanes,
     OFFICIAL_SOURCE_URLS.wheelRouteFacility11,
     OFFICIAL_SOURCE_URLS.wheelRouteFacility12,
+    OFFICIAL_SOURCE_URLS.taipeiOfficialAqi,
+    OFFICIAL_SOURCE_URLS.taipeiAirStations,
   ].map(checkHttpResource));
 
   for (const result of resourceResults) {
@@ -129,6 +132,7 @@ async function main() {
     fetchOfficialWithRetry("coolingPoints", fetchTaipeiCoolingPoints),
     fetchOfficialWithRetry("AED", fetchTaipeiAed),
     fetchOfficialWithRetry("hydrants", fetchTaipeiFireHydrants),
+    fetchOfficialWithRetry("officialAQI", fetchTaipeiOfficialAirQuality),
   ]);
 
   console.log(JSON.stringify({
@@ -169,6 +173,11 @@ async function main() {
       coolingPoints: { status: coolingPoints.status, points: coolingPoints.points.length, error: coolingPoints.error || null },
       aed: { status: aed.status, points: aed.points.length, error: aed.error || null },
       hydrants: { status: hydrants.status, points: hydrants.points.length, error: hydrants.error || null },
+      officialAqi: {
+        status: officialAqi.status,
+        points: officialAqi.points.length,
+        error: officialAqi.error || null,
+      },
     },
   }, null, 2));
 
@@ -201,6 +210,7 @@ async function main() {
     ["coolingPoints", coolingPoints],
     ["aed", aed],
     ["hydrants", hydrants],
+    ["officialAQI", officialAqi],
   ] as const;
 
   for (const [name, result] of officialResults) {
@@ -221,6 +231,7 @@ async function main() {
   assert(Array.isArray(coolingPoints.points), "Cooling point adapter returned invalid points");
   assert(Array.isArray(aed.points), "AED adapter returned invalid points");
   assert(Array.isArray(hydrants.points), "Hydrant adapter returned invalid points");
+  assert(Array.isArray(officialAqi.points), "Official AQI adapter returned invalid points");
 
   console.log("External data health check passed.");
 }

@@ -65,6 +65,10 @@ export interface C1SafetyMetrics {
   floodDepthReference?: number[];
   streetLightCount300m?: number;
   streetLightCountReference?: number[];
+  aedCount500m?: number;
+  aedCountReference?: number[];
+  fireHydrantCount500m?: number;
+  fireHydrantCountReference?: number[];
 }
 
 export interface C2PoiMetrics {
@@ -425,7 +429,51 @@ export function calculateAssessment(
     availabilityReason: Number.isFinite(Number(streetLightCount)) ? (streetLightScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
   });
 
-  const c1ComponentScores = [accidentScore, floodScore, streetLightScore]
+  const aedCount = c1SafetyMetrics?.aedCount500m;
+  const aedReference = c1SafetyMetrics?.aedCountReference;
+  const aedScore = Number.isFinite(Number(aedCount))
+    ? (empiricalPercentileScore(Number(aedCount), aedReference, "higher_is_better")
+      ?? referenceRelativeScore(Number(aedCount), aedReference, "higher_is_better"))
+    : null;
+  c1Factors.push({
+    category: "C1",
+    indicator: "aedCount500m",
+    value: Number.isFinite(Number(aedCount)) ? Number(aedCount) : null,
+    unit: "devices",
+    direction: "higher_is_better",
+    source: Number.isFinite(Number(aedCount)) ? c1Source : "unavailable",
+    method: "official",
+    confidence: aedScore != null ? "medium" : "low",
+    status: Number.isFinite(Number(aedCount)) ? "available" : "unavailable",
+    retrievedAt: c1SafetyMetrics?.retrievedAt,
+    referenceSampleSize: aedReference?.filter(Number.isFinite).length ?? 0,
+    scoringMethod: aedScore != null && (aedReference?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+    availabilityReason: Number.isFinite(Number(aedCount)) ? (aedScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
+  });
+
+  const fireHydrantCount = c1SafetyMetrics?.fireHydrantCount500m;
+  const fireHydrantReference = c1SafetyMetrics?.fireHydrantCountReference;
+  const fireHydrantScore = Number.isFinite(Number(fireHydrantCount))
+    ? (empiricalPercentileScore(Number(fireHydrantCount), fireHydrantReference, "higher_is_better")
+      ?? referenceRelativeScore(Number(fireHydrantCount), fireHydrantReference, "higher_is_better"))
+    : null;
+  c1Factors.push({
+    category: "C1",
+    indicator: "fireHydrantCount500m",
+    value: Number.isFinite(Number(fireHydrantCount)) ? Number(fireHydrantCount) : null,
+    unit: "hydrants",
+    direction: "higher_is_better",
+    source: Number.isFinite(Number(fireHydrantCount)) ? c1Source : "unavailable",
+    method: "official",
+    confidence: fireHydrantScore != null ? "medium" : "low",
+    status: Number.isFinite(Number(fireHydrantCount)) ? "available" : "unavailable",
+    retrievedAt: c1SafetyMetrics?.retrievedAt,
+    referenceSampleSize: fireHydrantReference?.filter(Number.isFinite).length ?? 0,
+    scoringMethod: fireHydrantScore != null && (fireHydrantReference?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
+    availabilityReason: Number.isFinite(Number(fireHydrantCount)) ? (fireHydrantScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
+  });
+
+  const c1ComponentScores = [accidentScore, floodScore, streetLightScore, aedScore, fireHydrantScore]
     .filter((value): value is number => value !== null);
   const c1Observed: number | null = c1ComponentScores.length
     ? clampScore(average(c1ComponentScores))
@@ -885,10 +933,22 @@ export function calculateAssessment(
           c1SafetyMetrics?.floodDepthReference,
           "lower_is_better",
         ),
+        referenceRelativeScore(
+          medianValue(c1SafetyMetrics?.aedCountReference) ?? undefined,
+          c1SafetyMetrics?.aedCountReference,
+          "higher_is_better",
+        ),
+        referenceRelativeScore(
+          medianValue(c1SafetyMetrics?.fireHydrantCountReference) ?? undefined,
+          c1SafetyMetrics?.fireHydrantCountReference,
+          "higher_is_better",
+        ),
       ]),
       sampleSize: Math.max(
         c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
         c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0,
+        c1SafetyMetrics?.aedCountReference?.filter(Number.isFinite).length ?? 0,
+        c1SafetyMetrics?.fireHydrantCountReference?.filter(Number.isFinite).length ?? 0,
       ),
     },
     C2: {

@@ -1908,7 +1908,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c4GreenMetrics.streetTreeDensityReference = greenReference.street;
     c4GreenMetrics.parkTreeDensityReference = greenReference.park;
 
-    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference, nearestCommunityReference, streetLightReference] = await Promise.all([
+    const [safetyReference, amenityReference, communityReference, normalizationReferences, nearestParkReference, nearestCommunityReference, streetLightReference, marketCountReference, coolingPointCountReference] = await Promise.all([
       getSafetyReference(),
       getPoiDensityReference(),
       getC5CommunityReference(),
@@ -1916,11 +1916,14 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getNearestParkDistanceReference(scopeKey),
       getNearestCommunityDistanceReference(scopeKey),
       getSpatialPointPropertySumReference("taipei_street_lights", "quantity", 300, scopeKey),
+      getSpatialPointCountReference("taipei_markets", 1200, scopeKey),
+      getSpatialPointCountReference("taipei_cooling_points", 1200, scopeKey),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
     c1SafetyMetrics.streetLightCountReference = streetLightReference;
-    c4GreenMetrics.coolingPointCountReference = normalizationReferences.c4CoolingPointCounts;
+    c4GreenMetrics.coolingPointCountReference = coolingPointCountReference;
+
     const communityCount = mergedCommunity.length;
     const scores = calculateAssessment(
       null,

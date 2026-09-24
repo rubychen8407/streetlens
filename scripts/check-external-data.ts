@@ -14,6 +14,8 @@ import {
   fetchTaipeiSidewalkAreas,
   fetchTaipeiMarkets,
   fetchTaipeiCoolingPoints,
+  fetchTaipeiAed,
+  fetchTaipeiFireHydrants,
 } from "../official";
 
 const TEST_LAT = Number(process.env.STREETLENS_TEST_LAT || "25.033964");
@@ -110,7 +112,7 @@ async function main() {
   // Some data.taipei CSV endpoints can reject/timeout generic CI fetches even
   // though the adapter request succeeds, so do not fail before exercising it.
 
-  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints] = await Promise.all([
+  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints, aed, hydrants] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
     fetchTaipeiSafetyData(TEST_LAT, TEST_LNG, 500),
@@ -125,6 +127,8 @@ async function main() {
     fetchOfficialWithRetry("sidewalks", fetchTaipeiSidewalkAreas),
     fetchOfficialWithRetry("markets", fetchTaipeiMarkets),
     fetchOfficialWithRetry("coolingPoints", fetchTaipeiCoolingPoints),
+    fetchOfficialWithRetry("AED", fetchTaipeiAed),
+    fetchOfficialWithRetry("hydrants", fetchTaipeiFireHydrants),
   ]);
 
   console.log(JSON.stringify({
@@ -163,6 +167,8 @@ async function main() {
       sidewalks: { status: sidewalks.status, areas: sidewalks.areas?.length || 0, error: sidewalks.error || null },
       markets: { status: markets.status, points: markets.points.length, error: markets.error || null },
       coolingPoints: { status: coolingPoints.status, points: coolingPoints.points.length, error: coolingPoints.error || null },
+      aed: { status: aed.status, points: aed.points.length, error: aed.error || null },
+      hydrants: { status: hydrants.status, points: hydrants.points.length, error: hydrants.error || null },
     },
   }, null, 2));
 
@@ -193,6 +199,8 @@ async function main() {
     ["sidewalks", sidewalks],
     ["markets", markets],
     ["coolingPoints", coolingPoints],
+    ["aed", aed],
+    ["hydrants", hydrants],
   ] as const;
 
   for (const [name, result] of officialResults) {
@@ -211,6 +219,8 @@ async function main() {
   assert(Array.isArray(sidewalks.areas), "Sidewalk adapter returned invalid areas");
   assert(Array.isArray(markets.points), "Market adapter returned invalid points");
   assert(Array.isArray(coolingPoints.points), "Cooling point adapter returned invalid points");
+  assert(Array.isArray(aed.points), "AED adapter returned invalid points");
+  assert(Array.isArray(hydrants.points), "Hydrant adapter returned invalid points");
 
   console.log("External data health check passed.");
 }

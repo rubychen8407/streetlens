@@ -186,6 +186,25 @@ export function AssessmentWorkspace({
                 </div>
                 <div className="text-[10px] text-slate-500 mt-1">See the source-backed category scores and factor provenance.</div>
               </button>
+              {assessment?.scores && (
+                <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold text-slate-300">Data quality</span>
+                    <span className="text-[9px] text-slate-500">
+                      {5 - assessment.scores.estimatedCategoryCount} observed · {assessment.scores.estimatedCategoryCount} estimated
+                    </span>
+                  </div>
+                  {assessment.scores.estimatedCategoryCount > 0 ? (
+                    <div className="mt-1 text-[9px] leading-relaxed text-amber-200/80">
+                      Estimated categories use persisted real reference observations, not fabricated street-level values.
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                      All five categories currently use local source-backed observations.
+                    </div>
+                  )}
+                </div>
+              )}
               {showScoreDetails && (
                 <div className="mt-2 rounded-2xl border border-white/10 bg-black/10 p-3 space-y-2">
                   {(['C1','C2','C3','C4','C5'] as const).map(category => {

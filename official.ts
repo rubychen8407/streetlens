@@ -42,6 +42,7 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiHospitals: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=04a3d195-ee97-467a-b066-e471ff99d15d",
   taipeiStreetLights: "https://tppkl.blob.core.windows.net/blobfs/TaipeiLight.csv",
   taipeiBusStops: "https://tcgbusfs.blob.core.windows.net/blobbus/TstStop.json",
+  taipeiMrtStations: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a63e3278-9d10-4916-9f24-e5a4d78afb31",
   taipeiLibraries: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=fb6cc268-e2b8-43a7-86f2-e79702291a2b",
   taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
   taipeiParks: "https://parks.gov.taipei/parks/api/",
@@ -370,6 +371,60 @@ export async function fetchTaipeiBusStops(): Promise<OfficialCitywideSourceResul
     }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng) && point.id);
 
     return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+export async function fetchTaipeiMrtStations(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Department of Rapid Transit Systems official station GIS";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiMrtStations);
+    const payload = JSON.parse(text);
+    const features = Array.isArray(payload?.features) ? payload.features : [];
+    const points: OfficialSpatialPoint[] = [];
+
+    for (const feature of features) {
+      const coordinates = feature?.geometry?.coordinates;
+      if (!Array.isArray(coordinates) || coordinates.length < 2) continue;
+      const x = Number(coordinates[0]);
+      const y = Number(coordinates[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+      // The official GIS resource declares EPSG:3826 (TWD97 / TM2 zone 121).
+      const converted = toWgs84(x, y);
+      if (!converted) continue;
+
+      const name = String(feature?.properties?.NAME ?? feature?.properties?.name ?? "").trim();
+      if (!name) continue;
+      const id = String(feature?.properties?.["FID CODE"] ?? feature?.id ?? name);
+
+      points.push({
+        id,
+        name,
+        lat: converted.lat,
+        lng: converted.lng,
+        properties: {
+          locationDescription: feature?.properties?.LOC ?? null,
+          sourceCrs: payload?.crs?.properties?.name ?? "EPSG:3826",
+        },
+      });
+    }
+
+    return {
+      points,
+      source,
+      status: points.length ? "available" : "empty",
+      retrievedAt,
+      sourceUpdatedAt: lastModified,
+    };
   } catch (error: any) {
     return {
       points: [],

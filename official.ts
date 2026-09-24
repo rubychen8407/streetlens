@@ -700,9 +700,11 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
       });
     }
 
-    const sourceUpdateMs = rows
-      .map((row) => parseDateMs(firstValue(row, ["UpdDate", "更新日期"])))
-      .filter((value): value is number => value != null);
+    const sourceUpdateMs: number[] = [];
+    for (const row of rows) {
+      const parsed = parseDateMs(firstValue(row, ["UpdDate", "更新日期"]));
+      if (parsed != null) sourceUpdateMs.push(parsed);
+    }
 
     return {
       points,
@@ -710,7 +712,7 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
       status: points.length ? "available" : "empty",
       retrievedAt,
       sourceUpdatedAt: sourceUpdateMs.length
-        ? new Date(Math.max(...sourceUpdateMs)).toISOString()
+        ? new Date(sourceUpdateMs.reduce((max, value) => Math.max(max, value), 0)).toISOString()
         : lastModified,
     };
   } catch (error: any) {

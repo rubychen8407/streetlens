@@ -200,7 +200,7 @@ export async function fetchTaipeiYouBikeData(): Promise<OfficialCitywideSourceRe
       status: points.length ? "available" : "empty",
       retrievedAt,
       sourceUpdatedAt: sourceUpdateMs.length
-        ? new Date(Math.max(...sourceUpdateMs)).toISOString()
+        ? new Date(sourceUpdateMs.reduce((max, value) => Math.max(max, value), 0)).toISOString()
         : lastModified,
     };
   } catch (error: any) {
@@ -857,24 +857,30 @@ export async function fetchTaipeiOfficialAirQuality(): Promise<OfficialCitywideS
       fetchText(OFFICIAL_SOURCE_URLS.taipeiAirStations, 30_000),
       fetchText(OFFICIAL_SOURCE_URLS.taipeiOfficialAqi, 60_000),
     ]);
+    const stationMap = new Map<string, { code: string | null; name: string; lat: number; lng: number; address: string | null }>();
     const stationRows = parseCsv(stationResponse.text);
-    const stationMap = new Map<string, { lat: number; lng: number; address: string | null }>();
 
     for (const row of stationRows) {
-      const name = firstValue(row, ["station_name_測站名稱", "測站名稱", "station_name", "StationName"]);
+      const name = firstValue(row, ["station_name_測站名稱", "測站名稱", "station_name", "StationName"]).trim();
+      const code = firstValue(row, ["site_id_測站代碼", "測站代碼", "站碼", "station_code", "SiteId"]).trim() || null;
       const lat = numberValue(row, ["latitude_緯度", "緯度", "latitude", "Latitude"]);
       const lng = numberValue(row, ["longitude_經度", "經度", "longitude", "Longitude"]);
-      if (name && lat != null && lng != null) {
-        stationMap.set(name.trim(), {
-          lat,
-          lng,
-          address: firstValue(row, ["station_address_測站地址", "測站地址", "station_address", "Address"]) || null,
-        });
-      }
+      if (!name || lat == null || lng == null) continue;
+      const station = {
+        code,
+        name,
+        lat,
+        lng,
+        address: firstValue(row, ["station_address_測站地址", "測站地址", "station_address", "Address"]) || null,
+      };
+      stationMap.set(name, station);
+      if (code) stationMap.set(code, station);
     }
 
     const rows = extractArray(JSON.parse(hourlyResponse.text));
     const latestByStation = new Map<string, {
+      stationName: string;
+      stationCode: string | null;
       aqi: number | null;
       pm25: number | null;
       publishMs: number;
@@ -882,13 +888,15 @@ export async function fetchTaipeiOfficialAirQuality(): Promise<OfficialCitywideS
 
     for (const row of rows) {
       const stationName = firstValue(row, ["站名", "站名代號", "station_name", "StationName"]).trim();
-      if (!stationName) continue;
+      const stationCode = firstValue(row, ["測站代碼", "站碼", "station_code", "SiteId"]).trim() || null;
+      const stationKey = stationCode || stationName;
+      if (!stationKey) continue;
 
       const indicator = firstValue(row, ["指標物", "指標物名稱", "indicator", "ItemName"]).trim();
       const value = numberValue(row, ["指標值", "指標數值", "value", "Value"]);
       const directAqi = numberValue(row, ["AQI", "aqi"]);
       const publishMs = parseDateMs(firstValue(row, ["發布時間", "publishTime", "PublishTime", "時間", "time"])) ?? 0;
-      const current = latestByStation.get(stationName);
+      const current = latestByStation.get(stationKey);
 
       let aqi = current?.aqi ?? null;
       let pm25 = current?.pm25 ?? null;
@@ -897,9 +905,11 @@ export async function fetchTaipeiOfficialAirQuality(): Promise<OfficialCitywideS
       if (/PM\s*2\.5|PM2\.5/i.test(indicator) && value != null) pm25 = value;
 
       if (!current || publishMs >= current.publishMs) {
-        latestByStation.set(stationName, { aqi, pm25, publishMs });
+        latestByStation.set(stationKey, { stationName, stationCode, aqi, pm25, publishMs });
       } else if (directAqi != null || /^AQI$/i.test(indicator) || /PM\s*2\.5|PM2\.5/i.test(indicator)) {
-        latestByStation.set(stationName, {
+        latestByStation.set(stationKey, {
+          stationName: current.stationName,
+          stationCode: current.stationCode ?? stationCode,
           aqi,
           pm25,
           publishMs: current.publishMs,
@@ -909,19 +919,22 @@ export async function fetchTaipeiOfficialAirQuality(): Promise<OfficialCitywideS
 
     const points: OfficialSpatialPoint[] = [];
     let maxPublishMs: number | null = null;
-    for (const [stationName, latest] of latestByStation) {
-      const station = stationMap.get(stationName);
+    for (const [stationKey, latest] of latestByStation) {
+      const station = stationMap.get(stationKey)
+        ?? (latest.stationCode ? stationMap.get(latest.stationCode) : undefined)
+        ?? stationMap.get(latest.stationName);
       if (!station || latest.aqi == null) continue;
       maxPublishMs = maxPublishMs == null ? latest.publishMs : Math.max(maxPublishMs, latest.publishMs);
       points.push({
-        id: stationName,
-        name: stationName,
+        id: station.code || latest.stationCode || station.name || latest.stationName,
+        name: station.name || latest.stationName,
         lat: station.lat,
         lng: station.lng,
         properties: {
           aqi: latest.aqi,
           pm25: latest.pm25,
-          stationName,
+          stationName: station.name || latest.stationName,
+          stationCode: station.code || latest.stationCode,
           address: station.address,
           publishTime: latest.publishMs ? new Date(latest.publishMs).toISOString() : null,
         },

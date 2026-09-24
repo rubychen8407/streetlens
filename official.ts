@@ -48,6 +48,8 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiBikeLanes: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a69988de-6a49-4956-9220-40ebd7c42800",
   taipeiMarkets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=35acfce1-2c4d-4c70-aa75-601cdab2b3f7",
   taipeiCoolingPoints: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=ae7e5986-859d-4294-b289-7c1b2e7c23f1",
+  taipeiAed: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=438c61ad-24f6-4e54-a1cc-e2cfe0e7051e",
+  taipeiFireHydrants: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=b9f8154d-c627-48a8-b3ef-512ed9cde9e7",
   wheelRouteFacility11: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/11",
   wheelRouteFacility12: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/12",
 };
@@ -773,6 +775,68 @@ export async function fetchTaipeiCoolingPoints(): Promise<OfficialCitywideSource
           seating: firstValue(row, ["座位"]) || null,
           drinkingWater: firstValue(row, ["飲水設施"]) || null,
           accessibleSeats: firstValue(row, ["無障礙座位"]) || null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return { points: [], source, status: error?.name === "AbortError" ? "timeout" : "error", retrievedAt, error: error?.message || String(error) };
+  }
+}
+
+
+export async function fetchTaipeiAed(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Health Department AED locations";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiAed, 60_000);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
+      const name = firstValue(row, ["場所名稱", "場所", "name"]) || `AED-${index}`;
+      return {
+        id: [firstValue(row, ["場所名稱", "場所", "name"]), lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
+        name,
+        lat: lat ?? Number.NaN,
+        lng: lng ?? Number.NaN,
+        properties: {
+          address: firstValue(row, ["場所地址", "地址"]) || null,
+          category: firstValue(row, ["場所分類"]) || null,
+          type: firstValue(row, ["場所類型"]) || null,
+          location: firstValue(row, ["AED放置地點", "AED地點描述"]) || null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return { points: [], source, status: error?.name === "AbortError" ? "timeout" : "error", retrievedAt, error: error?.message || String(error) };
+  }
+}
+
+export async function fetchTaipeiFireHydrants(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei Water Department Greater Taipei fire hydrant locations";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiFireHydrants, 60_000);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["WGS84緯度", "緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["WGS84經度", "經度", "longitude", "Longitude"]);
+      const x = numberValue(row, ["97X座標", "TWD97X"]);
+      const y = numberValue(row, ["97Y座標", "TWD97Y"]);
+      const converted = (lat == null || lng == null) && x != null && y != null ? toWgs84(x, y) : null;
+      const finalLat = lat ?? converted?.lat;
+      const finalLng = lng ?? converted?.lng;
+      const id = firstValue(row, ["WPID", "編號", "序號"]) || `hydrant-${index}`;
+      return {
+        id,
+        name: `Fire hydrant ${id}`,
+        lat: finalLat ?? Number.NaN,
+        lng: finalLng ?? Number.NaN,
+        properties: {
+          type: firstValue(row, ["型式", "Type"]) || null,
+          area: firstValue(row, ["所在地區", "地區"]) || null,
         },
       };
     }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));

@@ -51,6 +51,7 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiAed: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=438c61ad-24f6-4e54-a1cc-e2cfe0e7051e",
   taipeiFireHydrants: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=b9f8154d-c627-48a8-b3ef-512ed9cde9e7",
   taipeiOfficialAqi: "https://tpdep.blob.core.windows.net/techdep/tldep_AQI_DAYHour.json",
+  taipeiFireStations: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=4486e759-4159-4208-9832-c32300c4e832",
   taipeiAirStations: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=bf9f74e7-22d0-4e0f-8e3d-31c04eda22a4",
   wheelRouteFacility11: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/11",
   wheelRouteFacility12: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/12",
@@ -949,6 +950,48 @@ export async function fetchTaipeiOfficialAirQuality(): Promise<OfficialCitywideS
       sourceUpdatedAt: maxPublishMs != null
         ? new Date(maxPublishMs).toISOString()
         : hourlyResponse.lastModified || stationResponse.lastModified,
+    };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+
+export async function fetchTaipeiFireStations(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Fire Department fire station locations";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiFireStations, 60_000);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
+      const name = firstValue(row, ["分隊名稱", "隊名稱", "單位名稱", "name"]) || `fire-station-${index}`;
+      return {
+        id: [firstValue(row, ["項次編號", "編號", "id"]), name, lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
+        name,
+        lat: lat ?? Number.NaN,
+        lng: lng ?? Number.NaN,
+        properties: {
+          address: firstValue(row, ["地址", "station_address", "Address"]) || null,
+          postalCode: firstValue(row, ["郵遞區號", "postal_code"]) || null,
+          cityCode: firstValue(row, ["縣市代碼", "city_code"]) || null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+    return {
+      points,
+      source,
+      status: points.length ? "available" : "empty",
+      retrievedAt,
+      sourceUpdatedAt: lastModified,
     };
   } catch (error: any) {
     return {

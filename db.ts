@@ -1421,7 +1421,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     }
   }
 
-  const c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>> = {};
+  const c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist" | "marketDist", number[]>> = {};
   const typeMap = {
     supermarket: "supermarketDist",
     convenience: "convenienceDist",

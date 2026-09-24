@@ -684,6 +684,7 @@ const VALIDATOR_RESOURCES: Record<string, string[]> = {
   taipei_cooling_points: [OFFICIAL_SOURCE_URLS.taipeiCoolingPoints],
   taipei_aed: [OFFICIAL_SOURCE_URLS.taipeiAed],
   taipei_fire_hydrants: [OFFICIAL_SOURCE_URLS.taipeiFireHydrants],
+  taipei_official_aqi: [OFFICIAL_SOURCE_URLS.taipeiOfficialAqi, OFFICIAL_SOURCE_URLS.taipeiAirStations],
 };
 
 type ValidatorState = Record<string, { etag?: string; lastModified?: string }>;
@@ -791,6 +792,7 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   taipei_cooling_points: 168,
   taipei_aed: 168,
   taipei_fire_hydrants: 2160,
+  taipei_official_aqi: 1,
   open_meteo_air_quality: 24,
 };
 
@@ -864,6 +866,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
       "taipei_cooling_points",
       "taipei_aed",
       "taipei_fire_hydrants",
+      "taipei_official_aqi",
     ]);
     const batchSourceKeys = new Set(["taipei_green", "taipei_safety", "taipei_flood"]);
 
@@ -933,7 +936,9 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
                               ? await fetchTaipeiCoolingPoints()
                               : sourceKey === "taipei_aed"
                                 ? await fetchTaipeiAed()
-                                : await fetchTaipeiFireHydrants();
+                                : sourceKey === "taipei_fire_hydrants"
+                                  ? await fetchTaipeiFireHydrants()
+                                  : await fetchTaipeiOfficialAirQuality();
 
         if (citywide.status === "available" || citywide.status === "empty") {
           if (Array.isArray(citywide.points)) {
@@ -1633,7 +1638,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
 
     // Supplementary citywide official inventories are read only from persisted
     // spatial indexes. They do not block the core assessment when unavailable.
-    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot, busStopSnapshot, librarySnapshot, publicToiletSnapshot, parkSnapshot, bikeLaneSnapshot, sidewalkSnapshot, marketSnapshot, coolingPointSnapshot, aedSnapshot, hydrantSnapshot] = await Promise.all([
+    const [youBikeSnapshot, medicalSnapshot, streetLightSnapshot, busStopSnapshot, librarySnapshot, publicToiletSnapshot, parkSnapshot, bikeLaneSnapshot, sidewalkSnapshot, marketSnapshot, coolingPointSnapshot, aedSnapshot, hydrantSnapshot, officialAqiSnapshot] = await Promise.all([
       getCachedSnapshot("taipei_youbike", "__citywide__"),
       getCachedSnapshot("taipei_medical", "__citywide__"),
       getCachedSnapshot("taipei_street_lights", "__citywide__"),
@@ -1647,6 +1652,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getCachedSnapshot("taipei_cooling_points", "__citywide__"),
       getCachedSnapshot("taipei_aed", "__citywide__"),
       getCachedSnapshot("taipei_fire_hydrants", "__citywide__"),
+      getCachedSnapshot("taipei_official_aqi", "__citywide__"),
     ]);
     const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints, nearbyAed, nearbyHydrants] = await Promise.all([
       youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
@@ -1664,6 +1670,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       coolingPointSnapshot ? getNearbyExternalSpatialPoints("taipei_cooling_points", lat, lng, 1200, 300) : Promise.resolve([]),
       aedSnapshot ? getNearbyExternalSpatialPoints("taipei_aed", lat, lng, 500, 500) : Promise.resolve([]),
       hydrantSnapshot ? getNearbyExternalSpatialPoints("taipei_fire_hydrants", lat, lng, 500, 1000) : Promise.resolve([]),
+      officialAqiSnapshot ? getNearbyExternalSpatialPoints("taipei_official_aqi", lat, lng, 5000, 50) : Promise.resolve([]),
     ]);
 
     // A user request never fetches external scoring sources. Existing snapshots are
@@ -1711,10 +1718,28 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           retrievedAt: indexedFloodHazards[0]?.retrievedAt || new Date().toISOString(),
         }
       : (snapshots.taipei_flood?.payload || { riskCells: [], status: "unavailable" });
-    const weather = {
-      ...(snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" }),
-      retrievedAt: snapshots.open_meteo_air_quality?.fetchedAt || undefined,
-    };
+    const nearestOfficialAqi = officialAqiSnapshot
+      ? officialAqiSnapshot
+        ? nearbyOfficialAqi
+            .filter((point) => Number.isFinite(Number(point.properties?.aqi)))
+            .sort((a, b) => a.distanceMeters - b.distanceMeters)[0]
+        : undefined
+      : undefined;
+    const officialAqiValue = nearestOfficialAqi ? Number(nearestOfficialAqi.properties?.aqi) : undefined;
+    const officialPm25Value = nearestOfficialAqi ? Number(nearestOfficialAqi.properties?.pm25) : undefined;
+    const weather = officialAqiValue != null && Number.isFinite(officialAqiValue)
+      ? {
+          aqi: officialAqiValue,
+          pm25: Number.isFinite(officialPm25Value) ? officialPm25Value : null,
+          status: "available",
+          source: officialAqiSnapshot?.payload?.source || "Taipei City Environmental Protection Department official air quality monitoring",
+          sourceType: "station",
+          retrievedAt: nearestOfficialAqi?.properties?.publishTime || officialAqiSnapshot?.fetchedAt,
+        }
+      : {
+          ...(snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" }),
+          retrievedAt: snapshots.open_meteo_air_quality?.fetchedAt || undefined,
+        };
     const pois = mergePois(lat, lng, [google, osm]);
     const nearest = (type: string): number | undefined => {
       const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
@@ -2032,6 +2057,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           ["taipei_cooling_points", coolingPointSnapshot],
           ["taipei_aed", aedSnapshot],
           ["taipei_fire_hydrants", hydrantSnapshot],
+          ["taipei_official_aqi", officialAqiSnapshot],
         ].map((entry) => {
           const source = String(entry[0]);
           const snapshot = entry[1] as any;

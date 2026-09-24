@@ -40,7 +40,7 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiYouBike: "https://tcgbusfs.blob.core.windows.net/dotapp/youbike/v2/youbike_immediate.json",
   taipeiClinics: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=3a02af7d-8c33-46c1-8226-c12a11610f6b",
   taipeiHospitals: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=04a3d195-ee97-467a-b066-e471ff99d15d",
-  taipeiStreetLights: "https://tppkl.blob.core.windows.net/blobfs/TaipeiLight.json",
+  taipeiStreetLights: "https://tppkl.blob.core.windows.net/blobfs/TaipeiLight.csv",
   taipeiBusStops: "https://tcgbusfs.blob.core.windows.net/blobbus/TstStop.json",
   taipeiLibraries: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=fb6cc268-e2b8-43a7-86f2-e79702291a2b",
   taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
@@ -656,17 +656,17 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
   const retrievedAt = new Date().toISOString();
   const source = "Taipei City Public Works Department street light inventory";
   try {
-    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiStreetLights);
-    const rows = extractArray(JSON.parse(text));
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiStreetLights, 60_000);
+    const rows = parseCsv(text);
     const points: OfficialSpatialPoint[] = [];
 
     for (const row of rows) {
-      let lat = Number(row.latitude ?? row.lat);
-      let lng = Number(row.longitude ?? row.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        const x = Number(row.TWD97X ?? row.twd97x);
-        const y = Number(row.TWD97Y ?? row.twd97y);
-        if (Number.isFinite(x) && Number.isFinite(y)) {
+      let lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
+      let lng = numberValue(row, ["經度", "longitude", "Longitude"]);
+      if (lat == null || lng == null) {
+        const x = numberValue(row, ["TWD97X", "twd97x", "X座標"]);
+        const y = numberValue(row, ["TWD97Y", "twd97y", "Y座標"]);
+        if (x != null && y != null) {
           const converted = toWgs84(x, y);
           if (converted) {
             lat = converted.lat;
@@ -674,9 +674,9 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
           }
         }
       }
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      if (lat == null || lng == null) continue;
 
-      const id = String(row.SerialNumber ?? row.serialNumber ?? row.id ?? "").trim();
+      const id = firstValue(row, ["SerialNumber", "路燈編號", "id"]);
       if (!id) continue;
       points.push({
         id,
@@ -684,20 +684,20 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
         lat,
         lng,
         properties: {
-          quantity: Number(row.Quantity ?? row.quantity) || 1,
-          lightKind: row.LightKind1 ?? row.lightKind1 ?? null,
-          watt: Number(row.LightWatt1 ?? row.lightWatt1) || null,
-          height: Number(row.LightHeight ?? row.lightHeight) || null,
-          installYear: Number(row.LightYear ?? row.lightYear) || null,
-          district: row.Dist ?? row.dist ?? null,
-          sourceUpdateDate: row.UpdDate ?? row.updDate ?? null,
+          quantity: numberValue(row, ["Quantity", "燈數量"]) ?? 1,
+          lightKind: firstValue(row, ["LightKind1", "燈種"]) || null,
+          watt: numberValue(row, ["LightWatt1", "瓦數"]),
+          height: numberValue(row, ["LightHeight", "燈桿高"]),
+          installYear: numberValue(row, ["LightYear", "使用年"]),
+          district: firstValue(row, ["Dist", "行政區"]) || null,
+          sourceUpdateDate: firstValue(row, ["UpdDate", "更新日期"]) || null,
         },
       });
     }
 
     const sourceUpdateMs = rows
-      .map((row: any) => parseDateMs(row.UpdDate ?? row.updDate))
-      .filter((value: number | null): value is number => value != null);
+      .map((row) => parseDateMs(firstValue(row, ["UpdDate", "更新日期"])))
+      .filter((value): value is number => value != null);
 
     return {
       points,
@@ -718,7 +718,6 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
     };
   }
 }
-
 
 export async function fetchTaipeiMarkets(): Promise<OfficialCitywideSourceResult> {
   const retrievedAt = new Date().toISOString();

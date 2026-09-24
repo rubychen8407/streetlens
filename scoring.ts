@@ -247,6 +247,8 @@ function referenceRelativeScore(
   return clampScore(ratioScore);
 }
 
+const MIN_REGIONAL_PRIOR_SAMPLES = 5;
+
 function regionalPriorScore(candidates: Array<number | null>): number | null {
   const valid = candidates.filter((value): value is number => Number.isFinite(value));
   return valid.length ? clampScore(average(valid)) : null;
@@ -1021,6 +1023,7 @@ export function calculateAssessment(
   for (const category of Object.keys(observedScores) as Category[]) {
     const observed = observedScores[category];
     const prior = regionalPriors[category];
+    const canEstimate = prior.sampleSize >= MIN_REGIONAL_PRIOR_SAMPLES;
 
     if (observed != null) {
       categories[category] = {
@@ -1031,7 +1034,7 @@ export function calculateAssessment(
       continue;
     }
 
-    if (prior.score != null) {
+    if (canEstimate && prior.score != null) {
       factorSets[category].push({
         category,
         indicator: "regionalReferencePrior",
@@ -1049,11 +1052,11 @@ export function calculateAssessment(
     }
 
     categories[category] = {
-      score: prior.score,
+      score: canEstimate ? prior.score : null,
       factors: factorSets[category],
-      mode: prior.score != null ? "estimated" : "observed",
-      estimationMethod: prior.score != null ? "regional_real_data_prior" : undefined,
-      estimationReferenceSampleSize: prior.score != null ? prior.sampleSize : undefined,
+      mode: canEstimate && prior.score != null ? "estimated" : "observed",
+      estimationMethod: canEstimate && prior.score != null ? "regional_real_data_prior" : undefined,
+      estimationReferenceSampleSize: canEstimate && prior.score != null ? prior.sampleSize : undefined,
     };
   }
 

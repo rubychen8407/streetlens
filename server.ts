@@ -1648,7 +1648,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getCachedSnapshot("taipei_aed", "__citywide__"),
       getCachedSnapshot("taipei_fire_hydrants", "__citywide__"),
     ]);
-    const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints] = await Promise.all([
+    const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyLibraries, nearbyPublicToilets, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints, nearbyAed, nearbyHydrants] = await Promise.all([
       youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
       medicalSnapshot ? getNearbyExternalSpatialPoints("taipei_medical", lat, lng, 1500, 500) : Promise.resolve([]),
       streetLightSnapshot ? getNearbyExternalSpatialPoints("taipei_street_lights", lat, lng, 300, 5000) : Promise.resolve([]),

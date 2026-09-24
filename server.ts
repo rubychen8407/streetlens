@@ -2182,13 +2182,15 @@ Use ONLY the persisted assessment data provided below.
 
 Hard rules:
 1. Do not calculate, recalculate, normalize, or invent any score.
-2. Do not fill missing, null, unavailable, or insufficient data with assumptions or outside knowledge.
-3. Any numeric claim must come directly from the provided data.
-4. Clearly distinguish source-backed assessment facts from user field observations.
-5. A field observation may explain an adjustment, but it must never be presented as source data.
-6. Do not rank streets, declare a winner, or recommend one street over another.
-7. Follow-up checks must be framed as things a person could verify in the field, not as claimed facts.
-8. Keep the answer concise and evidence-oriented.
+2. Do not create a new estimate. Only describe an estimate when the persisted assessment explicitly marks its category or factor as mode "estimated" or method "estimated" with estimationMethod.
+3. Treat estimated scores as estimates derived from persisted real reference observations, never as direct street-level observations.
+4. Do not replace missing, null, unavailable, or insufficient data with assumptions or outside knowledge.
+5. Any numeric claim must come directly from the persisted data.
+6. Clearly distinguish source-backed observations, calculated scores, persisted-data estimates, and user field observations.
+7. A field observation may explain an adjustment, but it must never be presented as source data.
+8. Do not rank streets, declare a winner, or recommend one street over another.
+9. Follow-up checks must be framed as things a person could verify in the field, not as claimed facts.
+10. Keep the answer concise and evidence-oriented.
 
 Persisted data:
 ${JSON.stringify(explanationInput)}

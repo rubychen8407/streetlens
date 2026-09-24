@@ -46,6 +46,8 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
   taipeiParks: "https://parks.gov.taipei/parks/api/",
   taipeiBikeLanes: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a69988de-6a49-4956-9220-40ebd7c42800",
+  taipeiMarkets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=35acfce1-2c4d-4c70-aa75-601cdab2b3f7",
+  taipeiCoolingPoints: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=ae7e5986-859d-4294-b289-7c1b2e7c23f1",
   wheelRouteFacility11: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/11",
   wheelRouteFacility12: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/12",
 };
@@ -714,5 +716,69 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
       retrievedAt,
       error: error?.message || String(error),
     };
+  }
+}
+
+
+export async function fetchTaipeiMarkets(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City market basic data";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiMarkets, 30_000);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["GTag_latitude", "緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["GTag_longitude", "經度", "longitude", "Longitude"]);
+      const name = firstValue(row, ["stitle", "市場名稱", "名稱", "name"]) || `market-${index}`;
+      return {
+        id: [firstValue(row, ["seqno", "序號", "id"]), name, lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
+        name,
+        lat: lat ?? Number.NaN,
+        lng: lng ?? Number.NaN,
+        properties: {
+          address: firstValue(row, ["xAddress", "地址"]) || null,
+          description: firstValue(row, ["xbody", "內容"]) || null,
+          createdDate: firstValue(row, ["xcreatedDate", "建立日期"]) || null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return { points: [], source, status: error?.name === "AbortError" ? "timeout" : "error", retrievedAt, error: error?.message || String(error) };
+  }
+}
+
+export async function fetchTaipeiCoolingPoints(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Environmental Protection Department cooling points";
+  try {
+    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiCoolingPoints, 30_000);
+    const rows = parseCsv(text);
+    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
+      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
+      const name = firstValue(row, ["名稱", "設施名稱", "name"]) || `cooling-point-${index}`;
+      return {
+        id: [firstValue(row, ["編號", "序號", "id"]), name, lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
+        name,
+        lat: lat ?? Number.NaN,
+        lng: lng ?? Number.NaN,
+        properties: {
+          facilityType: firstValue(row, ["設施地點（戶外或室內）", "設施地點", "類型"]) || null,
+          district: firstValue(row, ["行政區"]) || null,
+          address: firstValue(row, ["地址"]) || null,
+          openingHours: firstValue(row, ["開放時間"]) || null,
+          airConditioning: firstValue(row, ["冷氣"]) || null,
+          fan: firstValue(row, ["電風扇"]) || null,
+          toilet: firstValue(row, ["廁所"]) || null,
+          seating: firstValue(row, ["座位"]) || null,
+          drinkingWater: firstValue(row, ["飲水設施"]) || null,
+          accessibleSeats: firstValue(row, ["無障礙座位"]) || null,
+        },
+      };
+    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
+  } catch (error: any) {
+    return { points: [], source, status: error?.name === "AbortError" ? "timeout" : "error", retrievedAt, error: error?.message || String(error) };
   }
 }

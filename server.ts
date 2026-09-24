@@ -1648,6 +1648,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       sidewalkSnapshot
         ? getNearbyExternalSpatialAreaCoverage("taipei_sidewalk_areas", lat, lng, 500)
         : Promise.resolve(null),
+      marketSnapshot ? getNearbyExternalSpatialPoints("taipei_markets", lat, lng, 1200, 300) : Promise.resolve([]),
+      coolingPointSnapshot ? getNearbyExternalSpatialPoints("taipei_cooling_points", lat, lng, 1200, 300) : Promise.resolve([]),
     ]);
 
     // A user request never fetches external scoring sources. Existing snapshots are

@@ -1922,6 +1922,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
     c1SafetyMetrics.streetLightCountReference = streetLightReference;
+    c4GreenMetrics.coolingPointCountReference = normalizationReferences.c4CoolingPointCounts;
     const communityCount = mergedCommunity.length;
     const scores = calculateAssessment(
       null,

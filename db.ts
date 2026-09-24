@@ -1364,8 +1364,10 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   c3SidewalkCoveragePcts: number[];
   c4Aqi: number[];
   c4CoolingPointCounts: number[];
+  c1AedCounts: number[];
+  c1HydrantCounts: number[];
 }> {
-  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [], c4CoolingPointCounts: [] };
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [], c4CoolingPointCounts: [], c1AedCounts: [], c1HydrantCounts: [] };
 
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
@@ -1382,6 +1384,8 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const c3SidewalkByScope = new Map<string, number>();
   const c4Aqi: number[] = [];
   const c4CoolingByScope = new Map<string, number>();
+  const c1AedByScope = new Map<string, number>();
+  const c1HydrantByScope = new Map<string, number>();
 
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
@@ -1474,6 +1478,12 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
 
     const coolingPoints = await getNearbyExternalSpatialPoints("taipei_cooling_points", target.latitude, target.longitude, 1200, 300);
     c4CoolingByScope.set(target.scopeKey, coolingPoints.length);
+
+    const aedPoints = await getNearbyExternalSpatialPoints("taipei_aed", target.latitude, target.longitude, 500, 500);
+    c1AedByScope.set(target.scopeKey, aedPoints.length);
+
+    const hydrants = await getNearbyExternalSpatialPoints("taipei_fire_hydrants", target.latitude, target.longitude, 500, 1000);
+    c1HydrantByScope.set(target.scopeKey, hydrants.length);
   }
 
   return {
@@ -1485,5 +1495,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     c3SidewalkCoveragePcts: [...c3SidewalkByScope.values()],
     c4Aqi,
     c4CoolingPointCounts: [...c4CoolingByScope.values()],
+    c1AedCounts: [...c1AedByScope.values()],
+    c1HydrantCounts: [...c1HydrantByScope.values()],
   };
 }

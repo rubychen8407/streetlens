@@ -310,6 +310,7 @@ export function AssessmentWorkspace({
                       ['Sidewalk coverage · 500m', assessment.officialServiceMetrics.sidewalkCoverage500mPct == null ? '—' : assessment.officialServiceMetrics.sidewalkCoverage500mPct.toFixed(1) + '%'],
                       ['Medical', assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
                       ['Bus stop', assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
+                      ['MRT station', assessment.officialServiceMetrics.mrtStationNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.mrtStationNearestDistance) + ' m'],
                       ['Libraries · 800m', String(assessment.officialServiceMetrics.libraryCount800m)],
                       ['Public toilets · 800m', String(assessment.officialServiceMetrics.publicToiletCount800m)],
                       ['Street lights · 300m', assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : String(assessment.officialServiceMetrics.streetLightCount300m)],

@@ -1910,6 +1910,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
     const c1SourceNames = [
       safetyData.source,
       ...(streetLightSnapshot?.payload?.source ? [streetLightSnapshot.payload.source] : []),
+      ...(aedSnapshot?.payload?.source ? [aedSnapshot.payload.source] : []),
+      ...(hydrantSnapshot?.payload?.source ? [hydrantSnapshot.payload.source] : []),
     ].filter(Boolean);
     const c1SafetyMetrics: C1SafetyMetrics = {
       accidentCount500m: accidents.length,
@@ -2028,6 +2030,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           ["taipei_sidewalk_areas", sidewalkSnapshot],
           ["taipei_markets", marketSnapshot],
           ["taipei_cooling_points", coolingPointSnapshot],
+          ["taipei_aed", aedSnapshot],
+          ["taipei_fire_hydrants", hydrantSnapshot],
         ].map((entry) => {
           const source = String(entry[0]);
           const snapshot = entry[1] as any;
@@ -2063,6 +2067,8 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
         streetLightCount300m: streetLightCount300m ?? null,
         marketNearestDistance: c2MarketDist ?? null,
         marketCount1200m: nearbyMarkets.length,
+        aedCount500m,
+        fireHydrantCount500m,
         coolingPointCount1200m,
         bikeLaneLength500m,
         sidewalkCoverage500mPct: sidewalkCoverage?.coveragePct ?? null,

@@ -1356,15 +1356,16 @@ export async function getNearestCommunityCulturalDistanceReference(excludeScopeK
 }
 
 export async function getDistanceAndAirQualityReferences(excludeScopeKey?: string): Promise<{
-  c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
+  c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist" | "marketDist", number[]>>;
   c3RailDistances: number[];
   c3BusDistances: number[];
   c3YouBikeDistances: number[];
   c3BikeLaneLengths: number[];
   c3SidewalkCoveragePcts: number[];
   c4Aqi: number[];
+  c4CoolingPointCounts: number[];
 }> {
-  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [] };
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [], c4CoolingPointCounts: [] };
 
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
@@ -1380,6 +1381,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const c3BikeLaneByScope = new Map<string, number>();
   const c3SidewalkByScope = new Map<string, number>();
   const c4Aqi: number[] = [];
+  const c4CoolingByScope = new Map<string, number>();
 
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
@@ -1413,7 +1415,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
         ? Number(poi.distanceMeters)
         : distanceMeters(scope.lat, scope.lng, pLat, pLng);
       const type = String(poi?.amenityType || "");
-      if (!["supermarket", "convenience", "clinic", "school", "bank_post"].includes(type)) continue;
+      if (!["supermarket", "convenience", "clinic", "school", "bank_post", "market"].includes(type)) continue;
       const existing = byType.get(type);
       if (existing == null || distance < existing) byType.set(type, distance);
     }
@@ -1426,6 +1428,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     clinic: "clinicDist",
     school: "schoolDist",
     bank_post: "bankPostDist",
+    market: "marketDist",
   } as const;
   for (const [scopeKey, byType] of c2ByScope) {
     for (const [type, distance] of byType) {
@@ -1462,6 +1465,15 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
 
     const sidewalk = await getNearbyExternalSpatialAreaCoverage("taipei_sidewalk_areas", target.latitude, target.longitude, 500);
     if (sidewalk.featureCount > 0) c3SidewalkByScope.set(target.scopeKey, sidewalk.coveragePct);
+
+    const markets = await getNearbyExternalSpatialPoints("taipei_markets", target.latitude, target.longitude, 1200, 300);
+    if (markets.length) {
+      c2Distances.marketDist ||= [];
+      c2Distances.marketDist.push(markets[0].distanceMeters);
+    }
+
+    const coolingPoints = await getNearbyExternalSpatialPoints("taipei_cooling_points", target.latitude, target.longitude, 1200, 300);
+    c4CoolingByScope.set(target.scopeKey, coolingPoints.length);
   }
 
   return {
@@ -1472,5 +1484,6 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     c3BikeLaneLengths: [...c3BikeLaneByScope.values()],
     c3SidewalkCoveragePcts: [...c3SidewalkByScope.values()],
     c4Aqi,
+    c4CoolingPointCounts: [...c4CoolingByScope.values()],
   };
 }

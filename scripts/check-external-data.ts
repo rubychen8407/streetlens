@@ -12,6 +12,8 @@ import {
   fetchTaipeiParks,
   fetchTaipeiBikeLanes,
   fetchTaipeiSidewalkAreas,
+  fetchTaipeiMarkets,
+  fetchTaipeiCoolingPoints,
 } from "../official";
 
 const TEST_LAT = Number(process.env.STREETLENS_TEST_LAT || "25.033964");
@@ -19,6 +21,20 @@ const TEST_LNG = Number(process.env.STREETLENS_TEST_LNG || "121.564468");
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+async function fetchOfficialWithRetry<T extends { status: "available" | "empty" | "error" | "timeout"; error?: string }>(
+  name: string,
+  fetcher: () => Promise<T>,
+): Promise<T> {
+  let result = await fetcher();
+  for (let attempt = 1; attempt < 3 && (result.status === "error" || result.status === "timeout"); attempt += 1) {
+    const delayMs = attempt * 1000;
+    console.warn(`${name} returned ${result.status}; retrying in ${delayMs}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    result = await fetcher();
+  }
+  return result;
 }
 
 interface HttpResourceResult {
@@ -94,19 +110,21 @@ async function main() {
   // Some data.taipei CSV endpoints can reject/timeout generic CI fetches even
   // though the adapter request succeeds, so do not fail before exercising it.
 
-  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks] = await Promise.all([
+  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
     fetchTaipeiSafetyData(TEST_LAT, TEST_LNG, 500),
-    fetchTaipeiYouBikeData(),
-    fetchTaipeiMedicalFacilities(),
-    fetchTaipeiStreetLights(),
-    fetchTaipeiBusStops(),
-    fetchTaipeiLibraries(),
-    fetchTaipeiPublicToilets(),
-    fetchTaipeiParks(),
-    fetchTaipeiBikeLanes(),
-    fetchTaipeiSidewalkAreas(),
+    fetchOfficialWithRetry("YouBike", fetchTaipeiYouBikeData),
+    fetchOfficialWithRetry("medical", fetchTaipeiMedicalFacilities),
+    fetchOfficialWithRetry("streetLights", fetchTaipeiStreetLights),
+    fetchOfficialWithRetry("busStops", fetchTaipeiBusStops),
+    fetchOfficialWithRetry("libraries", fetchTaipeiLibraries),
+    fetchOfficialWithRetry("publicToilets", fetchTaipeiPublicToilets),
+    fetchOfficialWithRetry("parks", fetchTaipeiParks),
+    fetchOfficialWithRetry("bikeLanes", fetchTaipeiBikeLanes),
+    fetchOfficialWithRetry("sidewalks", fetchTaipeiSidewalkAreas),
+    fetchOfficialWithRetry("markets", fetchTaipeiMarkets),
+    fetchOfficialWithRetry("coolingPoints", fetchTaipeiCoolingPoints),
   ]);
 
   console.log(JSON.stringify({
@@ -143,6 +161,8 @@ async function main() {
       parks: { status: parks.status, points: parks.points.length, error: parks.error || null },
       bikeLanes: { status: bikeLanes.status, lines: bikeLanes.lines?.length || 0, error: bikeLanes.error || null },
       sidewalks: { status: sidewalks.status, areas: sidewalks.areas?.length || 0, error: sidewalks.error || null },
+      markets: { status: markets.status, points: markets.points.length, error: markets.error || null },
+      coolingPoints: { status: coolingPoints.status, points: coolingPoints.points.length, error: coolingPoints.error || null },
     },
   }, null, 2));
 
@@ -171,6 +191,8 @@ async function main() {
     ["parks", parks],
     ["bikeLanes", bikeLanes],
     ["sidewalks", sidewalks],
+    ["markets", markets],
+    ["coolingPoints", coolingPoints],
   ] as const;
 
   for (const [name, result] of officialResults) {
@@ -187,6 +209,8 @@ async function main() {
   assert(Array.isArray(parks.points), "Park adapter returned invalid points");
   assert(Array.isArray(bikeLanes.lines), "Bike lane adapter returned invalid lines");
   assert(Array.isArray(sidewalks.areas), "Sidewalk adapter returned invalid areas");
+  assert(Array.isArray(markets.points), "Market adapter returned invalid points");
+  assert(Array.isArray(coolingPoints.points), "Cooling point adapter returned invalid points");
 
   console.log("External data health check passed.");
 }

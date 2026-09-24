@@ -356,6 +356,7 @@ export interface StreetAssessmentResponse {
     sidewalkFeatureCount500m: number;
     medicalFacilityNearestDistance: number | null;
     busStopNearestDistance: number | null;
+    mrtStationNearestDistance: number | null;
     libraryCount800m: number;
     libraryNearestDistance800m: number | null;
     publicToiletCount800m: number;

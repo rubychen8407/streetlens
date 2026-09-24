@@ -42,6 +42,7 @@ const sourceKeys = [
   "taipei_aed",
   "taipei_fire_hydrants",
   "taipei_official_aqi",
+  "taipei_fire_stations",
 ];
 
 async function requestRefresh(sourceKey: string): Promise<Response> {

@@ -133,6 +133,13 @@ export function AssessmentWorkspace({
 
   if (!isOpen) return null;
 
+  const categoryScores = assessment?.scores
+    ? [assessment.scores.c1, assessment.scores.c2, assessment.scores.c3, assessment.scores.c4, assessment.scores.c5]
+    : [];
+  const observedCategoryCount = categoryScores.filter((category) => category.mode === 'observed' && category.score !== null).length;
+  const estimatedCategoryCount = categoryScores.filter((category) => category.mode === 'estimated' && category.score !== null).length;
+  const unavailableCategoryCount = categoryScores.filter((category) => category.score === null).length;
+
   return (
     <aside className="absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#111113]/95 backdrop-blur-2xl shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/10">
@@ -191,7 +198,7 @@ export function AssessmentWorkspace({
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-semibold text-slate-300">Data quality</span>
                     <span className="text-[9px] text-slate-500">
-                      {5 - assessment.scores.estimatedCategoryCount} observed · {assessment.scores.estimatedCategoryCount} estimated
+                      {observedCategoryCount} observed · {estimatedCategoryCount} estimated · {unavailableCategoryCount} unavailable
                     </span>
                   </div>
                   {assessment.scores.estimatedCategoryCount > 0 ? (

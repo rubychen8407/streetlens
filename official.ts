@@ -50,6 +50,8 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiCoolingPoints: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=ae7e5986-859d-4294-b289-7c1b2e7c23f1",
   taipeiAed: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=438c61ad-24f6-4e54-a1cc-e2cfe0e7051e",
   taipeiFireHydrants: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=b9f8154d-c627-48a8-b3ef-512ed9cde9e7",
+  taipeiOfficialAqi: "https://tpdep.blob.core.windows.net/techdep/tldep_AQI_DAYHour.json",
+  taipeiAirStations: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=bf9f74e7-22d0-4e0f-8e3d-31c04eda22a4",
   wheelRouteFacility11: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/11",
   wheelRouteFacility12: "https://wheelroute.gov.taipei/wheelrouteApi/api/facility/Get/12",
 };
@@ -843,5 +845,105 @@ export async function fetchTaipeiFireHydrants(): Promise<OfficialCitywideSourceR
     return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
   } catch (error: any) {
     return { points: [], source, status: error?.name === "AbortError" ? "timeout" : "error", retrievedAt, error: error?.message || String(error) };
+  }
+}
+
+
+export async function fetchTaipeiOfficialAirQuality(): Promise<OfficialCitywideSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  const source = "Taipei City Environmental Protection Department official air quality monitoring";
+  try {
+    const [stationResponse, hourlyResponse] = await Promise.all([
+      fetchText(OFFICIAL_SOURCE_URLS.taipeiAirStations, 30_000),
+      fetchText(OFFICIAL_SOURCE_URLS.taipeiOfficialAqi, 60_000),
+    ]);
+    const stationRows = parseCsv(stationResponse.text);
+    const stationMap = new Map<string, { lat: number; lng: number; address: string | null }>();
+
+    for (const row of stationRows) {
+      const name = firstValue(row, ["station_name_測站名稱", "測站名稱", "station_name", "StationName"]);
+      const lat = numberValue(row, ["latitude_緯度", "緯度", "latitude", "Latitude"]);
+      const lng = numberValue(row, ["longitude_經度", "經度", "longitude", "Longitude"]);
+      if (name && lat != null && lng != null) {
+        stationMap.set(name.trim(), {
+          lat,
+          lng,
+          address: firstValue(row, ["station_address_測站地址", "測站地址", "station_address", "Address"]) || null,
+        });
+      }
+    }
+
+    const rows = extractArray(JSON.parse(hourlyResponse.text));
+    const latestByStation = new Map<string, {
+      aqi: number | null;
+      pm25: number | null;
+      publishMs: number;
+    }>();
+
+    for (const row of rows) {
+      const stationName = firstValue(row, ["站名", "站名代號", "station_name", "StationName"]).trim();
+      if (!stationName) continue;
+
+      const indicator = firstValue(row, ["指標物", "指標物名稱", "indicator", "ItemName"]).trim();
+      const value = numberValue(row, ["指標值", "指標數值", "value", "Value"]);
+      const directAqi = numberValue(row, ["AQI", "aqi"]);
+      const publishMs = parseDateMs(firstValue(row, ["發布時間", "publishTime", "PublishTime", "時間", "time"])) ?? 0;
+      const current = latestByStation.get(stationName);
+
+      let aqi = current?.aqi ?? null;
+      let pm25 = current?.pm25 ?? null;
+      if (directAqi != null) aqi = directAqi;
+      if (/^AQI$/i.test(indicator) && value != null) aqi = value;
+      if (/PM\s*2\.5|PM2\.5/i.test(indicator) && value != null) pm25 = value;
+
+      if (!current || publishMs >= current.publishMs) {
+        latestByStation.set(stationName, { aqi, pm25, publishMs });
+      } else if (directAqi != null || /^AQI$/i.test(indicator) || /PM\s*2\.5|PM2\.5/i.test(indicator)) {
+        latestByStation.set(stationName, {
+          aqi,
+          pm25,
+          publishMs: current.publishMs,
+        });
+      }
+    }
+
+    const points: OfficialSpatialPoint[] = [];
+    let maxPublishMs: number | null = null;
+    for (const [stationName, latest] of latestByStation) {
+      const station = stationMap.get(stationName);
+      if (!station || latest.aqi == null) continue;
+      maxPublishMs = maxPublishMs == null ? latest.publishMs : Math.max(maxPublishMs, latest.publishMs);
+      points.push({
+        id: stationName,
+        name: stationName,
+        lat: station.lat,
+        lng: station.lng,
+        properties: {
+          aqi: latest.aqi,
+          pm25: latest.pm25,
+          stationName,
+          address: station.address,
+          publishTime: latest.publishMs ? new Date(latest.publishMs).toISOString() : null,
+        },
+      });
+    }
+
+    return {
+      points,
+      source,
+      status: points.length ? "available" : "empty",
+      retrievedAt,
+      sourceUpdatedAt: maxPublishMs != null
+        ? new Date(maxPublishMs).toISOString()
+        : hourlyResponse.lastModified || stationResponse.lastModified,
+    };
+  } catch (error: any) {
+    return {
+      points: [],
+      source,
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message || String(error),
+    };
   }
 }

@@ -1916,8 +1916,6 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       getNearestParkDistanceReference(scopeKey),
       getNearestCommunityDistanceReference(scopeKey),
       getSpatialPointPropertySumReference("taipei_street_lights", "quantity", 300, scopeKey),
-      getSpatialLineLengthReference("taipei_bike_lanes", 500, scopeKey),
-      getSpatialAreaCoverageReference("taipei_sidewalk_areas", 500, scopeKey),
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;

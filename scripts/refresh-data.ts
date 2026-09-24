@@ -37,6 +37,11 @@ const sourceKeys = [
   "taipei_parks",
   "taipei_bike_lanes",
   "taipei_sidewalk_areas",
+  "taipei_markets",
+  "taipei_cooling_points",
+  "taipei_aed",
+  "taipei_fire_hydrants",
+  "taipei_official_aqi",
 ];
 
 async function requestRefresh(sourceKey: string): Promise<Response> {

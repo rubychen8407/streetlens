@@ -73,6 +73,7 @@ export interface C2PoiMetrics {
   clinicDist?: number;
   schoolDist?: number;
   bankPostDist?: number;
+  marketDist?: number;
   poiDensityCount?: number;
   source: string;
   method: "api" | "osm" | "calculated";
@@ -109,6 +110,8 @@ export interface C4GreenMetrics {
   parkTreeDensityReference?: number[];
   nearestParkDist?: number;
   parkCount800m?: number;
+  coolingPointCount1200m?: number;
+  coolingPointCountReference?: number[];
   source: string;
   method: "official" | "calculated";
   confidence: "high" | "medium" | "low";
@@ -292,13 +295,14 @@ export function calculateAssessment(
   c5CommunityReference?: number[],
   c5NearestCommunityDistance?: number,
   normalization?: {
-    c2Distances?: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist", number[]>>;
+    c2Distances?: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist" | "marketDist", number[]>>;
     c3RailDistances?: number[];
     c3BusDistances?: number[];
     c3YouBikeDistances?: number[];
     c3BikeLaneLengths?: number[];
     c3SidewalkCoveragePcts?: number[];
     c4Aqi?: number[];
+    c4CoolingPointCounts?: number[];
     c4NearestParkDistances?: number[];
     c5NearestCommunityDistances?: number[];
   },
@@ -434,6 +438,7 @@ export function calculateAssessment(
     ["clinicDist", c2PoiMetrics?.clinicDist],
     ["schoolDist", c2PoiMetrics?.schoolDist],
     ["bankPostDist", c2PoiMetrics?.bankPostDist],
+    ["marketDist", c2PoiMetrics?.marketDist],
   ] as const;
   const c2Source = c2PoiMetrics?.source || "unavailable";
   const c2Method = c2PoiMetrics?.method || "calculated";
@@ -651,7 +656,7 @@ export function calculateAssessment(
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? undefined : "no_observation",
     },  ];
   const c3ComponentScores = c3Factors
-.filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist", "bikeLaneLength500m"].includes(factor.indicator))
+.filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist", "bikeLaneLength500m", "sidewalkCoverage500mPct"].includes(factor.indicator))
     .map((factor) => {
       if (factor.value == null) return null;
       const reference = factor.indicator === "busStopDist"
@@ -665,7 +670,9 @@ export function calculateAssessment(
               : factor.indicator === "sidewalkCoverage500mPct"
                 ? normalization?.c3SidewalkCoveragePcts
                 : undefined;
-      const direction = factor.indicator === "bikeLaneLength500m" ? "higher_is_better" : "lower_is_better";
+      const direction = ["bikeLaneLength500m", "sidewalkCoverage500mPct"].includes(factor.indicator)
+        ? "higher_is_better"
+        : "lower_is_better";
       const percentile = empiricalPercentileScore(factor.value, reference, direction);
       return percentile
         ?? referenceRelativeScore(factor.value, reference, direction)
@@ -778,7 +785,35 @@ export function calculateAssessment(
       scoringMethod: "empirical_percentile",
     });
   }
-  const greenScores = [streetTreeDensityScore, parkTreeDensityScore, nearestParkScore].filter((value): value is number => value !== null);
+  const coolingPointCount = c4GreenMetrics?.coolingPointCount1200m;
+  const coolingPointReference = c4GreenMetrics?.coolingPointCountReference;
+  const coolingPointScore = Number.isFinite(Number(coolingPointCount))
+    ? (empiricalPercentileScore(Number(coolingPointCount), coolingPointReference, "higher_is_better")
+      ?? referenceRelativeScore(Number(coolingPointCount), coolingPointReference, "higher_is_better"))
+    : null;
+  c4Factors.push({
+    category: "C4",
+    indicator: "coolingPointCount1200m",
+    value: Number.isFinite(Number(coolingPointCount)) ? Number(coolingPointCount) : null,
+    unit: "places",
+    direction: "higher_is_better",
+    source: Number.isFinite(Number(coolingPointCount))
+      ? c4GreenMetrics?.source || "unavailable"
+      : "unavailable",
+    method: "official",
+    confidence: coolingPointScore != null ? "medium" : "low",
+    status: Number.isFinite(Number(coolingPointCount)) ? "available" : "unavailable",
+    retrievedAt: c4GreenMetrics?.retrievedAt,
+    referenceSampleSize: coolingPointReference?.filter(Number.isFinite).length ?? 0,
+    scoringMethod: coolingPointScore != null && (coolingPointReference?.filter(Number.isFinite).length ?? 0) >= 20
+      ? "empirical_percentile"
+      : "not_scored",
+    availabilityReason: Number.isFinite(Number(coolingPointCount))
+      ? (coolingPointScore == null ? "insufficient_reference_data" : undefined)
+      : "no_observation",
+  });
+  const greenScores = [streetTreeDensityScore, parkTreeDensityScore, nearestParkScore, coolingPointScore]
+    .filter((value): value is number => value !== null);
   const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
   const c4Observed: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
 
@@ -932,12 +967,18 @@ export function calculateAssessment(
           normalization?.c4NearestParkDistances,
           "lower_is_better",
         ),
+        referenceRelativeScore(
+          medianValue(normalization?.c4CoolingPointCounts) ?? undefined,
+          normalization?.c4CoolingPointCounts,
+          "higher_is_better",
+        ),
       ]),
       sampleSize: Math.max(
         normalization?.c4Aqi?.filter(Number.isFinite).length ?? 0,
         c4GreenMetrics?.streetTreeDensityReference?.filter(Number.isFinite).length ?? 0,
         c4GreenMetrics?.parkTreeDensityReference?.filter(Number.isFinite).length ?? 0,
         normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
+        normalization?.c4CoolingPointCounts?.filter(Number.isFinite).length ?? 0,
       ),
     },
     C5: {

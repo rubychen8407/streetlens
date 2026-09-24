@@ -1372,7 +1372,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
      FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap', 'tdx_transit', 'open_meteo_air_quality')
+     WHERE source_key IN ('google_places', 'openstreetmap', 'tdx_transit', 'open_meteo_air_quality', 'taipei_official_aqi')
        AND status IN ('available', 'empty')`,
   );
 
@@ -1393,6 +1393,15 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     if (row.sourceKey === "open_meteo_air_quality") {
       const aqi = Number(row.payload?.aqi);
       if (Number.isFinite(aqi)) c4Aqi.push(aqi);
+      continue;
+    }
+
+    if (row.sourceKey === "taipei_official_aqi") {
+      const points = Array.isArray(row.payload?.points) ? row.payload.points : [];
+      for (const point of points) {
+        const aqi = Number(point?.properties?.aqi);
+        if (Number.isFinite(aqi)) c4Aqi.push(aqi);
+      }
       continue;
     }
 

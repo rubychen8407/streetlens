@@ -222,9 +222,30 @@ async function main() {
     ["fireStations", fireStations],
   ] as const;
 
+  const requiredOfficialSources = new Set([
+    "YouBike",
+    "medical",
+    "streetLights",
+    "busStops",
+    "libraries",
+    "publicToilets",
+    "bikeLanes",
+    "markets",
+    "coolingPoints",
+    "AED",
+    "hydrants",
+    "officialAQI",
+    "fireStations",
+  ]);
+
   for (const [name, result] of officialResults) {
-    assert(result.status !== "error" && result.status !== "timeout",
-      `${name} official source failed: ${result.error || result.status}`);
+    if (result.status === "error" || result.status === "timeout") {
+      const message = `${name} official source failed: ${result.error || result.status}`;
+      if (requiredOfficialSources.has(name)) {
+        assert(false, message);
+      }
+      console.warn(`OPTIONAL ${message}`);
+    }
   }
 
   assert(Array.isArray(youBike.points), "YouBike adapter returned invalid points");

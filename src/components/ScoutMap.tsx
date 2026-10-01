@@ -76,6 +76,8 @@ export function ScoutMap({
   heading,
 }: ScoutMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const selectionHandler = useRef(onSelectLocation);
+  selectionHandler.current = onSelectLocation;
   const mapRef = useRef<L.Map | null>(null);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -144,7 +146,7 @@ export function ScoutMap({
 
     // Click on map to place or move target pin
     map.on('click', (e: L.LeafletMouseEvent) => {
-      onSelectLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
+      selectionHandler.current({ lat: e.latlng.lat, lng: e.latlng.lng });
     });
 
     mapRef.current = map;
@@ -307,7 +309,7 @@ export function ScoutMap({
 
       marker.on('dragend', () => {
         const pos = marker.getLatLng();
-        onSelectLocation({ lat: pos.lat, lng: pos.lng });
+        selectionHandler.current({ lat: pos.lat, lng: pos.lng });
       });
 
       targetMarkerRef.current = marker;

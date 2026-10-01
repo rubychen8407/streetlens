@@ -33,9 +33,11 @@ export async function persistAssessment(
   workspaceId: string,
   assessment: SavedLocation,
   evidenceDrafts: EvidencePhotoDraft[],
+  signal?: AbortSignal,
 ): Promise<PersistAssessmentResult> {
   const response = await fetch("/api/assessments", {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       workspaceId,
@@ -67,6 +69,7 @@ export async function persistAssessment(
           + "/photo?workspaceId=" + encodeURIComponent(workspaceId),
         {
           method: "PUT",
+          signal,
           headers: { "Content-Type": draft.mimeType || "application/octet-stream" },
           body: draft.blob,
         },
@@ -93,11 +96,11 @@ export async function listPersistedAssessments(workspaceId: string): Promise<Sav
   return await response.json() as SavedLocation[];
 }
 
-export async function deletePersistedAssessment(workspaceId: string, id: string): Promise<boolean> {
+export async function deletePersistedAssessment(workspaceId: string, id: string, signal?: AbortSignal): Promise<boolean> {
   const response = await fetch(
     "/api/assessments/" + encodeURIComponent(id)
       + "?workspaceId=" + encodeURIComponent(workspaceId),
-    { method: "DELETE" },
+    { method: "DELETE", signal },
   );
   return response.ok || response.status === 404;
 }

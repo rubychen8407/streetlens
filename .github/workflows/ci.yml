@@ -37,3 +37,12 @@ jobs:
 
       - name: Snapshot preservation tests
         run: npm run test:snapshot-preservation
+
+      - name: Walk and saved CLS regression tests
+        run: npm run test:walk-moments
+
+      - name: Install browser for interaction tests
+        run: npx playwright install --with-deps chromium --only-shell
+
+      - name: Walk browser tests
+        run: npm run test:walk-ui

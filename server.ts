@@ -1,3 +1,4 @@
+import { registerSavedScoreRoutes, type AssessmentReadResult } from "./savedScoreBackfill";
 import express, { Request, Response } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -1548,17 +1549,16 @@ export function getAssessmentSnapshotStatus(
   };
 }
 
-app.get("/api/assessment", async (req: Request, res: Response) => {
+async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
+  lat: number; lng: number; district: string; city: string; streetName: string;
+}): Promise<AssessmentReadResult> {
   try {
-    const lat = parseFloat(req.query.lat as string);
-    const lng = parseFloat(req.query.lng as string);
-    const district = (req.query.district as string) || "";
-    const city = (req.query.city as string) || "";
-    const streetName = (req.query.streetName as string) || "";
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return { status: 400, body: { error: "Valid lat/lng are required" } };
+    }
 
     const scopeKey = await registerAssessmentTarget(lat, lng);
-    if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured", dataStatus: "database_required" });
+    if (!scopeKey) return { status: 503, body: { error: "Persistent data cache is not configured", dataStatus: "database_required" } };
 
     const sourceKeys = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
     const nearbyCacheSources = new Set([
@@ -1636,14 +1636,14 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       : snapshots;
     const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, availabilitySnapshots);
     if (dataStatus === "pending_refresh") {
-      return res.status(202).json({
+      return { status: 202, body: {
         location: { lat, lng, city, district, streetName },
         scopeKey,
         dataStatus: "pending_refresh",
         missingSources: missing,
         scores: null,
         message: "此座標尚無任何已持久化資料；等待背景排程建立資料快照。",
-      });
+      } };
     }
 
     // Supplementary citywide official inventories are read only from persisted
@@ -2053,7 +2053,7 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];
-    return res.json({
+    return { status: 200, body: {
       location: { lat, lng, city, district, streetName }, scopeKey, dataStatus: "cached", scores, factors, poiCount: pois.length,
       dataSources: [...new Set([
         ...sourceNames,
@@ -2159,12 +2159,21 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
           ? Math.min(...officialParkCandidates.map((point) => point.distanceMeters))
           : null,
       },
-    });
+    } };
   } catch (error: any) {
     console.error("Assessment error:", error);
-    return res.status(500).json({ error: error.message || "Failed to calculate assessment" });
+    return { status: 500, body: { error: error.message || "Failed to calculate assessment" } };
   }
+}
+
+app.get("/api/assessment", async (req: Request, res: Response) => {
+  const result = await loadStreetAssessment({
+    lat: parseFloat(req.query.lat as string), lng: parseFloat(req.query.lng as string),
+    district: String(req.query.district || ""), city: String(req.query.city || ""), streetName: String(req.query.streetName || ""),
+  });
+  return res.status(result.status).json(result.body);
 });
+registerSavedScoreRoutes(app, loadStreetAssessment, schemaReady);
 
 // 實勘結果綜合分析與診斷報告
 app.post("/api/assessment/field-adjustment", async (req: Request, res: Response) => {

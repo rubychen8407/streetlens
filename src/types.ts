@@ -270,6 +270,16 @@ export interface SavedLocation {
   weights?: CLSWeights;
   fieldNotes?: string;
   timestamp: number;
+  walkMoment?: {
+    feeling: 'good' | 'bad' | 'photo';
+    accuracyMeters: number;
+    positionTimestamp: number;
+    confirmedAt: number;
+    source: 'walk' | 'shortcut';
+  };
+  scoreUpdatedAt?: string;
+  syncStatus?: 'local' | 'synced';
+  scoreSyncPending?: boolean;
 }
 
 export interface ScoreFactor {
@@ -365,4 +375,3 @@ export interface StreetAssessmentResponse {
     officialParkNearestDistance800m: number | null;
   };
 }
-

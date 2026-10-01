@@ -19,6 +19,7 @@ import {
   UserCircle,
   Star,
   SlidersHorizontal,
+  Footprints,
 } from 'lucide-react';
 import { LocationCoord, WeatherData } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
@@ -34,6 +35,7 @@ interface FloatingControlsProps {
   onLocateMe: () => void;
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
   onOpenSheet: () => void;
+  onOpenWalk: () => void;
   isSheetOpen: boolean;
   onOpenSaved: () => void;
   onOpenSettings: () => void;
@@ -85,6 +87,7 @@ export function FloatingControls({
   onLocateMe,
   onSelectCoordinate,
   onOpenSheet,
+  onOpenWalk,
   isSheetOpen,
   activeLayers,
   onToggleLayer,
@@ -335,8 +338,11 @@ export function FloatingControls({
             )}
           </div>
         </div>
-        {/* Top-Right account menu: navigation lives here, not inside assessment */}
-        <div className="relative">
+        {/* Quick walk stays outside the bottom search row so mobile search keeps its width. */}
+        <div className="relative flex items-center gap-2">
+          <button type="button" onClick={onOpenWalk} className="w-10 h-10 shrink-0 rounded-full bg-sky-500/90 hover:bg-sky-500 text-white shadow-lg border border-sky-300/30 flex items-center justify-center active:scale-95" title="步行感受" aria-label="步行感受">
+            <Footprints className="w-5 h-5" />
+          </button>
           <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="帳戶" aria-label="帳戶">
             <UserCircle className="w-5 h-5" />
           </button>

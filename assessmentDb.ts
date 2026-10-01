@@ -1,6 +1,8 @@
 
 import { dataDb } from "./db";
 import { applyFieldObservationAdjustment } from "./scoring";
+import { normalizeWalkMoment } from "./src/utils/walkMoments";
+import type { SavedLocation } from "./src/types";
 
 const MAX_EVIDENCE_PER_ASSESSMENT = 6;
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -56,6 +58,8 @@ export interface PersistedAssessmentRecord {
   weights?: any;
   fieldNotes?: string;
   timestamp: number;
+  walkMoment?: SavedLocation['walkMoment'];
+  scoreUpdatedAt?: string;
 }
 
 export async function ensureAssessmentSchema(): Promise<void> {
@@ -250,6 +254,8 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     weights: assessment.weights,
     fieldNotes: String(assessment.fieldNotes || "").slice(0, 10000),
     timestamp: Number.isFinite(Number(assessment.timestamp)) ? Number(assessment.timestamp) : Date.now(),
+    walkMoment: normalizeWalkMoment(assessment.walkMoment),
+    scoreUpdatedAt: typeof assessment.scoreUpdatedAt === 'string' ? assessment.scoreUpdatedAt : undefined,
   };
 
   const persisted = await dataDb.query(

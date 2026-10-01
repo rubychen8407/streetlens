@@ -29,6 +29,10 @@ import {
 import { ScoutMap } from './components/ScoutMap';
 import { FloatingControls } from './components/FloatingControls';
 import { AssessmentWorkspace } from './components/AssessmentWorkspace';
+import { QuickWalk } from './components/QuickWalk';
+import { useSavedStreets } from './hooks/useSavedStreets';
+import { createSavedStreet, favoriteKey, FAVORITES_KEY } from './utils/savedLocations';
+import { isWalkShortcut } from './utils/walkMoments';
 import {
   generateSurroundingStreetSegments,
 } from './utils/scoreCalculator';
@@ -39,11 +43,9 @@ import {
   storeEvidencePhoto,
 } from './utils/evidenceStore';
 import {
-  deletePersistedAssessment,
   getRemoteEvidencePhotoUrl,
   generatePersistedAssessmentExplanation,
   getWorkspaceId,
-  listPersistedAssessments,
   persistAssessment,
 } from './utils/assessmentApi';
 
@@ -79,13 +81,12 @@ export default function App() {
   const [favoriteLocations, setFavoriteLocations] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]'); } catch { return []; }
   });
-  const favoriteKey = (coord: LocationCoord, name: string) =>
-    coord.lat.toFixed(5) + ':' + coord.lng.toFixed(5) + ':' + name.trim().toLowerCase();
   const isFavorite = favoriteLocations.includes(favoriteKey(targetLocation, streetName));
-  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>(() => {
-    try { return JSON.parse(localStorage.getItem('cls_saved_locations') || '[]'); } catch { return []; }
-  });
   const [workspaceId] = useState(() => getWorkspaceId());
+  const { savedLocations, setSavedLocations, retrySavedScores, savedStorageError } = useSavedStreets(workspaceId);
+  const [isWalkOpen, setIsWalkOpen] = useState(() => isWalkShortcut(window.location.search));
+  const [walkLocation, setWalkLocation] = useState<LocationCoord | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeSavedAssessmentId, setActiveSavedAssessmentId] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<AssessmentExplanation | null>(null);
   const [isGeneratingAiExplanation, setIsGeneratingAiExplanation] = useState(false);
@@ -104,46 +105,10 @@ export default function App() {
   const savedEvidenceUrlsRef = useRef<Record<string, string>>({});
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    void listPersistedAssessments(workspaceId).then((remote) => {
-      if (cancelled || remote.length === 0) return;
-
-      setSavedLocations((current) => {
-        const localById = new Map(current.map((item) => [item.id, item]));
-        const remoteIds = new Set(remote.map((item) => item.id));
-        const merged = [...remote.map((item) => {
-          const local = localById.get(item.id);
-          const localEvidence = new Map((local?.evidence || []).map((evidence) => [evidence.id, evidence]));
-          return {
-            ...item,
-            evidence: (item.evidence || []).map((evidence) => ({
-              ...evidence,
-              storageKey: localEvidence.get(evidence.id)?.storageKey,
-            })),
-          };
-        }), ...current.filter((item) => !remoteIds.has(item.id))]
-          .sort((a, b) => b.timestamp - a.timestamp);
-
-        try {
-          localStorage.setItem('cls_saved_locations', JSON.stringify(merged));
-        } catch {
-          // Cloud SQL remains the durable copy when local persistence is unavailable.
-        }
-        return merged;
-      });
-    }).catch((error) => {
-      console.warn('Cloud SQL assessment history load error:', error);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [workspaceId]);
-
   // Source-backed assessment state. Scores are returned by the backend only.
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
+  const assessmentRequestRef = useRef(0);
+  const addressRequestRef = useRef(0);
   const [fieldAdjustment, setFieldAdjustment] = useState<FieldObservationAdjustment | null>(null);
   const [isPreviewingFieldAdjustment, setIsPreviewingFieldAdjustment] = useState(false);
   const [isSavingAssessment, setIsSavingAssessment] = useState(false);
@@ -294,7 +259,9 @@ export default function App() {
 
   // Read persisted assessment data. This request never fetches external sources.
   const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
+    const requestId = ++assessmentRequestRef.current;
     if (resetDraft) {
+      ++addressRequestRef.current;
       setActiveSavedAssessmentId(null);
       setAiExplanation(null);
       setAiExplanationError(null);
@@ -318,8 +285,10 @@ export default function App() {
     try {
       const url = '/api/assessment?lat=' + coord.lat + '&lng=' + coord.lng + '&district=' + encodeURIComponent(targetDist) + '&city=' + encodeURIComponent(targetCity) + '&streetName=' + encodeURIComponent(targetStreet);
       const res = await fetch(url);
+      if (requestId !== assessmentRequestRef.current) return;
       if (res.status === 202) {
         const pending = await res.json().catch(() => ({}));
+        if (requestId !== assessmentRequestRef.current) return;
         setAssessment(null);
         setFieldAdjustment(null);
         setPendingAssessmentSources(Array.isArray(pending.missingSources) ? pending.missingSources : []);
@@ -333,6 +302,7 @@ export default function App() {
       }
       if (!res.ok) {
         const errorBody = await res.json().catch(() => ({}));
+        if (requestId !== assessmentRequestRef.current) return;
         if (res.status === 503 && errorBody?.dataStatus === 'database_required') {
           setAssessment(null);
           setFieldAdjustment(null);
@@ -343,6 +313,7 @@ export default function App() {
         throw new Error('assessment request failed: ' + res.status);
       }
       const data: StreetAssessmentResponse = await res.json();
+      if (requestId !== assessmentRequestRef.current) return;
       setAssessment(data);
       setFieldAdjustment(null);
       setPendingAssessmentSources([]);
@@ -362,8 +333,8 @@ export default function App() {
         fetchNearbyPois(coord, targetDist, targetCity, targetStreet),
         fetchStreetNetwork(coord, targetStreet),
       ]);
-    } catch (err) { console.warn('Assessment load error', err); setAssessment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
-    finally { setIsLoadingBaseline(false); }
+    } catch (err) { if (requestId !== assessmentRequestRef.current) return; console.warn('Assessment load error', err); setAssessment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
+    finally { if (requestId === assessmentRequestRef.current) setIsLoadingBaseline(false); }
   }, [district, city, streetName, clearEvidenceDrafts]);
 
   // Auto-fetch baseline data
@@ -402,36 +373,26 @@ export default function App() {
   }, [baselineClsScore, observationRatings]);
   // Reverse Geocoding with automatic data refresh
   const fetchAddressFromCoords = async (coord: LocationCoord) => {
+    const requestId = ++addressRequestRef.current;
+    ++assessmentRequestRef.current;
+    const fallbackName = `實勘位置 (${coord.lat.toFixed(5)}, ${coord.lng.toFixed(5)})`;
+    setAssessment(null); setFieldAdjustment(null);
+    setStreetName(fallbackName); setDistrict(''); setCity('');
+    let resolvedRoad = fallbackName, resolvedDistrict = '', resolvedCity = '';
     try {
       const res = await fetch(`/api/reverse-geocode?lat=${coord.lat}&lon=${coord.lng}`);
-      let resolvedRoad = streetName;
-      let resolvedDistrict = district;
-      let resolvedCity = city;
-
       if (res.ok) {
         const data = await res.json();
-        if (data && data.address) {
-          resolvedRoad =
-            data.address.road ||
-            data.address.pedestrian ||
-            data.address.neighbourhood ||
-            data.address.suburb ||
-            '實勘路段';
-          resolvedDistrict = data.address.suburb || data.address.district || data.address.town || district;
-          resolvedCity = data.address.city || data.address.county || city;
-
-          setStreetName(resolvedRoad);
-          setDistrict(resolvedDistrict);
-          setCity(resolvedCity);
+        if (data?.address) {
+          resolvedRoad = data.address.road || data.address.pedestrian || data.address.neighbourhood || fallbackName;
+          resolvedDistrict = data.address.suburb || data.address.district || data.address.town || '';
+          resolvedCity = data.address.city || data.address.county || '';
         }
       }
-
-      // Automatically fetch updated data for this new location!
-      fetchLocationData(coord, resolvedDistrict, resolvedCity, resolvedRoad, true);
-    } catch (err) {
-      console.warn('Reverse geocode error', err);
-      fetchLocationData(coord, district, city, streetName, true);
-    }
+    } catch (err) { console.warn('Reverse geocode error', err); }
+    if (requestId !== addressRequestRef.current) return;
+    setStreetName(resolvedRoad); setDistrict(resolvedDistrict); setCity(resolvedCity);
+    void fetchLocationData(coord, resolvedDistrict, resolvedCity, resolvedRoad, true);
   };
 
   // Initial load: fetch baseline data & weather for default location
@@ -443,6 +404,8 @@ export default function App() {
 
   // Select and load a saved location from the Bottom Sheet
   const handleSelectSavedLocation = (saved: SavedLocation) => {
+    ++assessmentRequestRef.current;
+    ++addressRequestRef.current;
     setActiveSavedAssessmentId(saved.id);
     setAiExplanation(null);
     setAiExplanationError(null);
@@ -791,31 +754,20 @@ export default function App() {
       setEvidenceError('PostgreSQL 暫時無法同步；此筆 Assessment 已保留在本機。');
     }
 
-    const nextSavedLocations = [entry, ...savedLocations];
+    entry.syncStatus = cloudPersisted ? 'synced' : 'local';
     try {
-      localStorage.setItem('cls_saved_locations', JSON.stringify(nextSavedLocations));
+      setSavedLocations(current => [entry, ...current]);
     } catch (error) {
-      console.warn('Saved assessment local persistence error:', error);
-      if (!cloudPersisted && storedPhotoKeys.length > 0) {
-        void deleteEvidencePhotos(storedPhotoKeys).catch(() => {});
-      }
-      setSavedLocations(nextSavedLocations);
-      setSelectedSavedEvidence(evidence);
+      if (!cloudPersisted && storedPhotoKeys.length > 0) void deleteEvidencePhotos(storedPhotoKeys).catch(() => {});
       setIsSavingAssessment(false);
-      if (cloudPersisted) {
-        setEvidenceError('PostgreSQL 已儲存，但瀏覽器本機歷史無法寫入。');
-        return true;
-      }
-      setEvidenceError('Assessment 無法寫入瀏覽器儲存空間，因此沒有儲存。');
-      return false;
+      setEvidenceError(cloudPersisted ? '已同步，但本機儲存空間不足；重新開啟可載入。' : '儲存空間不足，Assessment 尚未儲存。');
+      return cloudPersisted;
     }
-
-    setSavedLocations(nextSavedLocations);
     setSelectedSavedEvidence(evidence);
     if (!cloudPersisted) setActiveSavedAssessmentId(null);
     setIsSavingAssessment(false);
     return true;
-  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, savedLocations, workspaceId]);
+  }, [streetName, district, city, targetLocation, baselineClsScore, fieldAdjustment, observationRatings, evidenceDrafts, assessment, c1, c2, c3, c4, c5, weights, setSavedLocations, workspaceId]);
 
   const handleGenerateAiExplanation = useCallback(async () => {
     if (!activeSavedAssessmentId) {
@@ -837,37 +789,58 @@ export default function App() {
     }
   }, [activeSavedAssessmentId, workspaceId]);
 
+  const handleQuickSave = useCallback((entry: SavedLocation, favorite: boolean) => {
+    const previous = localStorage.getItem(FAVORITES_KEY) || '[]';
+    const keys: string[] = JSON.parse(previous);
+    const key = favoriteKey(entry.coords, entry.streetName);
+    const nextKeys = favorite && !keys.includes(key) ? [...keys, key] : keys;
+    try {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextKeys));
+      setSavedLocations(current => [entry, ...current]);
+      setFavoriteLocations(nextKeys);
+    } catch {
+      try { localStorage.setItem(FAVORITES_KEY, previous); } catch {}
+      throw new Error('儲存空間不足，尚未儲存；請釋出空間後重試。');
+    }
+  }, [setSavedLocations]);
+
   const handleToggleFavorite = useCallback(() => {
     const key = favoriteKey(targetLocation, streetName);
-    setFavoriteLocations(prev => {
-      const next = prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key];
-      try { localStorage.setItem('cls_favorite_locations', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [targetLocation, streetName]);
+    try {
+      const keys: string[] = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+      const next = keys.includes(key) ? keys.filter(item => item !== key) : [...keys, key];
+      if (!keys.includes(key) && !savedLocations.some(item => favoriteKey(item.coords, item.streetName) === key)) {
+        handleQuickSave(createSavedStreet({ coords: targetLocation, streetName, district, city }, assessment), true);
+      } else {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); setFavoriteLocations(next);
+      }
+      setSaveError(null);
+    } catch { setSaveError('最愛尚未更新，請確認瀏覽器儲存空間。'); }
+  }, [targetLocation, streetName, district, city, assessment, savedLocations, handleQuickSave]);
 
   const handleDeleteSaved = useCallback(async (id: string) => {
-    try {
-      const deletedRemotely = await deletePersistedAssessment(workspaceId, id);
-      if (!deletedRemotely) {
-        console.warn('Cloud SQL assessment delete was not confirmed for:', id);
-      }
-    } catch (error) {
-      console.warn('Cloud SQL assessment delete error:', error);
-    }
-
     const saved = savedLocations.find(item => item.id === id);
-    const photoKeys = (saved?.evidence || [])
-      .filter(item => item.type === 'photo' && item.storageKey)
-      .map(item => item.storageKey as string);
-    if (photoKeys.length > 0) void deleteEvidencePhotos(photoKeys).catch(error => console.warn('Evidence cleanup error:', error));
+    try { setSavedLocations(current => current.filter(item => item.id !== id)); }
+    catch { setSaveError('無法刪除，請重試。'); return; }
+    // Remove an orphaned favorite key so legacy migration cannot recreate it.
+    if (saved && !savedLocations.some(item => item.id !== id && favoriteKey(item.coords, item.streetName) === favoriteKey(saved.coords, saved.streetName))) {
+      const next = favoriteLocations.filter(key => key !== favoriteKey(saved.coords, saved.streetName));
+      try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); setFavoriteLocations(next); } catch {}
+    }
+    const photoKeys = (saved?.evidence || []).flatMap(item => item.storageKey ? [item.storageKey] : []);
+    void deleteEvidencePhotos(photoKeys).catch(() => {});
+  }, [savedLocations, favoriteLocations, setSavedLocations, workspaceId]);
 
-    setSavedLocations(prev => {
-      const next = prev.filter(item => item.id !== id);
-      try { localStorage.setItem('cls_saved_locations', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [savedLocations, workspaceId]);
+  useEffect(() => { if (assessment?.scores.overall != null) retrySavedScores(); }, [assessment, retrySavedScores]);
+
+  // Keep an open saved visit up to date when its missing baseline arrives.
+  useEffect(() => {
+    if (!activeSavedAssessmentId) return;
+    const updated = savedLocations.find(item => item.id === activeSavedAssessmentId);
+    if (!updated?.assessmentSnapshot || updated.clsScore == null || assessment?.scores.overall != null) return;
+    setAssessment(updated.assessmentSnapshot);
+    setFieldAdjustment(null);
+  }, [savedLocations, activeSavedAssessmentId, assessment]);
 
   // Map POIs & Street Segments (100% real Google Routes & OSRM road geometry)
   const streetSegments: StreetSegmentScore[] = useMemo(() => {
@@ -884,8 +857,9 @@ export default function App() {
       {/* 1. Fullscreen Edge-to-Edge Map (Apple Maps Aesthetic) */}
       <ScoutMap
         currentLocation={currentLocation}
-        targetLocation={targetLocation}
+        targetLocation={isWalkOpen ? (walkLocation || currentLocation) : targetLocation}
         onSelectLocation={(coord, customName) => {
+          if (isWalkOpen) return;
           setTargetLocation(coord);
           setActiveSavedAssessmentId(null);
           setAiExplanation(null);
@@ -933,7 +907,7 @@ export default function App() {
       )}
 
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
-      <FloatingControls
+      {!isWalkOpen && <FloatingControls
         currentStreetName={streetName}
         district={district}
         city={city}
@@ -953,7 +927,8 @@ export default function App() {
           if (c) setCity(c);
           fetchLocationData(coord, newDist, newCity, name, true);
         }}
-        onOpenSheet={() => setIsSheetOpen(true)}
+        onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
+        onOpenSheet={() => { setWorkspaceView('assessment'); setIsSheetOpen(true); }}
         onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
         onOpenSettings={() => { setWorkspaceView('settings'); setIsSheetOpen(true); }}
         isSheetOpen={isSheetOpen}
@@ -965,10 +940,13 @@ export default function App() {
         targetLocation={targetLocation}
         accuracyRadius={accuracyRadius}
         weatherData={weatherData}
-      />
+      />}
+
+      {isWalkOpen && <QuickWalk source={isWalkShortcut(window.location.search) ? 'shortcut' : 'walk'} onPreview={setWalkLocation} onSave={handleQuickSave} onClose={() => { setIsWalkOpen(false); const url = new URL(window.location.href); url.searchParams.delete('mode'); window.history.replaceState(null, '', url); }} />}
+      {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{saveError || savedStorageError}</div>}
 
       <AssessmentWorkspace
-        isOpen={isSheetOpen}
+        isOpen={isSheetOpen && !isWalkOpen}
         onClose={() => setIsSheetOpen(false)}
         view={workspaceView}
         onViewChange={setWorkspaceView}

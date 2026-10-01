@@ -80,7 +80,7 @@ export async function deleteEvidencePhotos(storageKeys: string[]): Promise<void>
   }
 }
 
-export async function prepareEvidencePhoto(file: File): Promise<{
+export async function prepareEvidencePhoto(file: File, options: { maxDimension?: number; quality?: number; alwaysCompress?: boolean } = {}): Promise<{
   blob: Blob;
   mimeType: string;
   width: number;
@@ -112,12 +112,12 @@ export async function prepareEvidencePhoto(file: File): Promise<{
   }
 
   try {
-    const maxDimension = 1600;
+    const maxDimension = options.maxDimension ?? 1600;
     const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
 
-    if (scale === 1 && file.size <= 2_000_000) {
+    if (!options.alwaysCompress && scale === 1 && file.size <= 2_000_000) {
       return {
         blob: file,
         mimeType: file.type || 'image/jpeg',
@@ -144,7 +144,7 @@ export async function prepareEvidencePhoto(file: File): Promise<{
       canvas.toBlob(
         (result) => result ? resolve(result) : reject(new Error('Unable to compress evidence photo')),
         'image/jpeg',
-        0.78,
+        options.quality ?? 0.78,
       );
     });
 

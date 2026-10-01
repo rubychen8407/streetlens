@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, Sparkles, X } from 'lucide-react';
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
+import { favoriteKey } from '../utils/savedLocations';
 
 type View = 'assessment' | 'saved' | 'settings';
 
@@ -60,6 +61,7 @@ function formatFreshness(timestamp?: string) {
 }
 
 function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
+  if (grade == null) return 'text-slate-300 bg-white/5 border-white/10';
   if (grade === 'S' || grade === 'A') return 'text-emerald-300 bg-emerald-400/15 border-emerald-400/30';
   if (grade === 'B') return 'text-sky-300 bg-sky-400/15 border-sky-400/30';
   if (grade === 'C') return 'text-amber-300 bg-amber-400/15 border-amber-400/30';
@@ -148,7 +150,7 @@ export function AssessmentWorkspace({
             <button onClick={() => view === 'assessment' ? onClose() : onViewChange('assessment')} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={view === 'assessment' ? 'Close assessment' : 'Back to assessment'}><ArrowLeft className="w-4 h-4" /></button>
             <div><div className="text-sm font-bold">Street assessment</div><div className="text-[10px] text-slate-500">Review → Observe → Save</div></div>
           </div>
-          <button onClick={onToggleFavorite} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/10 text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>
+          <button onClick={onToggleFavorite} title={isFavorite ? '取消最愛' : '加入最愛'} aria-label={isFavorite ? '取消最愛' : '加入最愛'} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/10 text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>
         </div>
 
         {view === 'assessment' && (
@@ -733,10 +735,13 @@ export function AssessmentWorkspace({
                   <button onClick={() => onSelectSaved(saved)} className="text-left min-w-0 flex-1">
                     <div className="font-bold truncate">{saved.name}</div>
                     <div className="text-[11px] text-slate-500 mt-1">{saved.district} · {saved.city}</div>
+                    {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-sky-300'}`}>{saved.walkMoment.feeling === 'good' ? '喜歡這裡' : saved.walkMoment.feeling === 'bad' ? '不喜歡' : '拍照留存'}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? ' · 最愛' : ''}</div>}
                     <div className="mt-3 flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-lg border text-xs font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore ?? '—'} {saved.grade ?? ''}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-xs font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? 'CLS 待補' : `CLS ${saved.clsScore}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? ' · 推估' : ''}</span>
                       <span className="text-[10px] text-slate-500">{new Date(saved.timestamp).toLocaleString('zh-TW')}</span>
                     </div>
+                    {saved.clsScore == null && <div className="mt-2 text-xs text-slate-400">有資料後自動補上</div>}
+                    {saved.syncStatus === 'local' && <div className="mt-1 text-xs text-slate-400">已存於此裝置，等待同步</div>}
                   </button>
                   <div className="flex items-center gap-1">
                     <button

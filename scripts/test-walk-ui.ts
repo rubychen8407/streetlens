@@ -120,15 +120,48 @@ try {
   await page.screenshot({ path: 'artifacts/walk-ui/saved-mobile.png' });
   await context.close();
 
-  for (const width of [320, 1440]) {
-    const layout = await browser.newContext({ viewport: { width, height: 900 } }); await prepare(layout);
+  for (const [width, height] of [[320, 740], [390, 844], [768, 1024], [844, 390], [1024, 768], [1440, 900]]) {
+    const layout = await browser.newContext({ viewport: { width, height } }); await prepare(layout);
     const view = await layout.newPage(); view.on('pageerror', error => errors.push(error.message));
     await view.goto(baseURL);
     await view.getByRole('button', { name: '步行感受', exact: true }).waitFor();
     assert.equal(await view.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     const input = await view.locator('input').first().boundingBox(); assert.ok(input && input.width >= 100, 'mobile search must remain usable');
     await view.screenshot({ path: `artifacts/walk-ui/map-${width}.png` });
+    // Toolbar alignment, touch targets and keyboard-accessible popovers at every breakpoint.
+    const search = await view.getByLabel('搜尋新的實勘點', { exact: true }).boundingBox();
+    const tools = await view.locator('.map-tools').boundingBox();
+    const entry = await view.getByRole('button', { name: '實勘', exact: true }).boundingBox();
+    assert.ok(search && tools && entry && search.x + search.width <= entry.x && entry.x + entry.width <= tools.x);
+    assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and toolbar align');
+    for (const label of ['步行感受', '定位', '圖層', '帳戶']) {
+      const box = await view.getByRole('button', { name: label, exact: true }).boundingBox();
+      assert.ok(box && box.width >= 44 && box.height >= 44, label + ' needs a touch target');
+    }
+    await view.getByRole('button', { name: '圖層', exact: true }).click();
+    const layer = view.getByRole('switch', { name: '300m / 500m 步行圈' });
+    const before = await layer.getAttribute('aria-checked');
+    await layer.focus(); await view.keyboard.press('Space');
+    assert.notEqual(await layer.getAttribute('aria-checked'), before);
+    const popover = await view.locator('.layer-popover').boundingBox();
+    assert.ok(popover && popover.x >= 0 && popover.y >= 0 && popover.y + popover.height <= height, 'layers fit the viewport');
+    await view.keyboard.press('Escape');
+    assert.equal(await layer.count(), 0);
+    assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).evaluate(element => element === document.activeElement), true);
+    await view.getByRole('button', { name: '實勘', exact: true }).click();
+    const panel = view.getByRole('complementary', { name: '街道評估面板' });
+    const bounds = await panel.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
+    const footer = await panel.locator('footer').boundingBox();
+    assert.ok(footer && footer.y + footer.height <= height, 'primary action stays on screen');
+    await view.screenshot({ path: `artifacts/walk-ui/assessment-${width}.png` });
+    await view.getByRole('button', { name: '關閉評估' }).focus();
+    await view.keyboard.press('Escape');
+    assert.equal(await panel.count(), 0);
+    assert.equal(await view.getByRole('button', { name: '實勘', exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
     await view.getByRole('button', { name: '步行感受', exact: true }).click(); await confirm(view);
+    const walkBounds = await view.getByRole('region', { name: '步行感受' }).boundingBox();
+    assert.ok(walkBounds && walkBounds.x >= 0 && walkBounds.y >= 0 && walkBounds.x + walkBounds.width <= width && walkBounds.y + walkBounds.height <= height, 'walk panel fits tablet and landscape');
     await view.getByRole('button', { name: 'iPhone 快捷入口' }).click();
     assert.equal(await view.getByLabel('步行模式網址').inputValue(), baseURL + '/?mode=walk');
     await layout.close();

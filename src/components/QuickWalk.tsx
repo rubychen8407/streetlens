@@ -1,3 +1,4 @@
+import { usePanelFocus } from '../hooks/usePanelFocus';
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Check, Copy, Footprints, Heart, Loader2, LocateFixed, Smartphone, ThumbsDown, X } from 'lucide-react';
 import type { LocationCoord, SavedLocation } from '../types';
@@ -22,6 +23,7 @@ export function QuickWalk({ source, onPreview, onSave, onClose }: Props) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const panelRef = usePanelFocus(true, onClose, !busy);
   const [showShortcut, setShowShortcut] = useState(false);
   const [address, setAddress] = useState({ streetName: '', district: '', city: '' });
   const photoInput = useRef<HTMLInputElement>(null);
@@ -122,22 +124,22 @@ export function QuickWalk({ source, onPreview, onSave, onClose }: Props) {
   }
 
   return (
-    <section aria-label="步行感受" className="absolute z-[650] bottom-3 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[420px] max-h-[85dvh] overflow-y-auto rounded-[28px] border border-white/15 bg-[#111113]/95 backdrop-blur-2xl shadow-2xl text-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]">
+    <section ref={panelRef} aria-label="步行感受" className="walk-panel absolute z-[650] bottom-3 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[420px] max-h-[85dvh] overflow-y-auto rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]">
       <header className="flex items-center justify-between gap-3 mb-4">
-        <h1 className="flex items-center gap-2 text-lg font-bold"><Footprints className="w-5 h-5 text-sky-300" />步行感受</h1>
+        <h1 className="flex items-center gap-2 text-lg font-bold"><Footprints className="w-5 h-5 text-slate-300" />步行感受</h1>
         <button type="button" onClick={onClose} disabled={busy} title="結束步行" aria-label="結束步行" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-40"><X className="w-5 h-5" /></button>
       </header>
 
-      <div className="rounded-2xl bg-white/5 border border-white/10 p-3 mb-4">
+      <div className="rounded-2xl bg-white/5 border border-white/[0.08] p-3 mb-4">
         <div className="font-semibold text-base break-words">{locationName}</div>
         <div className="mt-1 text-sm text-slate-400">{address.district} {address.city}</div>
         <div className="mt-2 text-sm text-slate-300 flex gap-2 items-center">
-          {ready ? <Check className="w-4 h-4 text-emerald-300 shrink-0" /> : <LocateFixed className="w-4 h-4 text-sky-300 shrink-0" />}
+          {ready ? <Check className="w-4 h-4 text-emerald-300 shrink-0" /> : <LocateFixed className="w-4 h-4 text-slate-300 shrink-0" />}
           {gpsError || (fix ? `定位誤差 ±${Math.round(fix.accuracy)} m${fresh ? (ready ? ' · 已確認' : ' · 請確認地圖位置') : ' · 等待更新定位'}` : '正在取得 GPS 位置…')}
         </div>
         {fix && <div className="mt-1 text-xs text-slate-500 tabular-nums">{fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}</div>}
         {!ready && <div className="mt-3 flex gap-2">
-          <button type="button" disabled={!fresh || !address.streetName} onClick={() => { setConfirmed(fix); setConfirmedAt(Date.now()); setError(''); }} className="min-h-11 flex-1 rounded-xl bg-sky-500 font-semibold text-sm disabled:opacity-40">位置正確，開始</button>
+          <button type="button" disabled={!fresh || !address.streetName} onClick={() => { setConfirmed(fix); setConfirmedAt(Date.now()); setError(''); }} className="min-h-11 flex-1 rounded-xl hud-primary font-semibold text-sm disabled:opacity-40">位置正確，開始</button>
           <button type="button" onClick={() => { setFix(null); setConfirmed(null); setLocateAttempt(value => value + 1); }} title="重新定位" aria-label="重新定位" className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/10"><LocateFixed className="w-5 h-5" /></button>
         </div>}
       </div>
@@ -154,7 +156,7 @@ export function QuickWalk({ source, onPreview, onSave, onClose }: Props) {
       {notice && <p role="status" className="mt-3 rounded-xl bg-emerald-400/10 p-3 text-sm text-emerald-200">{notice}</p>}
       {error && <p role="alert" className="mt-3 rounded-xl bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>}
 
-      <button type="button" onClick={() => setShowShortcut(value => !value)} aria-expanded={showShortcut} className="mt-3 min-h-11 flex items-center gap-2 text-sm text-sky-300"><Smartphone className="w-4 h-4" />iPhone 快捷入口</button>
+      <button type="button" onClick={() => setShowShortcut(value => !value)} aria-expanded={showShortcut} className="mt-3 min-h-11 flex items-center gap-2 text-sm text-slate-300"><Smartphone className="w-4 h-4" />iPhone 快捷入口</button>
       {showShortcut && <div className="text-sm text-slate-300 space-y-3 rounded-xl bg-white/5 p-3">
         <p>在「捷徑」新增「打開 URL」，貼上下方網址，再將捷徑指定給動作按鈕或「輔助使用 → 觸控 → 背面輕點」。</p>
         <div className="flex gap-2"><input readOnly aria-label="步行模式網址" value={shortcutUrl} onFocus={event => event.target.select()} className="w-full min-w-0 bg-black/20 rounded-lg px-2 py-2 text-xs select-text" /><button type="button" title="複製網址" aria-label="複製網址" onClick={() => { void navigator.clipboard?.writeText(shortcutUrl).then(() => setNotice('已複製步行模式網址。')).catch(() => setError('請選取並複製上方網址。')); }} className="w-11 shrink-0 rounded-lg bg-white/10 flex items-center justify-center"><Copy className="w-4 h-4" /></button></div>

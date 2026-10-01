@@ -207,20 +207,20 @@ export function ScoutMap({
               <div 
                 style="position: absolute; width: 80px; height: 80px; top: -32px; pointer-events: none; transition: transform 0.3s ease-out; transform: rotate(${rotDeg}deg);"
               >
-                <div class="flashlight-cone" style="width: 48px; height: 60px; margin: 0 auto; background: linear-gradient(to top, rgba(56, 189, 248, 0.5), rgba(56, 189, 248, 0.12), transparent);"></div>
+                <div class="flashlight-cone" style="width: 48px; height: 60px; margin: 0 auto; background: linear-gradient(to top, rgba(212, 249, 113, 0.25), rgba(212, 249, 113, 0.06), transparent);"></div>
               </div>
             `
               : ''
           }
           
           <!-- Outer Radar Pulse Ring (Large) -->
-          <div class="user-pulse-outer" style="position: absolute; width: 48px; height: 48px; border-radius: 9999px; background: rgba(0, 122, 255, 0.28);"></div>
+          <div class="user-pulse-outer" style="position: absolute; width: 48px; height: 48px; border-radius: 9999px; background: rgba(212, 249, 113, 0.12);"></div>
 
           <!-- Middle Pulse Ring (Tight) -->
-          <div class="user-pulse-inner" style="position: absolute; width: 30px; height: 30px; border-radius: 9999px; background: rgba(0, 122, 255, 0.42);"></div>
+          <div class="user-pulse-inner" style="position: absolute; width: 30px; height: 30px; border-radius: 9999px; background: rgba(212, 249, 113, 0.22);"></div>
 
           <!-- Solid Apple Blue Dot with White Border -->
-          <div style="position: relative; width: 22px; height: 22px; border-radius: 9999px; background: #007AFF; border: 3.5px solid #ffffff; box-shadow: 0 0 14px #007AFF, 0 3px 10px rgba(0, 0, 0, 0.4); z-index: 10;">
+          <div style="position: relative; width: 22px; height: 22px; border-radius: 9999px; background: #D4F971; border: 3.5px solid #ffffff; box-shadow: 0 0 14px #D4F971, 0 3px 10px rgba(0, 0, 0, 0.4); z-index: 10;">
             <!-- Micro specular highlight -->
             <div style="position: absolute; top: 2px; left: 3px; width: 4px; height: 4px; border-radius: 9999px; background: rgba(255, 255, 255, 0.85);"></div>
           </div>
@@ -255,10 +255,10 @@ export function ScoutMap({
         }
         userCircleRef.current = L.circle([currentLocation.lat, currentLocation.lng], {
           radius: accuracyRadius,
-          color: '#007AFF',
+          color: '#D4F971',
           weight: 1.5,
           opacity: 0.45,
-          fillColor: '#007AFF',
+          fillColor: '#D4F971',
           fillOpacity: 0.08,
           interactive: false,
         }).addTo(mapInstance);
@@ -278,13 +278,13 @@ export function ScoutMap({
       html: `
         <div class="relative flex flex-col items-center cursor-grab active:cursor-grabbing select-none group" style="width: 36px; height: 50px;">
           <!-- Drop Pin Head -->
-          <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-600 to-rose-500 border-2 border-white shadow-[0_4px_12px_rgba(225,29,72,0.4)] flex items-center justify-center text-white transform group-hover:scale-110 transition-transform">
+          <div class="w-8 h-8 rounded-full bg-[#1e2632] border-2 border-slate-400 shadow-[0_4px_12px_rgba(0,0,0,0.4)] flex items-center justify-center text-white transform group-hover:scale-110 transition-transform">
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
               <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
             </svg>
           </div>
           <!-- Pin Needle Tip -->
-          <div style="width: 2px; height: 6px; background: #e11d48; margin-top: -1px;"></div>
+          <div style="width: 2px; height: 6px; background: #7e8b9b; margin-top: -1px;"></div>
           <!-- Ground Shadow -->
           <div style="width: 10px; height: 3px; background: rgba(0, 0, 0, 0.4); border-radius: 9999px; filter: blur(0.5px); margin-top: 1px;"></div>
           <!-- Target Badge Label -->
@@ -331,11 +331,11 @@ export function ScoutMap({
       // 300m (3-4 mins walk)
       const c300 = L.circle([targetLocation.lat, targetLocation.lng], {
         radius: 300,
-        color: '#38bdf8',
+        color: '#8090a3',
         weight: 1.2,
         dashArray: '4, 4',
         opacity: 0.45,
-        fillColor: '#38bdf8',
+        fillColor: '#8090a3',
         fillOpacity: 0.03,
         interactive: false,
       });
@@ -343,11 +343,11 @@ export function ScoutMap({
       // 500m (5-7 mins walk)
       const c500 = L.circle([targetLocation.lat, targetLocation.lng], {
         radius: 500,
-        color: '#818cf8',
+        color: '#65768a',
         weight: 1.2,
         dashArray: '6, 6',
         opacity: 0.35,
-        fillColor: '#818cf8',
+        fillColor: '#65768a',
         fillOpacity: 0.02,
         interactive: false,
       });

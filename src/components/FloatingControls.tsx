@@ -21,7 +21,8 @@ import {
   SlidersHorizontal,
   Footprints,
 } from 'lucide-react';
-import { LocationCoord, WeatherData } from '../types';
+import { StreetTelemetry } from './StreetTelemetry';
+import { LocationCoord, WeatherData, StreetAssessmentResponse } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
 import { CARTO_STORAGE_KEY, getActiveCartoKey } from './ScoutMap';
 
@@ -29,6 +30,7 @@ interface FloatingControlsProps {
   currentStreetName: string;
   district: string;
   city: string;
+  assessment?: StreetAssessmentResponse | null;
   clsScore: number | null;
   grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   isLocatingGPS: boolean;
@@ -82,6 +84,7 @@ export function FloatingControls({
   district,
   city,
   clsScore,
+  assessment,
   grade,
   isLocatingGPS,
   onLocateMe,
@@ -191,6 +194,17 @@ export function FloatingControls({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (layerMenuRef.current?.contains(document.activeElement)) layerMenuRef.current.querySelector<HTMLButtonElement>('button[aria-label="圖層"]')?.focus();
+      setIsSearchOpen(false); setShowLayerMenu(false); setShowWeatherDetail(false);
+      setShowProfileMenu(false); setShowKeyModal(false); setShowCoordModal(false);
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, []);
+
   // Debounced search
   useEffect(() => {
     if (!searchQuery || searchQuery.trim().length < 2) {
@@ -245,16 +259,26 @@ export function FloatingControls({
   };
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-[500] flex flex-col justify-between p-3 sm:p-4 select-none">
+    <div data-panel-open={isSheetOpen} className="tactical-controls pointer-events-none absolute inset-0 z-[500] flex flex-col justify-between p-3 sm:p-4 select-none">
+      <nav className="tactical-dock hud-card" aria-label="主要導覽">
+        <div className="dock-brand" title="StreetLens"><span>SL</span><i /></div>
+        <div className="dock-divider" />
+        <button type="button" onClick={onOpenSheet} aria-label="街道評估" title="街道評估"><Compass size={21} /></button>
+        <button type="button" onClick={onOpenWalk} aria-label="步行感受" title="步行感受" className="hud-primary"><Footprints size={21} /></button>
+        <button type="button" onClick={onOpenSaved} aria-label="已儲存街道" title="已儲存街道"><Star size={21} /></button>
+        <div className="dock-spacer" />
+        <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
+      </nav>
+      <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenSheet} />
       {/* TOP FLOATING ROW */}
-      <div className="flex items-start justify-between gap-2 pointer-events-auto">
+      <div className="utility-bar flex items-start justify-between gap-2 pointer-events-auto">
         {/* Top-Left Weather Pill (Apple Maps style: ☀️ 29°) */}
         <div className="relative">
           <button
             type="button"
             onClick={() => setShowWeatherDetail((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1c1c1e]/85 hover:bg-[#1c1c1e] backdrop-blur-xl text-white text-xs font-semibold shadow-lg border border-white/10 transition-transform active:scale-95"
-            title="天氣" aria-label="天氣"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1A212B]/85 hover:bg-[#1A212B] backdrop-blur-md text-white text-xs font-semibold shadow-lg border border-white/[0.08] transition-transform active:scale-95"
+            title="天氣" aria-label="天氣" aria-expanded={showWeatherDetail}
           >
             <Sun className="w-4 h-4 text-amber-400" />
             <span className="font-bold font-mono">{weatherData?.temperature != null ? `${weatherData.temperature}°` : '—'}</span>
@@ -265,7 +289,7 @@ export function FloatingControls({
 
           {/* Mini Weather Popover */}
           {showWeatherDetail && (
-            <div className="absolute top-full left-0 mt-2 w-56 p-3 rounded-2xl bg-[#1c1c1e]/95 backdrop-blur-xl text-white shadow-xl border border-white/10 text-xs space-y-2">
+            <div className="absolute top-full left-0 mt-2 w-56 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md text-white shadow-xl border border-white/[0.08] text-xs space-y-2">
               <div className="flex justify-between items-center text-slate-300">
                 <span className="font-medium">
                   {weatherData?.stationDistrict || `${city || '台北市'} ${district || '大安區'}`}
@@ -282,7 +306,7 @@ export function FloatingControls({
                   {weatherData?.stationName ? `資料來源：${weatherData.stationName}` : weatherData?.source || '資料尚未取得'}
                 </div>
               </div>
-              <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/10 pt-1.5">
+              <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/[0.08] pt-1.5">
                 <div className="flex justify-between items-center">
                   <span>空氣品質 AQI：</span>
                   <span className="font-mono font-semibold text-emerald-400">
@@ -291,7 +315,7 @@ export function FloatingControls({
                 </div>
                 <div className="flex justify-between items-center">
                   <span>相對濕度：</span>
-                  <span className="font-mono font-semibold text-sky-300">
+                  <span className="font-mono font-semibold text-slate-300">
                     {weatherData?.humidity != null ? `${weatherData.humidity}%` : '—'}
                   </span>
                 </div>
@@ -309,7 +333,7 @@ export function FloatingControls({
         {/* Center CLS score: always visible without creating another entry point */}
         <div className="flex-1 flex justify-center min-w-0 px-1 pointer-events-none">
           <div
-            className={`h-10 px-3 sm:px-3.5 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center gap-2 text-white pointer-events-auto ${
+            className={`h-10 px-3 sm:px-3.5 rounded-full bg-[#1A212B]/90 backdrop-blur-md border border-white/[0.08] shadow-lg flex items-center gap-2 text-white pointer-events-auto ${
               clsScore == null ? 'opacity-80' : ''
             }`}
             title="CLS 分數"
@@ -319,20 +343,20 @@ export function FloatingControls({
             <span
               className={`text-sm sm:text-base font-bold font-mono leading-none ${
                 grade === 'S' || grade === 'A'
-                  ? 'text-emerald-400'
+                  ? 'text-slate-200'
                   : grade === 'B'
-                    ? 'text-sky-400'
+                    ? 'text-slate-300'
                     : grade === 'C'
-                      ? 'text-amber-400'
+                      ? 'text-slate-200'
                       : grade === 'D'
-                        ? 'text-rose-400'
+                        ? 'text-slate-200'
                         : 'text-slate-300'
               }`}
             >
               {clsScore == null ? '—' : clsScore.toFixed(0)}
             </span>
             {grade && (
-              <span className="text-[10px] font-bold text-slate-400 border-l border-white/10 pl-2">
+              <span className="text-[10px] font-bold text-slate-400 border-l border-white/[0.08] pl-2">
                 {grade}
               </span>
             )}
@@ -340,15 +364,15 @@ export function FloatingControls({
         </div>
         {/* Quick walk stays outside the bottom search row so mobile search keeps its width. */}
         <div className="relative flex items-center gap-2">
-          <button type="button" onClick={onOpenWalk} className="w-10 h-10 shrink-0 rounded-full bg-sky-500/90 hover:bg-sky-500 text-white shadow-lg border border-sky-300/30 flex items-center justify-center active:scale-95" title="步行感受" aria-label="步行感受">
+          <button type="button" onClick={onOpenWalk} className="mobile-walk hud-primary w-10 h-10 shrink-0 rounded-full text-white shadow-lg border border-white/[0.08] flex items-center justify-center active:scale-95" title="步行感受" aria-label="步行感受">
             <Footprints className="w-5 h-5" />
           </button>
-          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1c1c1e]/90 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#242426] transition-all" title="帳戶" aria-label="帳戶">
+          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1A212B]/90 backdrop-blur-md border border-white/[0.08] shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#26313E] transition-all" title="帳戶" aria-label="帳戶" aria-expanded={showProfileMenu}>
             <UserCircle className="w-5 h-5" />
           </button>
           {showProfileMenu && (
-            <div className="absolute top-full right-0 mt-2 w-60 rounded-2xl bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/10 shadow-2xl p-2 text-white">
-              <div className="px-3 py-2.5 border-b border-white/10 mb-1">
+            <div className="absolute top-full right-0 mt-2 w-60 rounded-2xl bg-[#1A212B]/98 backdrop-blur-md border border-white/[0.08] shadow-2xl p-2 text-white">
+              <div className="px-3 py-2.5 border-b border-white/[0.08] mb-1">
                 <div className="text-sm font-bold">StreetLens</div>
                 <div className="text-[10px] text-slate-500">Street assessment workspace</div>
               </div>
@@ -356,7 +380,7 @@ export function FloatingControls({
                 <Star className="w-4 h-4 text-amber-300" /><div><div className="text-xs font-semibold">Favorites</div><div className="text-[10px] text-slate-500">Favorite streets & CLS list</div></div>
               </button>
               <button onClick={() => { onOpenSettings(); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-left">
-                <SlidersHorizontal className="w-4 h-4 text-sky-300" /><div><div className="text-xs font-semibold">Settings</div><div className="text-[10px] text-slate-500">Data sources & system status</div></div>
+                <SlidersHorizontal className="w-4 h-4 text-slate-300" /><div><div className="text-xs font-semibold">Settings</div><div className="text-[10px] text-slate-500">Data sources & system status</div></div>
               </button>
             </div>
           )}
@@ -365,7 +389,7 @@ export function FloatingControls({
       </div>
 
       {/* BOTTOM FLOATING CONTROLS */}
-      <div className="pointer-events-auto pb-1 w-full">
+      <div className="search-toolbar pointer-events-auto pb-1 w-full">
         <div className="w-full max-w-3xl mx-auto flex items-end gap-2 sm:gap-3">
           {/* Unified address search + field assessment entry */}
           <div className="relative flex-1 min-w-0" ref={searchContainerRef}>
@@ -380,7 +404,7 @@ export function FloatingControls({
                 onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
                 onFocus={() => setIsSearchOpen(true)}
                 placeholder="搜尋新的實勘點..."
-                className="w-full h-12 pl-11 pr-10 bg-[#1c1c1e]/92 backdrop-blur-xl border border-white/15 rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
+                className="w-full h-12 pl-11 pr-10 bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
                 aria-label="搜尋新的實勘點"
               />
               {searchQuery && (
@@ -389,12 +413,12 @@ export function FloatingControls({
                 </button>
               )}
               {isSearchOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#1c1c1e]/98 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
+                <div className="search-results absolute bottom-full left-0 right-0 mb-2 bg-[#1A212B]/98 backdrop-blur-md border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
                   {suggestions.length > 0 ? (
                     <div className="p-1">
                       {suggestions.map((item, idx) => (
                         <button key={idx} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-xs hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors">
-                          <MapPin className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
+                          <MapPin className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" />
                           <div className="min-w-0">
                             <div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div>
                             <div className="text-[11px] text-slate-400 truncate">{item.display_name}</div>
@@ -408,7 +432,7 @@ export function FloatingControls({
                 </div>
               )}
             </div>
-            <button type="button" onClick={onOpenSheet} className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white shadow-2xl border border-indigo-300/30 flex items-center justify-center transition-all active:scale-90" title="實勘" aria-label="實勘">
+            <button type="button" onClick={onOpenSheet} className="assessment-entry w-12 h-12 shrink-0 rounded-2xl bg-white/10 text-white shadow-2xl border border-white/[0.08] flex items-center justify-center transition-all active:scale-90" title="實勘" aria-label="實勘">
               <Compass className="w-5 h-5" />
             </button>
           </div>
@@ -417,7 +441,7 @@ export function FloatingControls({
         {/* Map tools share the bottom row but keep a fixed footprint, so resizing
             never lets them overlap the search field or assessment button. */}
         <div
-          className="relative shrink-0 h-12 flex items-center bg-[#1c1c1e]/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/10 p-0.5"
+          className="map-tools relative shrink-0 h-12 flex items-center bg-[#1A212B]/90 backdrop-blur-md rounded-2xl shadow-xl border border-white/[0.08] p-0.5"
           ref={layerMenuRef}
         >
             {/* Layer Button */}
@@ -425,9 +449,9 @@ export function FloatingControls({
               type="button"
               onClick={() => setShowLayerMenu((v) => !v)}
               className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                showLayerMenu ? 'text-indigo-400 bg-white/10' : 'text-slate-300 hover:text-white'
+                showLayerMenu ? 'text-slate-300 bg-white/10' : 'text-slate-300 hover:text-white'
               }`}
-              title="圖層" aria-label="圖層"
+              title="圖層" aria-label="圖層" aria-expanded={showLayerMenu}
             >
               <Layers className="w-5 h-5" />
             </button>
@@ -439,15 +463,15 @@ export function FloatingControls({
               type="button"
               onClick={onLocateMe}
               disabled={isLocatingGPS}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
                 isLocatingGPS
-                  ? 'text-sky-400 bg-white/10'
+                  ? 'text-slate-300 bg-white/10'
                   : 'text-slate-300 hover:text-white active:scale-95'
               }`}
               title="定位" aria-label="定位"
             >
               {isLocatingGPS ? (
-                <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
+                <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
               ) : (
                 <Navigation className="w-5 h-5 -rotate-45 fill-current" />
               )}
@@ -455,13 +479,13 @@ export function FloatingControls({
 
             {/* Layer Popover Menu */}
             {showLayerMenu && (
-              <div className="absolute bottom-full right-0 mb-2 w-56 p-3 rounded-2xl bg-[#1c1c1e]/95 backdrop-blur-xl text-white shadow-2xl border border-white/10 text-xs space-y-2.5">
-                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+              <div className="layer-popover absolute bottom-full right-0 mb-2 w-56 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md text-white shadow-2xl border border-white/[0.08] text-xs space-y-2.5">
+                <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
                   <span className="font-bold text-slate-200">地圖圖層設定</span>
                   <button
                     type="button"
                     onClick={() => setShowLayerMenu(false)}
-                    className="text-slate-400 hover:text-white"
+                    aria-label="關閉圖層" className="text-slate-400 hover:text-white"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -480,61 +504,61 @@ export function FloatingControls({
                 </div>
 
                 {/* Walking Radius Toggle */}
-                <div
+                <button type="button" role="switch" aria-checked={activeLayers.walkingRadius}
                   onClick={() => onToggleLayer('walkingRadius')}
-                  className="flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
+                  className="w-full text-left flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
                 >
                   <span>300m / 500m 步行圈</span>
                   <div
                     className={`w-4 h-4 rounded flex items-center justify-center border ${
                       activeLayers.walkingRadius
-                        ? 'bg-indigo-600 border-indigo-400 text-white'
+                        ? 'bg-white/10 border-white/[0.08] text-white'
                         : 'border-slate-500'
                     }`}
                   >
                     {activeLayers.walkingRadius && <Check className="w-3 h-3 stroke-[3]" />}
                   </div>
-                </div>
+                </button>
 
                 {/* Street heatmap scores */}
-                <div
+                <button type="button" role="switch" aria-checked={activeLayers.streetScores}
                   onClick={() => onToggleLayer('streetScores')}
-                  className="flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
+                  className="w-full text-left flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
                 >
                   <span>街道評分熱力標線</span>
                   <div
                     className={`w-4 h-4 rounded flex items-center justify-center border ${
                       activeLayers.streetScores
-                        ? 'bg-indigo-600 border-indigo-400 text-white'
+                        ? 'bg-white/10 border-white/[0.08] text-white'
                         : 'border-slate-500'
                     }`}
                   >
                     {activeLayers.streetScores && <Check className="w-3 h-3 stroke-[3]" />}
                   </div>
-                </div>
+                </button>
 
                 {/* POIs Toggle */}
-                <div
+                <button type="button" role="switch" aria-checked={activeLayers.c2Amenity}
                   onClick={() => onToggleLayer('c2Amenity')}
-                  className="flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
+                  className="w-full text-left flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
                 >
                   <span>生活設施 POI 標記</span>
                   <div
                     className={`w-4 h-4 rounded flex items-center justify-center border ${
                       activeLayers.c2Amenity
-                        ? 'bg-indigo-600 border-indigo-400 text-white'
+                        ? 'bg-white/10 border-white/[0.08] text-white'
                         : 'border-slate-500'
                     }`}
                   >
                     {activeLayers.c2Amenity && <Check className="w-3 h-3 stroke-[3]" />}
                   </div>
-                </div>
+                </button>
 
                 {/* Basemap Source Info & Key Config */}
-                <div className="pt-2 border-t border-white/10 text-[10px] space-y-1.5">
+                <div className="pt-2 border-t border-white/[0.08] text-[10px] space-y-1.5">
                   <div className="flex justify-between items-center text-slate-400">
                     <span>底圖圖資</span>
-                    <span className="font-mono font-bold text-indigo-300">
+                    <span className="font-mono font-bold text-slate-300">
                       {getActiveCartoKey() ? 'CARTO (已授權)' : 'OSM (免金鑰)'}
                     </span>
                   </div>
@@ -544,7 +568,7 @@ export function FloatingControls({
                       setShowLayerMenu(false);
                       setShowKeyModal(true);
                     }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 transition-colors"
+                    className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg bg-white/10 hover:bg-white/10 text-slate-300 border border-white/[0.08] transition-colors"
                   >
                     <Key className="w-3 h-3" />
                     <span>CARTO 金鑰管理與測試</span>
@@ -559,11 +583,11 @@ export function FloatingControls({
       {/* CARTO Key Management & Test Modal */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm pointer-events-auto animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-[#1c1c1e] border border-white/15 rounded-3xl p-5 shadow-2xl space-y-4">
+          <div className="relative w-full max-w-md bg-[#1A212B] border border-white/[0.08] rounded-2xl p-5 shadow-2xl space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
               <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400">
+                <div className="p-2 rounded-xl bg-white/10 text-slate-300">
                   <Key className="w-5 h-5" />
                 </div>
                 <div>
@@ -591,10 +615,10 @@ export function FloatingControls({
                   setTestResult(null);
                 }}
                 placeholder="貼上您的 CARTO API Key (例如：default_public 或自訂 Key)..."
-                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/15 rounded-xl text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/[0.08] rounded-xl text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-indigo-500"
               />
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                說明：CARTO 官方規定自 2024 年底起請求 basemaps 圖磚時需附加 <code className="text-indigo-300 font-mono">?key=...</code>。
+                說明：CARTO 官方規定自 2024 年底起請求 basemaps 圖磚時需附加 <code className="text-slate-300 font-mono">?key=...</code>。
                 若金鑰無效或權限未開通，本系統具備自動容錯保護，會自動切換至 Apple Maps 高清主題，絕不黑屏。
               </p>
             </div>
@@ -623,7 +647,7 @@ export function FloatingControls({
                 type="button"
                 disabled={keyTesting}
                 onClick={() => testAndSaveCartoKey(inputKey)}
-                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
               >
                 {keyTesting ? (
                   <>
@@ -657,11 +681,11 @@ export function FloatingControls({
       {/* GPS Coordinates & Position Telemetry Modal */}
       {showCoordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm pointer-events-auto animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-[#1c1c1e] border border-white/15 rounded-3xl p-5 shadow-2xl space-y-4">
+          <div className="relative w-full max-w-md bg-[#1A212B] border border-white/[0.08] rounded-2xl p-5 shadow-2xl space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
               <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+                <div className="p-2 rounded-xl bg-white/10 text-slate-300">
                   <Crosshair className="w-5 h-5" />
                 </div>
                 <div>
@@ -679,28 +703,28 @@ export function FloatingControls({
             </div>
 
             {/* Current GPS Telemetry Block */}
-            <div className="p-3.5 rounded-2xl bg-sky-950/20 border border-sky-400/30 space-y-2.5">
+            <div className="p-3.5 rounded-2xl bg-sky-950/20 border border-white/[0.08] space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/10 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white/10"></span>
                   </span>
                   <span className="text-xs font-bold text-white">目前裝置 GPS 經緯度</span>
                 </div>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-mono">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 font-mono">
                   誤差 ±{accuracyRadius ? Math.round(accuracyRadius) : 15}m
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                <div className="p-2 rounded-xl bg-black/40 border border-white/[0.08]">
                   <div className="text-[10px] text-slate-400 font-sans">緯度 (Latitude)</div>
-                  <div className="text-sm font-bold text-sky-300">{currentLocation.lat.toFixed(6)}°</div>
+                  <div className="text-sm font-bold text-slate-300">{currentLocation.lat.toFixed(6)}°</div>
                 </div>
-                <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                <div className="p-2 rounded-xl bg-black/40 border border-white/[0.08]">
                   <div className="text-[10px] text-slate-400 font-sans">經度 (Longitude)</div>
-                  <div className="text-sm font-bold text-sky-300">{currentLocation.lng.toFixed(6)}°</div>
+                  <div className="text-sm font-bold text-slate-300">{currentLocation.lng.toFixed(6)}°</div>
                 </div>
               </div>
 
@@ -733,7 +757,7 @@ export function FloatingControls({
                     onLocateMe();
                   }}
                   disabled={isLocatingGPS}
-                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                   {isLocatingGPS ? (
                     <>
@@ -775,7 +799,7 @@ export function FloatingControls({
                     step="0.000001"
                     value={customLat}
                     onChange={(e) => setCustomLat(e.target.value)}
-                    className="w-full px-3 py-2 bg-black/40 border border-white/15 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                    className="w-full px-3 py-2 bg-black/40 border border-white/[0.08] rounded-xl text-xs font-mono text-white focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-sky-500"
                     placeholder="25.0339"
                   />
                 </div>
@@ -786,7 +810,7 @@ export function FloatingControls({
                     step="0.000001"
                     value={customLng}
                     onChange={(e) => setCustomLng(e.target.value)}
-                    className="w-full px-3 py-2 bg-black/40 border border-white/15 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                    className="w-full px-3 py-2 bg-black/40 border border-white/[0.08] rounded-xl text-xs font-mono text-white focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-sky-500"
                     placeholder="121.5645"
                   />
                 </div>
@@ -802,7 +826,7 @@ export function FloatingControls({
                     setShowCoordModal(false);
                   }
                 }}
-                className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 transition-all"
+                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 transition-all"
               >
                 <Crosshair className="w-3.5 h-3.5" />
                 <span>立即跳轉至此經緯度座標</span>
@@ -810,7 +834,7 @@ export function FloatingControls({
             </div>
 
             {/* Quick Coordinate Presets */}
-            <div className="pt-2 border-t border-white/10 space-y-1.5">
+            <div className="pt-2 border-t border-white/[0.08] space-y-1.5">
               <div className="text-[11px] text-slate-400 font-semibold">快速選取熱門實勘經緯度：</div>
               <div className="grid grid-cols-3 gap-1.5 text-[11px]">
                 <button

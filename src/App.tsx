@@ -853,7 +853,7 @@ export default function App() {
   const activePoiMarkers = nearbyPois;
 
   return (
-    <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root">
+    <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root" data-map-theme={mapTheme}>
       {/* 1. Fullscreen Edge-to-Edge Map (Apple Maps Aesthetic) */}
       <ScoutMap
         currentLocation={currentLocation}
@@ -881,7 +881,7 @@ export default function App() {
 
       {/* GPS Status / Success Toast Banner */}
       {gpsSuccessMsg && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-emerald-600/90 backdrop-blur-md text-white text-xs font-semibold rounded-full shadow-xl border border-emerald-400/40 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-[#1e2632]/95 backdrop-blur-md text-slate-200 text-xs font-semibold rounded-full shadow-xl border border-white/[0.08] flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
           <span>{gpsSuccessMsg}</span>
           <button
             type="button"
@@ -908,6 +908,7 @@ export default function App() {
 
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
       {!isWalkOpen && <FloatingControls
+        assessment={assessment}
         currentStreetName={streetName}
         district={district}
         city={city}

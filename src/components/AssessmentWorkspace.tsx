@@ -5,10 +5,11 @@ import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObs
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 import { favoriteKey } from '../utils/savedLocations';
 
-type View = 'assessment' | 'saved' | 'settings';
+type View = 'assessment' | 'field' | 'saved' | 'settings';
 
 interface AssessmentWorkspaceProps {
   view: View;
+  onOpenWalk: () => void;
   onViewChange: (view: View) => void;
   isOpen: boolean;
   onClose: () => void;
@@ -70,7 +71,7 @@ function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
 }
 
 export function AssessmentWorkspace({
-  view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
+  onOpenWalk, view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
@@ -80,7 +81,7 @@ export function AssessmentWorkspace({
   const panelRef = usePanelFocus(isOpen, onClose);
   const [name, setName] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<2 | 3>(2);
   const [savedFilter, setSavedFilter] = useState<'all' | 'favorites'>('all');
   const [savedSort, setSavedSort] = useState<'recent' | 'score' | 'grade'>('recent');
   const [showScoreDetails, setShowScoreDetails] = useState(false);
@@ -150,7 +151,7 @@ export function AssessmentWorkspace({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <button onClick={() => view === 'assessment' ? onClose() : onViewChange('assessment')} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={view === 'assessment' ? 'Close assessment' : 'Back to assessment'} aria-label={view === 'assessment' ? '關閉評估' : '返回評估'}><ArrowLeft className="w-4 h-4" /></button>
-            <div><div className="text-sm font-bold">Street assessment</div><div className="text-[10px] text-slate-500">Review → Observe → Save</div></div>
+            <div><div className="text-sm font-bold">{view === 'field' ? '詳細實勘' : 'CLS 街道評估'}</div><div className="text-[10px] text-slate-500">{view === 'field' ? '現場觀察與佐證' : '分數 · 資料來源 · 歷史比較'}</div></div>
           </div>
           <button onClick={onToggleFavorite} title={isFavorite ? '取消最愛' : '加入最愛'} aria-label={isFavorite ? '取消最愛' : '加入最愛'} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>
         </div>
@@ -175,12 +176,12 @@ export function AssessmentWorkspace({
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        {view === 'assessment' && (
+        {(view === 'assessment' || view === 'field') && (
           <div className="space-y-4 pb-4">
-            <div className="grid grid-cols-3 gap-1.5">
-              {['Review','Observe','Save'].map((label, index) => <button key={label} onClick={() => setStep((index + 1) as 1|2|3)} aria-current={step === index + 1 ? 'step' : undefined} className={`rounded-xl py-2 text-[10px] font-bold border ${step === index + 1 ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/[0.03] border-white/5 text-slate-500'}`}><span className="mr-1">{index + 1}</span>{label}</button>)}
-            </div>
-            {step === 1 && <section>
+            {view === 'field' && <div className="grid grid-cols-2 gap-1.5">
+              {['觀察', '儲存'].map((label, index) => <button key={label} onClick={() => setStep((index + 2) as 2|3)} aria-current={step === index + 2 ? 'step' : undefined} className="rounded-xl py-2 text-xs border border-white/10">{label}</button>)}
+            </div>}
+            {view === 'assessment' && <section>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Objective data</h3>
                 <button onClick={onOpenDataLogs} className="text-[11px] text-slate-300 hover:text-slate-300 flex items-center gap-1">Data status <ChevronRight className="w-3 h-3" /></button>
@@ -358,7 +359,7 @@ export function AssessmentWorkspace({
                 </div>
               )}
             </section>}
-            {step === 2 && <section>
+            {view === 'field' && step === 2 && <section>
               <div className="mb-3">
                 <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">Your observation</h3>
                 <p className="text-[11px] text-slate-500 mt-1">Rate only conditions you actually observed. Unrated items do not affect CLS. Notes are recommended when an observation meaningfully changes the assessment.</p>
@@ -435,7 +436,7 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
-            </section>}            {step === 3 && <>
+            </section>}            {view === 'field' && step === 3 && <>
               <section>
                 <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">Review & save</label>
               <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3">
@@ -798,10 +799,11 @@ export function AssessmentWorkspace({
         )}
       </div>
 
-      {view === 'assessment' && (
+      {view === 'assessment' && <footer className="assessment-footer shrink-0 p-4 border-t border-white/10"><button type="button" className="hud-primary w-full rounded-xl min-h-11 text-sm font-semibold" onClick={onOpenWalk}>開始實勘 · 喜歡／拍照</button></footer>}
+      {view === 'field' && (
         <footer className="assessment-footer shrink-0 p-4 border-t border-white/[0.08] bg-[#141A23]">
           {step < 3 ? (
-            <button onClick={() => setStep((step + 1) as 1|2|3)} className="w-full py-3 rounded-xl hud-primary text-white text-xs font-bold flex items-center justify-center gap-2">Continue <ChevronRight className="w-4 h-4" /></button>
+            <button onClick={() => setStep((step + 1) as 2|3)} className="w-full py-3 rounded-xl hud-primary text-white text-xs font-bold flex items-center justify-center gap-2">Continue <ChevronRight className="w-4 h-4" /></button>
           ) : (
             <div className="flex gap-2">
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Assessment name" className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-white/5 border border-white/[0.08] text-xs outline-none" />

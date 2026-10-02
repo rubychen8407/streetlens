@@ -184,8 +184,10 @@ export function ScoutMap({
     const handleResize = () => {
       mapInstance?.invalidateSize();
     };
+    const observer = new ResizeObserver(handleResize);
+    if (mapContainerRef.current) observer.observe(mapContainerRef.current);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => { observer.disconnect(); window.removeEventListener('resize', handleResize); };
   }, [mapInstance]);
 
   // Update User GPS Location Marker (Apple Maps Style blue pulsating beacon + flashlight cone)

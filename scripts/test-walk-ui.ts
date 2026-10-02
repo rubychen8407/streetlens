@@ -125,13 +125,14 @@ try {
     const view = await layout.newPage(); view.on('pageerror', error => errors.push(error.message));
     await view.goto(baseURL);
     await view.getByRole('button', { name: '步行感受', exact: true }).waitFor();
+    assert.equal(await view.getByRole('button', { name: '步行感受', exact: true }).innerText(), '喜歡／拍照');
     assert.equal(await view.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     const input = await view.locator('input').first().boundingBox(); assert.ok(input && input.width >= 100, 'mobile search must remain usable');
     await view.screenshot({ path: `artifacts/walk-ui/map-${width}.png` });
     // Toolbar alignment, touch targets and keyboard-accessible popovers at every breakpoint.
     const search = await view.getByLabel('搜尋新的實勘點', { exact: true }).boundingBox();
     const tools = await view.locator('.map-tools').boundingBox();
-    const entry = await view.getByRole('button', { name: '實勘', exact: true }).boundingBox();
+    const entry = await view.getByRole('button', { name: 'CLS 評估', exact: true }).boundingBox();
     assert.ok(search && tools && entry && search.x + search.width <= entry.x && entry.x + entry.width <= tools.x);
     assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and toolbar align');
     for (const label of ['步行感受', '定位', '圖層', '帳戶']) {
@@ -148,8 +149,10 @@ try {
     await view.keyboard.press('Escape');
     assert.equal(await layer.count(), 0);
     assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).evaluate(element => element === document.activeElement), true);
-    await view.getByRole('button', { name: '實勘', exact: true }).click();
+    await view.getByRole('button', { name: 'CLS 評估', exact: true }).click();
     const panel = view.getByRole('complementary', { name: '街道評估面板' });
+    assert.equal(await panel.getByText('Your observation', { exact: true }).count(), 0, 'CLS does not contain field-rating workflow');
+    assert.equal(await panel.getByRole('button', { name: 'Continue', exact: true }).count(), 0);
     const bounds = await panel.boundingBox();
     assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
     const footer = await panel.locator('footer').boundingBox();
@@ -158,10 +161,12 @@ try {
     await view.getByRole('button', { name: '關閉評估' }).focus();
     await view.keyboard.press('Escape');
     assert.equal(await panel.count(), 0);
-    assert.equal(await view.getByRole('button', { name: '實勘', exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
+    assert.equal(await view.getByRole('button', { name: 'CLS 評估', exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
     await view.getByRole('button', { name: '步行感受', exact: true }).click(); await confirm(view);
     const walkBounds = await view.getByRole('region', { name: '步行感受' }).boundingBox();
     assert.ok(walkBounds && walkBounds.x >= 0 && walkBounds.y >= 0 && walkBounds.x + walkBounds.width <= width && walkBounds.y + walkBounds.height <= height, 'walk panel fits tablet and landscape');
+    const mapBounds = await view.locator('#leaflet-apple-map').boundingBox();
+    assert.ok(mapBounds && walkBounds && (width >= 1024 ? mapBounds.x + mapBounds.width <= walkBounds.x : mapBounds.y + mapBounds.height <= walkBounds.y), 'field controls leave the map visible');
     await view.getByRole('button', { name: 'iPhone 快捷入口' }).click();
     assert.equal(await view.getByLabel('步行模式網址').inputValue(), baseURL + '/?mode=walk');
     await layout.close();
@@ -179,7 +184,7 @@ try {
   const favoriteContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(favoriteContext);
   const favoritePage = await favoriteContext.newPage();
   await favoritePage.goto(baseURL);
-  await favoritePage.getByRole('button', { name: '實勘', exact: true }).click();
+  await favoritePage.getByRole('button', { name: 'CLS 評估', exact: true }).click();
   await favoritePage.getByRole('button', { name: '加入最愛', exact: true }).click();
   assert.equal((await saved(favoritePage)).length, 1);
   assert.equal((await saved(favoritePage))[0].clsScore, null);
@@ -187,6 +192,49 @@ try {
   await favoritePage.evaluate(() => window.dispatchEvent(new Event('focus')));
   await favoritePage.waitForFunction(() => JSON.parse(localStorage.getItem('cls_saved_locations') || '[]')[0]?.clsScore === 80);
   await favoriteContext.close();
+
+
+  // A 202 is a waiting state, not a permanent blank score. Recheck persisted data.
+  readyScore = false;
+  const pendingContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(pendingContext);
+  const pendingPage = await pendingContext.newPage(); await pendingPage.goto(baseURL);
+  await pendingPage.getByText('CLS 尚未就緒', { exact: true }).waitFor();
+  assert.equal(await pendingPage.getByRole('button', { name: '重試 CLS' }).isEnabled(), true);
+  readyScore = true;
+  await pendingPage.getByLabel('CLS 分數 80，等級 A', { exact: true }).waitFor({ timeout: 35000 });
+  assert.equal(await pendingPage.getByRole('region', { name: 'CLS 載入狀態' }).count(), 0);
+  await pendingPage.getByRole('button', { name: 'CLS 評估', exact: true }).click();
+  await pendingPage.getByRole('button', { name: '開始實勘 · 喜歡／拍照', exact: true }).click();
+  assert.equal(await pendingPage.getByRole('complementary', { name: '街道評估面板' }).count(), 0, 'field mode replaces the CLS panel');
+  await pendingPage.keyboard.press('1'); assert.equal((await saved(pendingPage)).length, 0, 'shortcut cannot bypass GPS confirmation');
+  await pendingPage.evaluate(() => (window as any).__emitFix(25.0326, 121.5298));
+  await confirm(pendingPage);
+  await pendingPage.keyboard.press('1');
+  assert.equal((await saved(pendingPage)).length, 1, 'shortcut saves automatically');
+  assert.equal((await saved(pendingPage))[0].walkMoment.feeling, 'good');
+  await pendingPage.waitForTimeout(1050);
+  await pendingPage.keyboard.press('2');
+  assert.equal((await saved(pendingPage))[0].walkMoment.feeling, 'bad');
+  const chooserPromise = pendingPage.waitForEvent('filechooser');
+  await pendingPage.keyboard.press('c');
+  await chooserPromise;
+  await pendingPage.getByRole('button', { name: 'iPhone 快捷入口' }).click();
+  await pendingPage.getByLabel('步行模式網址').focus(); await pendingPage.keyboard.press('1');
+  assert.equal((await saved(pendingPage)).length, 2, 'typing and shortcut settings do not record a visit');
+  await pendingContext.close();
+
+  // Legacy saved history may have only a persisted total; it still renders in CLS.
+  const legacyContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(legacyContext);
+  await legacyContext.addInitScript(() => localStorage.setItem('cls_saved_locations', JSON.stringify([{
+    id: 'legacy-score', name: '舊紀錄', streetName: '舊街道', district: '大安區', city: '臺北市',
+    coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 73, grade: 'B', scores: {}, timestamp: Date.now(), syncStatus: 'synced',
+  }])));
+  const legacyPage = await legacyContext.newPage(); await legacyPage.goto(baseURL);
+  await legacyPage.getByRole('button', { name: '帳戶', exact: true }).click();
+  await legacyPage.getByRole('button').filter({ hasText: 'Favorites' }).click();
+  await legacyPage.getByText('舊紀錄', { exact: true }).click();
+  await legacyPage.getByLabel('CLS 分數 73，等級 B', { exact: true }).waitFor();
+  await legacyContext.close();
 
   const deletionContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(deletionContext);
   const remoteVisit = { id: 'offline-delete', name: 'Remote visit', streetName: '永康街', district: '大安區', city: '臺北市', coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 80, grade: 'A', scores: {}, timestamp: Date.now(), syncStatus: 'synced' };
@@ -204,7 +252,7 @@ try {
   assert.deepEqual(await deletionPage.evaluate(() => JSON.parse(localStorage.getItem('cls_pending_deletions') || '[]')), ['offline-delete']);
   await deletionContext.close();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
-  console.log('Walk UI checks passed: mobile/desktop layout, GPS gates, feelings/favorites, photo location, CLS backfill, reload, quota failure, denied permission, shortcut entry and watcher cleanup.');
+  console.log('Walk UI checks passed: mobile/desktop layout, GPS gates, feelings/favorites, photo location, CLS backfill, reload, quota failure, denied permission, automatic CLS retry, legacy CLS display, separate field mode, keyboard recording, shortcut entry and watcher cleanup.');
 } catch (error) {
   console.error('Browser errors:', errors);
   for (const context of browser?.contexts() || []) {

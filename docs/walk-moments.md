@@ -2,7 +2,7 @@
 
 ## User flow
 
-Open the footprints button beside the account menu. The search/toolbar row retains its original dimensions. Wait for GPS, verify the map position, then tap **位置正確，開始**. There is no questionnaire.
+Open **喜歡／拍照** beside the account menu (visible on mobile and desktop), or use **開始實勘** from the CLS panel. The CLS read view and field-recording mode are separate. Field mode hides the map toolbars and CLS cards, reserves unobstructed map space, and shows only location and recording controls. Optional structured observations remain under **詳細環境觀察** and use the confirmed GPS location. The search/toolbar row retains its original dimensions. Wait for GPS, verify the map position, then tap **位置正確，開始**. There is no questionnaire.
 
 - **喜歡這裡** records a positive feeling and adds that point to favorites.
 - **不喜歡** records a negative feeling without adding a favorite or removing an earlier one.
@@ -11,6 +11,14 @@ Open the footprints button beside the account menu. The search/toolbar row retai
 The location must be no older than 20 seconds and report accuracy within 50 meters. Moving over 35 meters from the confirmed location or leaving the page requires another confirmation. These thresholds are product defaults, not a guarantee that GPS identifies the correct street. GPS denial, stale fixes, storage failures and unsupported/oversized images have explicit failure states. There is no automatic recording from a URL, an orientation gesture or a GPS callback.
 
 Records are saved to localStorage and photos to IndexedDB before success is shown. Synchronization runs in the background. `已存於此裝置，等待同步` means there is not yet a confirmed server copy; clearing browser storage can remove unsynced records. Reconnect/focus resumes retries while the app is open. This is not an offline map or a background iOS app.
+
+## Keyboard shortcuts
+
+After GPS confirmation: **1** records a positive feeling, **2** records a negative feeling, **C** opens camera capture. These share the same GPS gates and save path as the buttons; no extra Save action is needed. Key repeats, modifier combinations, text inputs and the shortcut-setup panel do not trigger recording. iPhone hardware shortcuts open the field mode URL; browser permission/camera confirmation still apply.
+
+## CLS loading recovery
+
+A pending HTTP 202 no longer leaves the map score permanently blank. The UI distinguishes loading, pending data and request/database errors, provides a retry button, and rechecks persisted data every 30 seconds while visible/online, plus on resume/reconnect. Assessment requests time out after 20 seconds; reverse-geocoding has a 5-second timeout so an unavailable address service cannot block CLS indefinitely. This does not run external refresh jobs or fabricate a missing score. Saved historical totals render even for older records without a full assessment snapshot.
 
 ## iPhone shortcut
 

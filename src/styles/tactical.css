@@ -133,3 +133,31 @@ input, textarea { user-select: text; }
 .layer-popover button[role="switch"][aria-checked="true"] > div { background: #d4f971; color: #17200e; }
 .layer-popover { max-height: calc(100dvh - 112px); overflow-y: auto; overscroll-behavior: contain; }
 .tactical-controls > .fixed > div { max-height: calc(100dvh - 32px); overflow-y: auto; }
+/* Keep quick field recording explicit at every breakpoint. CLS is a separate read view. */
+.utility-bar .mobile-walk { display: flex; width: auto; min-width: 114px; padding: 0 12px; gap: 6px; font-size: 12px; font-weight: 700; }
+.cls-read-status { position: absolute; top: max(76px,calc(env(safe-area-inset-top) + 64px)); left: 12px; right: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; pointer-events: auto; color: #c5d0df; }
+.cls-read-status strong { font-size: 12px; }
+.cls-read-status p { font-size: 11px; line-height: 1.6; margin-top: 4px; }
+.cls-read-status button { min-width: 44px; height: 44px; margin-left: auto; display: grid; place-items: center; background: #283442; border-radius: 12px; font-size: 12px; }
+.walk-panel { border-color: rgba(212,249,113,.16); }
+@media (min-width: 1024px) {
+  .utility-bar { width: 410px; }
+  .search-toolbar { width: calc(100% - 570px); }
+  .cls-read-status { left: auto; right: 20px; top: 84px; width: 410px; }
+  .walk-panel { width: 480px; }
+}
+@media (max-width: 419px) { .utility-bar > div:first-child { display: none; } }
+@media (pointer: coarse) { .walk-keyboard-help { display: none; } }
+
+/* Immersive field mode reserves visible map space; the confirmed pin is never behind the controls. */
+#app-root[data-walk-mode="true"] #leaflet-apple-map { height: 35%; }
+#app-root[data-walk-mode="true"] .walk-panel { max-height: calc(65dvh - 12px); }
+@media (min-width: 1024px) {
+  #app-root[data-walk-mode="true"] #leaflet-apple-map { height: 100%; width: calc(100% - 520px); }
+  #app-root[data-walk-mode="true"] .walk-panel { left: auto; right: 20px; top: 20px; bottom: 20px; translate: none; max-height: calc(100dvh - 40px); }
+}
+
+.walk-panel[data-ready="true"] > header { margin-bottom: 8px; }
+.walk-panel[data-ready="true"] .walk-location { padding: 10px; margin-bottom: 10px; }
+.walk-panel[data-ready="true"] .walk-district, .walk-panel[data-ready="true"] .walk-coordinates { display: none; }
+@media (max-width: 1023px) { .walk-panel[data-ready="true"] .walk-feelings button { min-height: 80px; } }

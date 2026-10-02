@@ -31,6 +31,9 @@ interface FloatingControlsProps {
   district: string;
   city: string;
   assessment?: StreetAssessmentResponse | null;
+  isLoadingScore: boolean;
+  scoreStatus: string;
+  onRetryScore: () => void;
   clsScore: number | null;
   grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   isLocatingGPS: boolean;
@@ -84,6 +87,7 @@ export function FloatingControls({
   district,
   city,
   clsScore,
+  isLoadingScore, scoreStatus, onRetryScore,
   assessment,
   grade,
   isLocatingGPS,
@@ -264,12 +268,16 @@ export function FloatingControls({
         <div className="dock-brand" title="StreetLens"><span>SL</span><i /></div>
         <div className="dock-divider" />
         <button type="button" onClick={onOpenSheet} aria-label="街道評估" title="街道評估"><Compass size={21} /></button>
-        <button type="button" onClick={onOpenWalk} aria-label="步行感受" title="步行感受" className="hud-primary"><Footprints size={21} /></button>
+        <button type="button" onClick={onOpenWalk} aria-label="實勘模式" title="實勘模式" className="hud-primary"><Footprints size={21} /></button>
         <button type="button" onClick={onOpenSaved} aria-label="已儲存街道" title="已儲存街道"><Star size={21} /></button>
         <div className="dock-spacer" />
         <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
       </nav>
       <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenSheet} />
+      {clsScore == null && !isSheetOpen && <section className="cls-read-status hud-card" aria-label="CLS 載入狀態">
+        <div role="status"><strong>{isLoadingScore ? '正在讀取 CLS…' : 'CLS 尚未就緒'}</strong><p>{isLoadingScore ? '正在查詢此地點的已儲存資料。' : scoreStatus}</p></div>
+        <button type="button" onClick={onRetryScore} disabled={isLoadingScore} aria-label="重試 CLS">{isLoadingScore ? <Loader2 className="w-4 h-4 animate-spin" /> : '重試'}</button>
+      </section>}
       {/* TOP FLOATING ROW */}
       <div className="utility-bar flex items-start justify-between gap-2 pointer-events-auto">
         {/* Top-Left Weather Pill (Apple Maps style: ☀️ 29°) */}
@@ -353,7 +361,7 @@ export function FloatingControls({
                         : 'text-slate-300'
               }`}
             >
-              {clsScore == null ? '—' : clsScore.toFixed(0)}
+              {clsScore == null ? (isLoadingScore ? '載入中' : '待補') : clsScore.toFixed(0)}
             </span>
             {grade && (
               <span className="text-[10px] font-bold text-slate-400 border-l border-white/[0.08] pl-2">
@@ -364,8 +372,8 @@ export function FloatingControls({
         </div>
         {/* Quick walk stays outside the bottom search row so mobile search keeps its width. */}
         <div className="relative flex items-center gap-2">
-          <button type="button" onClick={onOpenWalk} className="mobile-walk hud-primary w-10 h-10 shrink-0 rounded-full text-white shadow-lg border border-white/[0.08] flex items-center justify-center active:scale-95" title="步行感受" aria-label="步行感受">
-            <Footprints className="w-5 h-5" />
+          <button type="button" onClick={onOpenWalk} className="mobile-walk hud-primary h-10 shrink-0 rounded-full text-white shadow-lg border border-white/[0.08] flex items-center justify-center active:scale-95" title="實勘：喜歡／拍照" aria-label="步行感受">
+            <Footprints className="w-5 h-5" /><span>喜歡／拍照</span>
           </button>
           <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1A212B]/90 backdrop-blur-md border border-white/[0.08] shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#26313E] transition-all" title="帳戶" aria-label="帳戶" aria-expanded={showProfileMenu}>
             <UserCircle className="w-5 h-5" />
@@ -432,7 +440,7 @@ export function FloatingControls({
                 </div>
               )}
             </div>
-            <button type="button" onClick={onOpenSheet} className="assessment-entry w-12 h-12 shrink-0 rounded-2xl bg-white/10 text-white shadow-2xl border border-white/[0.08] flex items-center justify-center transition-all active:scale-90" title="實勘" aria-label="實勘">
+            <button type="button" onClick={onOpenSheet} className="assessment-entry w-12 h-12 shrink-0 rounded-2xl bg-white/10 text-white shadow-2xl border border-white/[0.08] flex items-center justify-center transition-all active:scale-90" title="CLS 評估" aria-label="CLS 評估">
               <Compass className="w-5 h-5" />
             </button>
           </div>

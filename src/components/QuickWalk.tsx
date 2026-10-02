@@ -7,12 +7,13 @@ import { canRecordWalk, createWalkMoment, distanceMeters, usableFix, walkShortcu
 
 interface Props {
   source: 'walk' | 'shortcut';
+  onOpenDetailed: (location: LocationCoord) => void;
   onPreview: (coords: LocationCoord) => void;
   onSave: (saved: SavedLocation, favorite: boolean) => void;
   onClose: () => void;
 }
 
-export function QuickWalk({ source, onPreview, onSave, onClose }: Props) {
+export function QuickWalk({ onOpenDetailed, source, onPreview, onSave, onClose }: Props) {
   const [fix, setFix] = useState<WalkFix | null>(null);
   const [anchor, setAnchor] = useState<WalkFix | null>(null);
   const [confirmed, setConfirmed] = useState<WalkFix | null>(null);
@@ -123,45 +124,59 @@ export function QuickWalk({ source, onPreview, onSave, onClose }: Props) {
     } finally { lock.current = false; setBusy(false); }
   }
 
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || target?.closest('input, textarea, select, [contenteditable="true"]') || !ready || busy || showShortcut) return;
+      if (event.key === '1') { event.preventDefault(); saveFeeling('good'); }
+      if (event.key === '2') { event.preventDefault(); saveFeeling('bad'); }
+      if (event.key.toLowerCase() === 'c') { event.preventDefault(); openCamera(); }
+    };
+    document.addEventListener('keydown', shortcut);
+    return () => document.removeEventListener('keydown', shortcut);
+  });
+
   return (
-    <section ref={panelRef} aria-label="步行感受" className="walk-panel absolute z-[650] bottom-3 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[420px] max-h-[85dvh] overflow-y-auto rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]">
+    <section ref={panelRef} data-ready={ready} aria-label="步行感受" className="walk-panel absolute z-[650] bottom-3 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[420px] max-h-[85dvh] overflow-y-auto rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]">
       <header className="flex items-center justify-between gap-3 mb-4">
-        <h1 className="flex items-center gap-2 text-lg font-bold"><Footprints className="w-5 h-5 text-slate-300" />步行感受</h1>
+        <h1 className="flex items-center gap-2 text-lg font-bold"><Footprints className="w-5 h-5 text-slate-300" />實勘模式</h1>
         <button type="button" onClick={onClose} disabled={busy} title="結束步行" aria-label="結束步行" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-40"><X className="w-5 h-5" /></button>
       </header>
 
-      <div className="rounded-2xl bg-white/5 border border-white/[0.08] p-3 mb-4">
+      <div className="walk-location rounded-2xl bg-white/5 border border-white/[0.08] p-3 mb-4">
         <div className="font-semibold text-base break-words">{locationName}</div>
-        <div className="mt-1 text-sm text-slate-400">{address.district} {address.city}</div>
+        <div className="walk-district mt-1 text-sm text-slate-400">{address.district} {address.city}</div>
         <div className="mt-2 text-sm text-slate-300 flex gap-2 items-center">
           {ready ? <Check className="w-4 h-4 text-emerald-300 shrink-0" /> : <LocateFixed className="w-4 h-4 text-slate-300 shrink-0" />}
           {gpsError || (fix ? `定位誤差 ±${Math.round(fix.accuracy)} m${fresh ? (ready ? ' · 已確認' : ' · 請確認地圖位置') : ' · 等待更新定位'}` : '正在取得 GPS 位置…')}
         </div>
-        {fix && <div className="mt-1 text-xs text-slate-500 tabular-nums">{fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}</div>}
+        {fix && <div className="walk-coordinates mt-1 text-xs text-slate-500 tabular-nums">{fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}</div>}
         {!ready && <div className="mt-3 flex gap-2">
           <button type="button" disabled={!fresh || !address.streetName} onClick={() => { setConfirmed(fix); setConfirmedAt(Date.now()); setError(''); }} className="min-h-11 flex-1 rounded-xl hud-primary font-semibold text-sm disabled:opacity-40">位置正確，開始</button>
           <button type="button" onClick={() => { setFix(null); setConfirmed(null); setLocateAttempt(value => value + 1); }} title="重新定位" aria-label="重新定位" className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/10"><LocateFixed className="w-5 h-5" /></button>
         </div>}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('good')} className="min-h-24 rounded-2xl border border-emerald-300/30 bg-emerald-400/15 text-emerald-100 flex flex-col items-center justify-center gap-2 font-semibold text-base active:scale-[0.98] disabled:opacity-35" title="記下喜歡並加入最愛"><Heart className="w-7 h-7" />喜歡這裡</button>
-        <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('bad')} className="min-h-24 rounded-2xl border border-rose-300/25 bg-rose-400/10 text-rose-100 flex flex-col items-center justify-center gap-2 font-semibold text-base active:scale-[0.98] disabled:opacity-35" title="記下不喜歡"><ThumbsDown className="w-7 h-7" />不喜歡</button>
+      <div className="walk-feelings grid grid-cols-2 gap-3">
+        <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('good')} className="min-h-24 rounded-2xl border border-emerald-300/30 bg-emerald-400/15 text-emerald-100 flex flex-col items-center justify-center gap-2 font-semibold text-base active:scale-[0.98] disabled:opacity-35" aria-keyshortcuts="1" title="喜歡並自動儲存（1）"><Heart className="w-7 h-7" />喜歡這裡</button>
+        <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('bad')} className="min-h-24 rounded-2xl border border-rose-300/25 bg-rose-400/10 text-rose-100 flex flex-col items-center justify-center gap-2 font-semibold text-base active:scale-[0.98] disabled:opacity-35" aria-keyshortcuts="2" title="不喜歡並自動儲存（2）"><ThumbsDown className="w-7 h-7" />不喜歡</button>
       </div>
-      <button type="button" disabled={!ready || busy} onClick={openCamera} className="w-full min-h-12 mt-3 rounded-xl bg-white/10 flex items-center justify-center gap-2 text-sm font-semibold disabled:opacity-35" title="拍照留存">
+      <button type="button" disabled={!ready || busy} onClick={openCamera} className="w-full min-h-12 mt-3 rounded-xl bg-white/10 flex items-center justify-center gap-2 text-sm font-semibold disabled:opacity-35" aria-keyshortcuts="C" title="拍照並自動儲存（C）">
         {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}{busy ? '儲存照片中…' : '拍照留存'}
       </button>
       <input ref={photoInput} aria-label="步行照片" className="hidden" type="file" accept="image/*" capture="environment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void savePhoto(file); }} />
-      <p className="text-sm text-slate-400 mt-3">喜歡會加入最愛；感受與 CLS 分開顯示。</p>
+      <p className="text-sm text-slate-400 mt-3">一按即儲存位置與感受；拍照完成後自動儲存。喜歡也會加入最愛。</p>
       {notice && <p role="status" className="mt-3 rounded-xl bg-emerald-400/10 p-3 text-sm text-emerald-200">{notice}</p>}
       {error && <p role="alert" className="mt-3 rounded-xl bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>}
 
+      <p className="walk-keyboard-help text-xs text-slate-400 mt-2">鍵盤：1 喜歡 · 2 不喜歡 · C 拍照 · Esc 離開</p>
       <button type="button" onClick={() => setShowShortcut(value => !value)} aria-expanded={showShortcut} className="mt-3 min-h-11 flex items-center gap-2 text-sm text-slate-300"><Smartphone className="w-4 h-4" />iPhone 快捷入口</button>
       {showShortcut && <div className="text-sm text-slate-300 space-y-3 rounded-xl bg-white/5 p-3">
         <p>在「捷徑」新增「打開 URL」，貼上下方網址，再將捷徑指定給動作按鈕或「輔助使用 → 觸控 → 背面輕點」。</p>
         <div className="flex gap-2"><input readOnly aria-label="步行模式網址" value={shortcutUrl} onFocus={event => event.target.select()} className="w-full min-w-0 bg-black/20 rounded-lg px-2 py-2 text-xs select-text" /><button type="button" title="複製網址" aria-label="複製網址" onClick={() => { void navigator.clipboard?.writeText(shortcutUrl).then(() => setNotice('已複製步行模式網址。')).catch(() => setError('請選取並複製上方網址。')); }} className="w-11 shrink-0 rounded-lg bg-white/10 flex items-center justify-center"><Copy className="w-4 h-4" /></button></div>
         <p>開啟後確認位置，再點一下感受或拍照。相機需手動啟動。</p>
       </div>}
+      <button type="button" onClick={() => { if (ready && fix) onOpenDetailed(fix); }} disabled={!ready || busy} className="min-h-11 mt-2 text-xs text-slate-400">詳細環境觀察</button>
     </section>
   );
 }

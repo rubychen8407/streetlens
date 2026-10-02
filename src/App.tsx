@@ -77,7 +77,7 @@ export default function App() {
 
   // Bottom Sheet Visibility
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<'assessment' | 'saved' | 'settings'>('assessment');
+  const [workspaceView, setWorkspaceView] = useState<'assessment' | 'field' | 'saved' | 'settings'>('assessment');
   const [favoriteLocations, setFavoriteLocations] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]'); } catch { return []; }
   });
@@ -108,6 +108,8 @@ export default function App() {
   // Source-backed assessment state. Scores are returned by the backend only.
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
   const assessmentRequestRef = useRef(0);
+  const assessmentAbortRef = useRef<AbortController | null>(null);
+  const [assessmentReadState, setAssessmentReadState] = useState<'loading' | 'pending' | 'error' | 'ready'>('loading');
   const addressRequestRef = useRef(0);
   const [fieldAdjustment, setFieldAdjustment] = useState<FieldObservationAdjustment | null>(null);
   const [isPreviewingFieldAdjustment, setIsPreviewingFieldAdjustment] = useState(false);
@@ -134,7 +136,8 @@ export default function App() {
   });
 
   // Never calculate scores in the browser. The backend is the single source of truth.
-  const clsScore = fieldAdjustment !== null ? fieldAdjustment.adjustedCls : assessment?.scores.overall ?? null;
+  const selectedSavedCls = savedLocations.find(item => item.id === activeSavedAssessmentId)?.clsScore ?? null;
+  const clsScore = fieldAdjustment?.adjustedCls ?? assessment?.scores.overall ?? selectedSavedCls;
   const baselineClsScore = fieldAdjustment !== null ? fieldAdjustment.baselineCls : assessment?.scores.overall ?? null;
   const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
 
@@ -260,6 +263,10 @@ export default function App() {
   // Read persisted assessment data. This request never fetches external sources.
   const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
     const requestId = ++assessmentRequestRef.current;
+    assessmentAbortRef.current?.abort();
+    const controller = new AbortController(); assessmentAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    setAssessmentReadState('loading');
     if (resetDraft) {
       ++addressRequestRef.current;
       setActiveSavedAssessmentId(null);
@@ -284,7 +291,7 @@ export default function App() {
     setIsLoadingBaseline(true);
     try {
       const url = '/api/assessment?lat=' + coord.lat + '&lng=' + coord.lng + '&district=' + encodeURIComponent(targetDist) + '&city=' + encodeURIComponent(targetCity) + '&streetName=' + encodeURIComponent(targetStreet);
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: controller.signal });
       if (requestId !== assessmentRequestRef.current) return;
       if (res.status === 202) {
         const pending = await res.json().catch(() => ({}));
@@ -292,7 +299,8 @@ export default function App() {
         setAssessment(null);
         setFieldAdjustment(null);
         setPendingAssessmentSources(Array.isArray(pending.missingSources) ? pending.missingSources : []);
-        setBaselineSummary('此座標尚無已儲存的外部資料快照；等待背景資料更新。');
+        setAssessmentReadState('pending');
+        setBaselineSummary('此地點資料正在等待背景更新，取得後會自動顯示 CLS。');
         void Promise.all([
           fetchWeather(coord),
           fetchNearbyPois(coord, targetDist, targetCity, targetStreet),
@@ -307,7 +315,8 @@ export default function App() {
           setAssessment(null);
           setFieldAdjustment(null);
           setPendingAssessmentSources([]);
-          setBaselineSummary('PostgreSQL 尚未連線；請先設定 Neon DATABASE_URL。');
+          setAssessmentReadState('error');
+          setBaselineSummary('評分服務的資料庫尚未就緒，暫時無法讀取 CLS。');
           return;
         }
         throw new Error('assessment request failed: ' + res.status);
@@ -315,6 +324,7 @@ export default function App() {
       const data: StreetAssessmentResponse = await res.json();
       if (requestId !== assessmentRequestRef.current) return;
       setAssessment(data);
+      setAssessmentReadState(data.scores.overall == null ? 'pending' : 'ready');
       setFieldAdjustment(null);
       setPendingAssessmentSources([]);
       setBaselineSummary(data.dataSources.length ? '資料來源：' + data.dataSources.join('、') : '資料來源資訊不足');
@@ -333,14 +343,27 @@ export default function App() {
         fetchNearbyPois(coord, targetDist, targetCity, targetStreet),
         fetchStreetNetwork(coord, targetStreet),
       ]);
-    } catch (err) { if (requestId !== assessmentRequestRef.current) return; console.warn('Assessment load error', err); setAssessment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
-    finally { if (requestId === assessmentRequestRef.current) setIsLoadingBaseline(false); }
+    } catch (err) { if (requestId !== assessmentRequestRef.current) return; console.warn('Assessment load error', err); setAssessmentReadState('error'); setAssessment(null); setFieldAdjustment(null); setBaselineSummary('目前無法取得已儲存的評估資料。'); }
+    finally { window.clearTimeout(timeout); if (requestId === assessmentRequestRef.current) setIsLoadingBaseline(false); }
   }, [district, city, streetName, clearEvidenceDrafts]);
 
   // Auto-fetch baseline data
   const handleAutoFetchBaseline = useCallback(() => {
     fetchLocationData(targetLocation, district, city, streetName);
   }, [fetchLocationData, targetLocation, district, city, streetName]);
+
+  // Retry only persisted reads; never trigger source acquisition from browsing.
+  const retryAssessmentRef = useRef(handleAutoFetchBaseline);
+  retryAssessmentRef.current = handleAutoFetchBaseline;
+  useEffect(() => {
+    if (activeSavedAssessmentId || !['pending', 'error'].includes(assessmentReadState)) return;
+    const retry = () => { if (!document.hidden && navigator.onLine) retryAssessmentRef.current(); };
+    const timer = window.setInterval(retry, 30000);
+    window.addEventListener('online', retry); window.addEventListener('focus', retry);
+    document.addEventListener('visibilitychange', retry);
+    return () => { window.clearInterval(timer); window.removeEventListener('online', retry); window.removeEventListener('focus', retry); document.removeEventListener('visibilitychange', retry); };
+  }, [assessmentReadState, activeSavedAssessmentId]);
+  useEffect(() => () => assessmentAbortRef.current?.abort(), []);
 
   // Preview the bounded field observation adjustment whenever ratings change.
   // The backend remains the source of truth; the browser only renders the response.
@@ -376,11 +399,14 @@ export default function App() {
     const requestId = ++addressRequestRef.current;
     ++assessmentRequestRef.current;
     const fallbackName = `實勘位置 (${coord.lat.toFixed(5)}, ${coord.lng.toFixed(5)})`;
-    setAssessment(null); setFieldAdjustment(null);
+    setAssessment(null); setFieldAdjustment(null); setActiveSavedAssessmentId(null);
     setStreetName(fallbackName); setDistrict(''); setCity('');
     let resolvedRoad = fallbackName, resolvedDistrict = '', resolvedCity = '';
+    setIsLoadingBaseline(true); setAssessmentReadState('loading');
+    const addressController = new AbortController();
+    const addressTimeout = window.setTimeout(() => addressController.abort(), 5000);
     try {
-      const res = await fetch(`/api/reverse-geocode?lat=${coord.lat}&lon=${coord.lng}`);
+      const res = await fetch(`/api/reverse-geocode?lat=${coord.lat}&lon=${coord.lng}`, { signal: addressController.signal });
       if (res.ok) {
         const data = await res.json();
         if (data?.address) {
@@ -390,6 +416,7 @@ export default function App() {
         }
       }
     } catch (err) { console.warn('Reverse geocode error', err); }
+    finally { window.clearTimeout(addressTimeout); }
     if (requestId !== addressRequestRef.current) return;
     setStreetName(resolvedRoad); setDistrict(resolvedDistrict); setCity(resolvedCity);
     void fetchLocationData(coord, resolvedDistrict, resolvedCity, resolvedRoad, true);
@@ -478,6 +505,9 @@ export default function App() {
       setSavedEvidenceUrls(entries);
     })();;
 
+    setIsLoadingBaseline(false);
+    setAssessmentReadState(saved.clsScore == null ? 'pending' : 'ready');
+    setBaselineSummary(saved.clsScore == null ? '已儲存地點的 CLS 待補，取得資料後會自動更新。' : '顯示已儲存的歷史 CLS。');
     setAssessment(saved.assessmentSnapshot || null);
     setFieldAdjustment(
       saved.baselineClsScore != null || saved.fieldAdjustmentDetails
@@ -853,7 +883,7 @@ export default function App() {
   const activePoiMarkers = nearbyPois;
 
   return (
-    <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root" data-map-theme={mapTheme}>
+    <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root" data-map-theme={mapTheme} data-walk-mode={isWalkOpen}>
       {/* 1. Fullscreen Edge-to-Edge Map (Apple Maps Aesthetic) */}
       <ScoutMap
         currentLocation={currentLocation}
@@ -909,6 +939,9 @@ export default function App() {
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
       {!isWalkOpen && <FloatingControls
         assessment={assessment}
+        isLoadingScore={isLoadingBaseline}
+        scoreStatus={baselineSummary}
+        onRetryScore={() => activeSavedAssessmentId ? retrySavedScores() : handleAutoFetchBaseline()}
         currentStreetName={streetName}
         district={district}
         city={city}
@@ -943,10 +976,11 @@ export default function App() {
         weatherData={weatherData}
       />}
 
-      {isWalkOpen && <QuickWalk source={isWalkShortcut(window.location.search) ? 'shortcut' : 'walk'} onPreview={setWalkLocation} onSave={handleQuickSave} onClose={() => { setIsWalkOpen(false); const url = new URL(window.location.href); url.searchParams.delete('mode'); window.history.replaceState(null, '', url); }} />}
+      {isWalkOpen && <QuickWalk onOpenDetailed={coord => { setTargetLocation(coord); void fetchAddressFromCoords(coord); setIsWalkOpen(false); setWorkspaceView('field'); setIsSheetOpen(true); }} source={isWalkShortcut(window.location.search) ? 'shortcut' : 'walk'} onPreview={setWalkLocation} onSave={handleQuickSave} onClose={() => { setIsWalkOpen(false); const url = new URL(window.location.href); url.searchParams.delete('mode'); window.history.replaceState(null, '', url); }} />}
       {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{saveError || savedStorageError}</div>}
 
       <AssessmentWorkspace
+        onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
         isOpen={isSheetOpen && !isWalkOpen}
         onClose={() => setIsSheetOpen(false)}
         view={workspaceView}

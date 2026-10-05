@@ -40,7 +40,7 @@ interface FloatingControlsProps {
   onLocateMe: () => void;
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
   onOpenSheet: () => void;
-  onOpenWalk: () => void;
+  onOpenField: () => void;
   isSheetOpen: boolean;
   onOpenSaved: () => void;
   onOpenSettings: () => void;
@@ -94,7 +94,7 @@ export function FloatingControls({
   onLocateMe,
   onSelectCoordinate,
   onOpenSheet,
-  onOpenWalk,
+  onOpenField,
   isSheetOpen,
   activeLayers,
   onToggleLayer,
@@ -268,7 +268,7 @@ export function FloatingControls({
         <div className="dock-brand" title="StreetLens"><span>SL</span><i /></div>
         <div className="dock-divider" />
         <button type="button" onClick={onOpenSheet} aria-label="街道評估" title="街道評估"><Compass size={21} /></button>
-        <button type="button" onClick={onOpenWalk} aria-label="實勘模式" title="實勘模式" className="hud-primary"><Footprints size={21} /></button>
+        <button type="button" onClick={onOpenField} aria-label="實勘模式" title="實勘模式" className="hud-primary"><Footprints size={21} /></button>
         <button type="button" onClick={onOpenSaved} aria-label="已儲存街道" title="已儲存街道"><Star size={21} /></button>
         <div className="dock-spacer" />
         <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
@@ -370,10 +370,10 @@ export function FloatingControls({
             )}
           </div>
         </div>
-        {/* Quick walk stays outside the bottom search row so mobile search keeps its width. */}
+        {/* Environment observations stay outside the search row so mobile search keeps its width. */}
         <div className="relative flex items-center gap-2">
-          <button type="button" onClick={onOpenWalk} className="mobile-walk hud-primary h-10 shrink-0 rounded-full text-white shadow-lg border border-white/[0.08] flex items-center justify-center active:scale-95" title="實勘：喜歡／拍照" aria-label="步行感受">
-            <Footprints className="w-5 h-5" /><span>喜歡／拍照</span>
+          <button type="button" onClick={onOpenField} className="mobile-field hud-primary h-10 shrink-0 rounded-full text-white shadow-lg border border-white/[0.08] flex items-center justify-center active:scale-95" title="環境觀察" aria-label="環境觀察">
+            <Footprints className="w-5 h-5" /><span>環境觀察</span>
           </button>
           <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1A212B]/90 backdrop-blur-md border border-white/[0.08] shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#26313E] transition-all" title="帳戶" aria-label="帳戶" aria-expanded={showProfileMenu}>
             <UserCircle className="w-5 h-5" />
@@ -886,3 +886,4 @@ export function FloatingControls({
     </div>
   );
 }
+

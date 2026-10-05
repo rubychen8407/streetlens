@@ -9,7 +9,7 @@ type View = 'assessment' | 'field' | 'saved' | 'settings';
 
 interface AssessmentWorkspaceProps {
   view: View;
-  onOpenWalk: () => void;
+  onOpenField: () => void;
   onViewChange: (view: View) => void;
   isOpen: boolean;
   onClose: () => void;
@@ -71,7 +71,7 @@ function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
 }
 
 export function AssessmentWorkspace({
-  onOpenWalk, view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
+  onOpenField, view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
@@ -799,7 +799,7 @@ export function AssessmentWorkspace({
         )}
       </div>
 
-      {view === 'assessment' && <footer className="assessment-footer shrink-0 p-4 border-t border-white/10"><button type="button" className="hud-primary w-full rounded-xl min-h-11 text-sm font-semibold" onClick={onOpenWalk}>開始實勘 · 喜歡／拍照</button></footer>}
+      {view === 'assessment' && <footer className="assessment-footer shrink-0 p-4 border-t border-white/10"><button type="button" className="hud-primary w-full rounded-xl min-h-11 text-sm font-semibold" onClick={onOpenField}>開始實勘</button></footer>}
       {view === 'field' && (
         <footer className="assessment-footer shrink-0 p-4 border-t border-white/[0.08] bg-[#141A23]">
           {step < 3 ? (
@@ -819,3 +819,4 @@ export function AssessmentWorkspace({
     </aside>
   );
 }
+

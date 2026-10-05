@@ -29,10 +29,8 @@ import {
 import { ScoutMap } from './components/ScoutMap';
 import { FloatingControls } from './components/FloatingControls';
 import { AssessmentWorkspace } from './components/AssessmentWorkspace';
-import { QuickWalk } from './components/QuickWalk';
 import { useSavedStreets } from './hooks/useSavedStreets';
 import { createSavedStreet, favoriteKey, FAVORITES_KEY } from './utils/savedLocations';
-import { isWalkShortcut } from './utils/walkMoments';
 import {
   generateSurroundingStreetSegments,
 } from './utils/scoreCalculator';
@@ -84,8 +82,6 @@ export default function App() {
   const isFavorite = favoriteLocations.includes(favoriteKey(targetLocation, streetName));
   const [workspaceId] = useState(() => getWorkspaceId());
   const { savedLocations, setSavedLocations, retrySavedScores, savedStorageError } = useSavedStreets(workspaceId);
-  const [isWalkOpen, setIsWalkOpen] = useState(() => isWalkShortcut(window.location.search));
-  const [walkLocation, setWalkLocation] = useState<LocationCoord | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeSavedAssessmentId, setActiveSavedAssessmentId] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<AssessmentExplanation | null>(null);
@@ -819,11 +815,11 @@ export default function App() {
     }
   }, [activeSavedAssessmentId, workspaceId]);
 
-  const handleQuickSave = useCallback((entry: SavedLocation, favorite: boolean) => {
+  const handleSaveFavorite = useCallback((entry: SavedLocation) => {
     const previous = localStorage.getItem(FAVORITES_KEY) || '[]';
     const keys: string[] = JSON.parse(previous);
     const key = favoriteKey(entry.coords, entry.streetName);
-    const nextKeys = favorite && !keys.includes(key) ? [...keys, key] : keys;
+    const nextKeys = !keys.includes(key) ? [...keys, key] : keys;
     try {
       localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextKeys));
       setSavedLocations(current => [entry, ...current]);
@@ -840,13 +836,13 @@ export default function App() {
       const keys: string[] = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
       const next = keys.includes(key) ? keys.filter(item => item !== key) : [...keys, key];
       if (!keys.includes(key) && !savedLocations.some(item => favoriteKey(item.coords, item.streetName) === key)) {
-        handleQuickSave(createSavedStreet({ coords: targetLocation, streetName, district, city }, assessment), true);
+        handleSaveFavorite(createSavedStreet({ coords: targetLocation, streetName, district, city }, assessment));
       } else {
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); setFavoriteLocations(next);
       }
       setSaveError(null);
     } catch { setSaveError('最愛尚未更新，請確認瀏覽器儲存空間。'); }
-  }, [targetLocation, streetName, district, city, assessment, savedLocations, handleQuickSave]);
+  }, [targetLocation, streetName, district, city, assessment, savedLocations, handleSaveFavorite]);
 
   const handleDeleteSaved = useCallback(async (id: string) => {
     const saved = savedLocations.find(item => item.id === id);
@@ -883,13 +879,12 @@ export default function App() {
   const activePoiMarkers = nearbyPois;
 
   return (
-    <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root" data-map-theme={mapTheme} data-walk-mode={isWalkOpen}>
+    <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root" data-map-theme={mapTheme}>
       {/* 1. Fullscreen Edge-to-Edge Map (Apple Maps Aesthetic) */}
       <ScoutMap
         currentLocation={currentLocation}
-        targetLocation={isWalkOpen ? (walkLocation || currentLocation) : targetLocation}
+        targetLocation={targetLocation}
         onSelectLocation={(coord, customName) => {
-          if (isWalkOpen) return;
           setTargetLocation(coord);
           setActiveSavedAssessmentId(null);
           setAiExplanation(null);
@@ -937,7 +932,7 @@ export default function App() {
       )}
 
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
-      {!isWalkOpen && <FloatingControls
+      <FloatingControls
         assessment={assessment}
         isLoadingScore={isLoadingBaseline}
         scoreStatus={baselineSummary}
@@ -961,7 +956,7 @@ export default function App() {
           if (c) setCity(c);
           fetchLocationData(coord, newDist, newCity, name, true);
         }}
-        onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
+        onOpenField={() => { setWorkspaceView('field'); setIsSheetOpen(true); }}
         onOpenSheet={() => { setWorkspaceView('assessment'); setIsSheetOpen(true); }}
         onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
         onOpenSettings={() => { setWorkspaceView('settings'); setIsSheetOpen(true); }}
@@ -974,14 +969,13 @@ export default function App() {
         targetLocation={targetLocation}
         accuracyRadius={accuracyRadius}
         weatherData={weatherData}
-      />}
+      />
 
-      {isWalkOpen && <QuickWalk onOpenDetailed={coord => { setTargetLocation(coord); void fetchAddressFromCoords(coord); setIsWalkOpen(false); setWorkspaceView('field'); setIsSheetOpen(true); }} source={isWalkShortcut(window.location.search) ? 'shortcut' : 'walk'} onPreview={setWalkLocation} onSave={handleQuickSave} onClose={() => { setIsWalkOpen(false); const url = new URL(window.location.href); url.searchParams.delete('mode'); window.history.replaceState(null, '', url); }} />}
       {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{saveError || savedStorageError}</div>}
 
       <AssessmentWorkspace
-        onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
-        isOpen={isSheetOpen && !isWalkOpen}
+        onOpenField={() => { setWorkspaceView('field'); setIsSheetOpen(true); }}
+        isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
         view={workspaceView}
         onViewChange={setWorkspaceView}

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { calculateAssessment, applyFieldObservationAdjustment } from '../scoring';
 import { backfillSavedScore } from '../savedScoreBackfill';
 import { createSavedStreet, favoriteKey, fillSavedScore, mergeSavedRecords, migrateFavoriteKeys } from '../src/utils/savedLocations';
-import { canRecordWalk, createWalkMoment, isWalkShortcut, normalizeWalkMoment, usableFix, walkShortcutUrl } from '../src/utils/walkMoments';
+import { normalizeWalkMoment } from '../src/utils/walkMoments';
 import { resolveSavedScore } from '../src/utils/savedScoreApi';
 import type { StreetAssessmentResponse } from '../src/types';
 
@@ -17,42 +17,16 @@ const snapshot = (score = 50): StreetAssessmentResponse => ({
   factors: [], poiCount: 0, dataSources: ['test fixture'], generatedAt: '2026-09-25T00:00:00Z',
 });
 
-test('location requires real, recent, accurate GPS and explicit confirmation', () => {
-  assert.equal(usableFix(null, now), false);
-  for (const broken of [{ ...fix, accuracy: 51 }, { ...fix, accuracy: NaN }, { ...fix, timestamp: now - 20_001 }, { ...fix, timestamp: now + 60_000 }, { ...fix, lat: 91 }]) {
-    assert.equal(usableFix(broken, now), false);
-  }
-  assert.equal(usableFix({ ...fix, accuracy: 0 }, now), true);
-  assert.equal(canRecordWalk(fix, null, now), false);
-  assert.equal(canRecordWalk(fix, fix, now), true);
-  assert.equal(canRecordWalk({ ...fix, lat: fix.lat + 0.001 }, fix, now), false);
-});
-
-test('feelings and photos never manufacture CLS or field ratings', () => {
+test('legacy walk metadata survives validation without creating new records', () => {
   for (const feeling of ['good', 'bad', 'photo'] as const) {
-    const record = createWalkMoment(fix, fix, now, feeling, address, 'walk', now);
-    assert.equal(record.clsScore, null);
-    assert.deepEqual(record.observationRatings, {});
-    assert.equal(record.walkMoment?.feeling, feeling);
-    assert.equal(record.walkMoment?.accuracyMeters, 12);
-    assert.deepEqual(record.coords, { lat: fix.lat, lng: fix.lng });
+    const metadata = { feeling, accuracyMeters: 12, positionTimestamp: now, confirmedAt: now, source: 'walk' as const };
+    assert.deepEqual(normalizeWalkMoment(metadata), metadata);
+    assert.deepEqual(normalizeWalkMoment({ ...metadata, source: 'shortcut' }), { ...metadata, source: 'shortcut' });
+    for (const change of [{ feeling: 'great' }, { accuracyMeters: -1 }, { source: 'arbitrary' }, { positionTimestamp: Infinity }]) {
+      assert.throws(() => normalizeWalkMoment({ ...metadata, ...change }));
+    }
   }
-  assert.throws(() => createWalkMoment(fix, null, now, 'good', address, 'walk', now));
-});
-
-test('shortcut URLs only select a mode and preserve the app path', () => {
-  assert.equal(isWalkShortcut('?mode=walk&feeling=good'), true);
-  assert.equal(isWalkShortcut('?feeling=good'), false);
-  assert.equal(walkShortcutUrl('https://example.com/streetlens?token=private#old'), 'https://example.com/streetlens?mode=walk');
-});
-
-test('walk metadata rejects invalid feelings and non-finite accuracy', () => {
-  const record = createWalkMoment(fix, fix, now, 'bad', address, 'shortcut', now);
-  assert.deepEqual(normalizeWalkMoment(record.walkMoment), record.walkMoment);
   assert.equal(normalizeWalkMoment(undefined), undefined);
-  for (const change of [{ feeling: 'great' }, { accuracyMeters: -1 }, { source: 'arbitrary' }, { positionTimestamp: Infinity }]) {
-    assert.throws(() => normalizeWalkMoment({ ...record.walkMoment, ...change }));
-  }
 });
 
 test('saving while another location loads does not attach the previous CLS', () => {
@@ -180,3 +154,4 @@ test('backfill failures roll back and release the connection', async () => {
   await assert.rejects(backfillSavedScore(db.pool, 'workspace', original.id, snapshot()), /write failed/);
   assert.equal(db.queries.at(-1)?.sql, 'ROLLBACK'); assert.equal(db.released(), true);
 });
+

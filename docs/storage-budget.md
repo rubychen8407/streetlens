@@ -19,7 +19,7 @@ Run `npm run db:storage` with the deployed database's `DATABASE_URL` (and its ex
 
 ## Recommended order
 
-1. **Reduce new photo size now.** Quick-walk capture uses a 1280-pixel maximum dimension and JPEG quality 0.72 when browser decoding is available, with a 2 MiB hard client limit. Unsupported decoding can retain a smaller original; dimensions and MIME type remain truthful. Compression is lossy. Existing full-assessment evidence behavior is preserved.
+1. **Measure prepared evidence photo sizes.** The assessment evidence workflow keeps its existing photo preparation and upload limits. Tune compression only after measuring its effect on storage and evidence quality. Preserve existing photo bytes; any recompression requires a separately reviewed migration.
 2. **Move photos to private object storage.** Use authenticated API/proxy or signed URLs; never public permanent photo URLs. Copy existing bytes, verify checksums/reads, switch references, then remove database blobs in a separately reviewed migration. Do not put object-store credentials in browser code. The existing workspace-ID model is not full user authentication; hardening it should accompany broader sharing.
 3. **Remove duplication after checking consumers.** Official citywide imports may be represented both by raw snapshots and spatial rows. Replace duplicated raw feature arrays with a manifest (source/version/hash/count) only after all snapshot consumers have migrated. Nearby Google/OSM scopes should share source entity IDs or a grid cache. This must respect each provider's storage/licensing terms.
 4. **Expire reconstructable caches, not personal history.** Propose 30–90 days for unused exploratory scopes, protect favorites/visits and keep citywide source versions. A miss should schedule refresh and be shown as pending; do not turn it into an invented zero. This is a separate change because it affects coverage and source refresh load.
@@ -36,3 +36,4 @@ Keep a 20–30% operating margin for indexes, update churn and migrations. Check
 - [Neon pg_repack](https://neon.com/docs/extensions/pg_repack)
 
 No production data has been deleted, migrated to object storage, or subjected to a retention policy by this feature branch.
+

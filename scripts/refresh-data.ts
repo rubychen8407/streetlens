@@ -45,6 +45,9 @@ const sourceKeys = [
   "taipei_official_aqi",
   "taipei_fire_stations",
 ];
+// These supplementary feeds can fail independently; the API preserves their
+// last good snapshots while the rest of the refresh continues.
+const optionalSourceKeys = new Set(["taipei_parks", "taipei_official_aqi"]);
 
 async function requestRefresh(sourceKey: string): Promise<Response> {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -135,6 +138,12 @@ for (const sourceKey of sourceKeys) {
 const changed = allSnapshots.filter((item: any) => item.changed).length;
 const skipped = allSnapshots.filter((item: any) => item.skipped).length;
 const errors = allSnapshots.filter((item: any) => item.error).length;
+const blockingErrors = allSnapshots.filter((item: any) =>
+  item.error && !optionalSourceKeys.has(item.sourceKey),
+);
+const degradedSources = [...new Set(allSnapshots
+  .filter((item: any) => item.error && optionalSourceKeys.has(item.sourceKey))
+  .map((item: any) => item.sourceKey))];
 
 console.log(JSON.stringify({
   sourceCount: sourceKeys.length,
@@ -144,9 +153,12 @@ console.log(JSON.stringify({
   changed,
   skipped,
   errors,
+  degradedSources,
 }, null, 2));
 
-if (failedRequests.length > 0 || errors > 0) {
-  console.error("One or more source refreshes failed; existing snapshots were preserved where available.");
+if (failedRequests.length > 0 || blockingErrors.length > 0) {
+  console.error("One or more required source refreshes failed; existing snapshots were preserved where available.");
   process.exitCode = 1;
+} else if (degradedSources.length > 0) {
+  console.warn("Refresh completed with optional sources degraded; their existing snapshots were preserved where available.");
 }

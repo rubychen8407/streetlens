@@ -222,6 +222,8 @@ async function main() {
     ["fireStations", fireStations],
   ] as const;
 
+  // Official AQI is a supplemental cache beside Open-Meteo and can be briefly
+  // malformed upstream; report it without blocking the whole data health check.
   const requiredOfficialSources = new Set([
     "YouBike",
     "medical",
@@ -234,7 +236,6 @@ async function main() {
     "coolingPoints",
     "AED",
     "hydrants",
-    "officialAQI",
     "fireStations",
   ]);
 

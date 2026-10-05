@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 27356)
-Total output lines: 2379
-
 import { registerSavedScoreRoutes, type AssessmentReadResult } from "./savedScoreBackfill";
 import express, { Request, Response } from "express";
 import path from "path";
@@ -893,7 +890,758 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         const existing = await getCachedSnapshot(sourceKey, "__citywide__");
         const due = !existing
           || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
-…7356 tokens truncated…shots;
+
+        if (!due) {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing.fetchedAt,
+            checkedAt: existing.checkedAt,
+          });
+          continue;
+        }
+
+        const validator = existing
+          ? await checkStaticResourceValidators(sourceKey, existing)
+          : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
+
+        if (existing && validator.decision === "unchanged") {
+          await markSnapshotChecked(sourceKey, "__citywide__", {
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing.fetchedAt,
+          });
+          continue;
+        }
+
+        const citywide = sourceKey === "taipei_youbike"
+          ? await fetchTaipeiYouBikeData()
+          : sourceKey === "taipei_medical"
+            ? await fetchTaipeiMedicalFacilities()
+            : sourceKey === "taipei_street_lights"
+              ? await fetchTaipeiStreetLights()
+              : sourceKey === "taipei_bus_stops"
+                ? await fetchTaipeiBusStops()
+                : sourceKey === "taipei_mrt_stations"
+                  ? await fetchTaipeiMrtStations()
+                  : sourceKey === "taipei_libraries"
+                  ? await fetchTaipeiLibraries()
+                  : sourceKey === "taipei_public_toilets"
+                    ? await fetchTaipeiPublicToilets()
+                    : sourceKey === "taipei_parks"
+                      ? await fetchTaipeiParks()
+                      : sourceKey === "taipei_bike_lanes"
+                        ? await fetchTaipeiBikeLanes()
+                        : sourceKey === "taipei_sidewalk_areas"
+                          ? await fetchTaipeiSidewalkAreas()
+                          : sourceKey === "taipei_markets"
+                            ? await fetchTaipeiMarkets()
+                            : sourceKey === "taipei_cooling_points"
+                              ? await fetchTaipeiCoolingPoints()
+                              : sourceKey === "taipei_aed"
+                                ? await fetchTaipeiAed()
+                                : sourceKey === "taipei_fire_hydrants"
+                                  ? await fetchTaipeiFireHydrants()
+                                  : sourceKey === "taipei_official_aqi"
+                                    ? await fetchTaipeiOfficialAirQuality()
+                                    : await fetchTaipeiFireStations();
+
+        if (citywide.status === "available" || citywide.status === "empty") {
+          if (Array.isArray(citywide.points)) {
+            await replaceExternalSpatialPoints(
+              sourceKey,
+              citywide.points,
+              {
+                fetchedAt: citywide.retrievedAt,
+                sourceUpdatedAt: citywide.sourceUpdatedAt ?? validator.sourceUpdatedAt,
+                sourceVersion: validator.version,
+              },
+            );
+          }
+          if (Array.isArray(citywide.lines)) {
+            await replaceExternalSpatialLines(
+              sourceKey,
+              citywide.lines,
+              {
+                fetchedAt: citywide.retrievedAt,
+                sourceUpdatedAt: citywide.sourceUpdatedAt ?? validator.sourceUpdatedAt,
+                sourceVersion: validator.version,
+              },
+            );
+          }
+          if (Array.isArray(citywide.areas)) {
+            await replaceExternalSpatialAreas(
+              sourceKey,
+              citywide.areas,
+              {
+                fetchedAt: citywide.retrievedAt,
+                sourceUpdatedAt: citywide.sourceUpdatedAt ?? validator.sourceUpdatedAt,
+                sourceVersion: validator.version,
+              },
+            );
+          }
+          const saved = await saveSnapshot(
+            sourceKey,
+            "__citywide__",
+            {
+              source: citywide.source,
+              pointCount: citywide.points.length,
+              lineCount: citywide.lines?.length || 0,
+              areaCount: citywide.areas?.length || 0,
+              retrievedAt: citywide.retrievedAt,
+            },
+            {
+              status: citywide.status,
+              sourceVersion: validator.version,
+              sourceUpdatedAt: citywide.sourceUpdatedAt ?? validator.sourceUpdatedAt,
+              freshnessMethod: citywide.sourceUpdatedAt ? "source_updated_at" : validator.method,
+            },
+          );
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: saved.changed,
+            status: citywide.status,
+            skipped: false,
+            pointCount: citywide.points.length,
+            lineCount: citywide.lines?.length || 0,
+          });
+        } else {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: citywide.status,
+            skipped: false,
+            error: citywide.error || "Citywide official source unavailable",
+            preservedExisting: Boolean(existing),
+          });
+        }
+        continue;
+      }
+
+      if (sourceKey === "taipei_historical_flood") {
+        const existing = await getCachedSnapshot(sourceKey, "__citywide__");
+        const due = !existing
+          || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
+
+        if (!due) {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing.fetchedAt,
+            checkedAt: existing.checkedAt,
+          });
+          continue;
+        }
+
+        const validator = existing
+          ? await checkStaticResourceValidators(sourceKey, existing)
+          : { decision: "unknown" as const, version: null, method: "unknown" as const, sourceUpdatedAt: null };
+
+        if (existing && validator.decision === "unchanged") {
+          await markSnapshotChecked(sourceKey, "__citywide__", {
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: existing.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing.fetchedAt,
+          });
+          continue;
+        }
+
+        const historical = await fetchTaipeiHistoricalFloodEvents();
+        if (historical.status === "available") {
+          await replaceHistoricalFloodEvents(
+            historical.events.map((event) => ({
+              ...event,
+              sourceVersion: validator.version,
+              sourceUpdatedAt: validator.sourceUpdatedAt,
+            })),
+          );
+          const saved = await saveSnapshot(
+            sourceKey,
+            "__citywide__",
+            {
+              source: historical.source,
+              eventCount: historical.events.length,
+              retrievedAt: historical.retrievedAt,
+            },
+            {
+              status: "available",
+              sourceVersion: validator.version,
+              sourceUpdatedAt: validator.sourceUpdatedAt,
+              freshnessMethod: validator.method,
+            },
+          );
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: saved.changed,
+            status: "available",
+            skipped: false,
+            eventCount: historical.events.length,
+          });
+        } else {
+          results.push({
+            scopeKey: "__citywide__",
+            sourceKey,
+            changed: false,
+            status: historical.status,
+            skipped: false,
+            error: historical.error || "Historical flood source unavailable",
+            preservedExisting: Boolean(existing),
+          });
+        }
+        continue;
+      }
+
+      const targetStates = await Promise.all(targets.map(async (target) => ({
+        target,
+        existing: await getCachedSnapshot(sourceKey, target.scopeKey),
+      })));
+
+      const dueStates = targetStates.filter(({ existing }) =>
+        !existing
+        || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000,
+      );
+
+      if (!dueStates.length) {
+        for (const { target, existing } of targetStates) {
+          results.push({
+            scopeKey: target.scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing?.status || "unavailable",
+            skipped: true,
+            reason: "cadence",
+            fetchedAt: existing?.fetchedAt || null,
+            checkedAt: existing?.checkedAt || null,
+          });
+        }
+        continue;
+      }
+
+      let validator: Awaited<ReturnType<typeof checkStaticResourceValidators>> = {
+        decision: "unknown",
+        version: null,
+        method: "unknown",
+        sourceUpdatedAt: null,
+      };
+      const validatorSample = dueStates.find(({ existing }) => existing?.sourceVersion)?.existing || null;
+      if (validatorSample && VALIDATOR_RESOURCES[sourceKey]?.length) {
+        validator = await checkStaticResourceValidators(sourceKey, validatorSample);
+      }
+
+      const floodIndexReady = sourceKey !== "taipei_flood" || await hasFloodHazardPolygons();
+      if (
+        validatorSample
+        && validator.decision === "unchanged"
+        && dueStates.every(({ existing }) => Boolean(existing))
+        && floodIndexReady
+      ) {
+        for (const { target, existing } of dueStates) {
+          await markSnapshotChecked(sourceKey, target.scopeKey, {
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+          results.push({
+            scopeKey: target.scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing!.status,
+            skipped: true,
+            reason: "source-unchanged",
+            fetchedAt: existing!.fetchedAt,
+            sourceVersion: validator.version,
+          });
+        }
+        continue;
+      }
+
+      if (batchSourceKeys.has(sourceKey)) {
+        const batchTargets = dueStates.map(({ target }) => ({
+          scopeKey: target.scopeKey,
+          latitude: target.latitude,
+          longitude: target.longitude,
+        }));
+
+        let payloads: Record<string, any>;
+        if (sourceKey === "taipei_green") {
+          payloads = await fetchTaipeiGreenDataForTargets(batchTargets, 800);
+        } else if (sourceKey === "taipei_safety") {
+          payloads = await fetchTaipeiSafetyDataForTargets(batchTargets, 500);
+        } else {
+          payloads = await fetchTaipeiFloodHazardDataForTargets(batchTargets);
+          const floodPolygons = getLastFetchedFloodPolygons();
+          if (floodPolygons.length > 0) {
+            await replaceFloodHazardPolygons(floodPolygons.map((polygon) => ({
+              ...polygon,
+              sourceVersion: validator.version,
+              sourceUpdatedAt: validator.sourceUpdatedAt,
+            })));
+          }
+        }
+
+        for (const { target, existing } of dueStates) {
+          const payload = payloads[target.scopeKey];
+          if (!payload || payload.status === "error" || payload.status === "timeout") {
+            results.push({
+              scopeKey: target.scopeKey,
+              sourceKey,
+              changed: false,
+              status: existing?.status || "unavailable",
+              skipped: false,
+              error: payload?.error || "Batch source refresh failed",
+              preservedExisting: Boolean(existing),
+            });
+            continue;
+          }
+
+          const saved = await saveSnapshot(sourceKey, target.scopeKey, payload, {
+            status: String(payload.status || "available"),
+            sourceVersion: validator.version,
+            sourceUpdatedAt: validator.sourceUpdatedAt,
+            freshnessMethod: validator.method,
+          });
+
+          results.push({
+            scopeKey: target.scopeKey,
+            sourceKey,
+            changed: saved.changed,
+            status: payload.status || "available",
+            skipped: false,
+            freshnessMethod: validator.method,
+            sourceVersion: validator.version,
+          });
+        }
+        continue;
+      }
+
+      // Target-specific sources are fetched independently.
+      for (const { target, existing } of dueStates) {
+        const payload = await refreshPayloadForSource(sourceKey, target.latitude, target.longitude).catch(
+          (error: any) => ({ __error: error?.message || String(error) }),
+        );
+
+        if (payload?.__error) {
+          results.push({
+            scopeKey: target.scopeKey,
+            sourceKey,
+            changed: false,
+            status: existing?.status || "unavailable",
+            skipped: false,
+            error: payload.__error,
+            preservedExisting: Boolean(existing),
+          });
+          continue;
+        }
+
+        const saved = await saveSnapshot(sourceKey, target.scopeKey, payload, {
+          status: String(payload?.status || "available"),
+          sourceVersion: validator.version,
+          sourceUpdatedAt: validator.sourceUpdatedAt,
+          freshnessMethod: validator.method,
+        });
+
+        results.push({
+          scopeKey: target.scopeKey,
+          sourceKey,
+          changed: saved.changed,
+          status: payload?.status || "available",
+          skipped: false,
+          freshnessMethod: validator.method,
+          sourceVersion: validator.version,
+        });
+      }
+    }
+
+    return res.json({
+      refreshedAt: new Date().toISOString(),
+      targetCount: targets.length,
+      sourceKeys,
+      snapshots: results,
+    });
+  } catch (error: any) {
+    console.error("Scheduled data refresh failed:", error);
+    return res.status(500).json({ error: error.message || "Failed to refresh persisted data" });
+  }
+});
+
+// 即時附近 POI 端點 — Google Places API (New) 優先，OSM Overpass 其次，
+// 結合在地空間開放常模確保各點位皆有清晰對應的生活機能標記
+app.get("/api/nearby-pois", async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
+    const scopeKey = await registerAssessmentTarget(lat, lng);
+    if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured" });
+    const [google, osm] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey)]);
+    if (!google && !osm) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
+    const pois = mergePois(lat, lng, [google?.payload, osm?.payload].filter(Boolean));
+    return res.json({ pois, dataStatus: "cached", scopeKey, sources: [
+      google ? { source: google.sourceKey, status: google.status, retrievedAt: google.fetchedAt } : { source: "google_places", status: "unavailable" },
+      osm ? { source: osm.sourceKey, status: osm.status, retrievedAt: osm.fetchedAt } : { source: "openstreetmap", status: "unavailable" },
+    ] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to load cached POIs" });
+  }
+});
+
+// Polyline decode helper for Google Routes API
+function decodeGooglePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+  while (index < len) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lat += dlat;
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lng += dlng;
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
+// 實時真實道路路網幾何端點 (以 Google Routes API + OSRM 取得精準貼路幾何 Polylines)
+app.get("/api/street-network", async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat((req.query.lat as string) || "25.0326");
+    const lng = parseFloat((req.query.lng as string) || "121.5298");
+        const streetName = (req.query.streetName as string) || "";
+
+    const delta = 0.0035; // ~350m
+    const corridorPairs = [
+      { origin: { lat: lat - delta, lng }, dest: { lat: lat + delta, lng } },
+      { origin: { lat, lng: lng - delta }, dest: { lat, lng: lng + delta } },
+      { origin: { lat: lat - delta * 0.7, lng: lng - delta * 0.7 }, dest: { lat: lat + delta * 0.7, lng: lng + delta * 0.7 } },
+      { origin: { lat: lat - delta * 0.7, lng: lng + delta * 0.7 }, dest: { lat: lat + delta * 0.7, lng: lng - delta * 0.7 } },
+    ];
+
+    const segments: any[] = [];
+    const seenRoads = new Set<string>();
+
+    if (GOOGLE_MAPS_API_KEY) {
+      for (const pair of corridorPairs) {
+        if (segments.length >= 8) break;
+        try {
+          const resp = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+              "X-Goog-FieldMask": "routes.legs.steps.navigationInstruction,routes.legs.steps.polyline",
+            },
+            body: JSON.stringify({
+              origin: { location: { latLng: { latitude: pair.origin.lat, longitude: pair.origin.lng } } },
+              destination: { location: { latLng: { latitude: pair.dest.lat, longitude: pair.dest.lng } } },
+              travelMode: "DRIVE",
+              polylineQuality: "HIGH_QUALITY",
+            }),
+          });
+
+          if (resp.ok) {
+            const data: any = await resp.json();
+            const steps = data.routes?.[0]?.legs?.[0]?.steps || [];
+            for (const s of steps) {
+              if (segments.length >= 8) break;
+              if (!s.polyline?.encodedPolyline) continue;
+              const pts = decodeGooglePolyline(s.polyline.encodedPolyline);
+              if (pts.length < 2) continue;
+
+              const instruction = s.navigationInstruction?.instructions || "";
+              const match = instruction.match(/(?:走|沿|向.+?轉入|進入|繼續行駛)([\u4e00-\u9fa5\w\s]+?)(?:朝|前進|目的地|向|\d+巷|\d+弄|,|$)/);
+              const rawName = match && match[1] ? match[1].trim() : instruction.slice(0, 15);
+              let roadName = rawName
+                .replace(/(^接著走|^向[左右]轉[，,]?朝?|^朝|^進入|^沿)/g, "")
+                .replace(/(目的地在.+|朝.+前進)/g, "")
+                .trim();
+
+              if (!roadName || roadName.length < 2) continue;
+              if (seenRoads.has(roadName)) continue;
+              seenRoads.add(roadName);
+
+              segments.push({
+                id: `seg_g_${segments.length}_${roadName}`,
+                name: roadName,
+                coords: pts,
+                clsScore: null,
+                c1: null,
+                c2: null,
+                c3: null,
+                c4: null,
+                c5: null,
+              });
+            }
+          }
+        } catch (e) {
+          // ignore corridor error
+        }
+      }
+    }
+
+    // 2. OSRM fallback/enrichment for local lanes if needed
+    if (segments.length < 4) {
+      try {
+        const nearestUrl = `https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=6`;
+        const nr = await fetch(nearestUrl);
+        const nd: any = await nr.json();
+        for (const wp of nd.waypoints || []) {
+          if (segments.length >= 8) break;
+          const name = wp.name;
+          if (!name || seenRoads.has(name)) continue;
+          seenRoads.add(name);
+
+          const [wLng, wLat] = wp.location;
+          const p1 = `${(wLng - 0.0015).toFixed(6)},${(wLat - 0.0015).toFixed(6)}`;
+          const p2 = `${(wLng + 0.0015).toFixed(6)},${(wLat + 0.0015).toFixed(6)}`;
+          const rUrl = `https://router.project-osrm.org/route/v1/driving/${p1};${p2}?overview=full&geometries=geojson&steps=true`;
+          const rRes = await fetch(rUrl);
+          const rData: any = await rRes.json();
+          const steps = rData.routes?.[0]?.legs?.[0]?.steps || [];
+          for (const s of steps) {
+            if (s.geometry?.coordinates?.length > 1 && s.name && !seenRoads.has(s.name + "_osrm")) {
+              seenRoads.add(s.name + "_osrm");
+              const coords = s.geometry.coordinates.map(([cLng, cLat]: [number, number]) => [cLat, cLng]);
+              segments.push({
+                id: `seg_osrm_${segments.length}_${s.name}`,
+                name: s.name,
+                coords,
+                clsScore: null,
+                c1: null,
+                c2: null,
+                c3: null,
+                c4: null,
+                c5: null,
+              });
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        // ignore OSRM error
+      }
+    }
+
+    return res.json({ segments });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch street network" });
+  }
+});
+
+// Taiwan official/public transport source adapters.
+// Distances are calculated from source coordinates; no frequency or accessibility
+// score is invented when the source does not provide it.
+interface TransitSourceResult {
+  stops: any[];
+  source: string;
+  status: "available" | "empty" | "error" | "timeout";
+  retrievedAt: string;
+  error?: string;
+}
+
+async function fetchTaiwanTransitData(lat: number, lng: number): Promise<TransitSourceResult> {
+  const retrievedAt = new Date().toISOString();
+  // Taipei City bus-stop open data is published by Taipei City Transportation Department.
+  // Keep the endpoint configurable because data.gov.tw resource URLs can change.
+  const url = process.env.TAIPEI_BUS_STOPS_URL;
+  if (!url) {
+    return { stops: [], source: "Taipei City Transportation Department bus-stop data", status: "empty", retrievedAt };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "StreetLens/1.0" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data: any = await response.json();
+    const rows = Array.isArray(data) ? data : Array.isArray(data.result) ? data.result : [];
+    const stops = rows.map((row: any) => ({
+      id: String(row.id ?? row.stopLocationId ?? row.BSM_BUSSTO ?? ""),
+      name: row.nameZh ?? row.BSM_CHINES ?? row.name ?? "",
+      lat: Number(row.latitude ?? row.lat ?? row.showLat),
+      lng: Number(row.longitude ?? row.lon ?? row.showLon),
+      type: "bus",
+      source: "Taipei City Transportation Department",
+      retrievedAt,
+    })).filter((x: any) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+
+    const nearby = stops
+      .map((stop: any) => ({ ...stop, distanceMeters: haversineDistanceMeters(lat, lng, stop.lat, stop.lng) }))
+      .filter((stop: any) => stop.distanceMeters <= 1500)
+      .sort((a: any, b: any) => a.distanceMeters - b.distanceMeters);
+
+    return { stops: nearby, source: "Taipei City Transportation Department", status: nearby.length ? "available" : "empty", retrievedAt };
+  } catch (error: any) {
+    return {
+      stops: [],
+      source: "Taipei City Transportation Department",
+      status: error?.name === "AbortError" ? "timeout" : "error",
+      retrievedAt,
+      error: error?.message,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// 台灣各主要行政區在 8 大資料來源下的基準常模庫
+// No synthetic regional measurements are exposed. Source-backed indicators are added
+// category by category; unavailable indicators remain null.
+app.get("/api/baseline-data", async (_req: Request, res: Response) => {
+  return res.json({
+    source: "unavailable",
+    available: false,
+    c1: null,
+    c2: null,
+    c3: null,
+    c4: null,
+    c5: null,
+  });
+});
+
+
+// Explainable street-level assessment assembled from source-backed inputs.
+// This endpoint intentionally returns provenance and confidence with every score.
+export function getAssessmentSnapshotStatus(
+  sourceKeys: string[],
+  snapshots: Record<string, { status?: string } | null | undefined>,
+): { missingSources: string[]; dataStatus: "pending_refresh" | "cached" } {
+  const missingSources = sourceKeys.filter((key) => !snapshots[key]);
+  return {
+    missingSources,
+    dataStatus: missingSources.length === sourceKeys.length ? "pending_refresh" : "cached",
+  };
+}
+
+async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
+  lat: number; lng: number; district: string; city: string; streetName: string;
+}): Promise<AssessmentReadResult> {
+  try {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return { status: 400, body: { error: "Valid lat/lng are required" } };
+    }
+
+    const scopeKey = await registerAssessmentTarget(lat, lng);
+    if (!scopeKey) return { status: 503, body: { error: "Persistent data cache is not configured", dataStatus: "database_required" } };
+
+    const sourceKeys = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
+    const nearbyCacheSources = new Set([
+      "google_places",
+      "openstreetmap",
+      "tdx_transit",
+      "taipei_green",
+      "taipei_safety",
+    ]);
+    const exactCached = await Promise.all(sourceKeys.map((key) => getCachedSnapshot(key, scopeKey)));
+    const snapshots: Record<string, any> = {};
+    const snapshotOrigins: Record<string, { scopeKey: string; scopeDistanceMeters: number; reused: boolean }> = {};
+
+    await Promise.all(sourceKeys.map(async (key, index) => {
+      const exact = exactCached[index];
+
+      if (!nearbyCacheSources.has(key)) {
+        snapshots[key] = exact;
+        if (exact) snapshotOrigins[key] = {
+          scopeKey: exact.scopeKey,
+          scopeDistanceMeters: 0,
+          reused: false,
+        };
+        return;
+      }
+
+      const nearby = await getNearbyCachedSnapshots(
+        key,
+        lat,
+        lng,
+        1000,
+        key === "taipei_green" || key === "taipei_safety" ? 3 : 6,
+      );
+      const candidates = [
+        ...(exact ? [exact] : []),
+        ...nearby.filter((item) => item.scopeKey !== scopeKey),
+      ];
+
+      if (!candidates.length) {
+        snapshots[key] = null;
+        return;
+      }
+
+      const primary = candidates[0];
+      const mergedPayload = candidates.reduce((merged: any, cached: any) => {
+        if (key === "google_places" || key === "openstreetmap") {
+          merged.pois = [...(merged.pois || []), ...(Array.isArray(cached.payload?.pois) ? cached.payload.pois : [])];
+        } else if (key === "tdx_transit") {
+          merged.stops = [...(merged.stops || []), ...(Array.isArray(cached.payload?.stops) ? cached.payload.stops : [])];
+          merged.railStations = [...(merged.railStations || []), ...(Array.isArray(cached.payload?.railStations) ? cached.payload.railStations : [])];
+        } else if (key === "taipei_green") {
+          merged.streetTrees = [...(merged.streetTrees || []), ...(Array.isArray(cached.payload?.streetTrees) ? cached.payload.streetTrees : [])];
+          merged.parkTrees = [...(merged.parkTrees || []), ...(Array.isArray(cached.payload?.parkTrees) ? cached.payload.parkTrees : [])];
+        } else if (key === "taipei_safety") {
+          merged.accidents = [...(merged.accidents || []), ...(Array.isArray(cached.payload?.accidents) ? cached.payload.accidents : [])];
+        }
+        return merged;
+      }, {});
+
+      snapshots[key] = {
+        ...primary,
+        payload: mergedPayload,
+        status: candidates.some((item) => item.status === "available") ? "available" : primary.status,
+      };
+      snapshotOrigins[key] = {
+        scopeKey: candidates.map((item) => item.scopeKey).join(","),
+        scopeDistanceMeters: Number((primary as any).scopeDistanceMeters ?? 0),
+        reused: candidates.length > 1 || Number((primary as any).scopeDistanceMeters ?? 0) > 0,
+      };
+    }));
+
+    const floodSpatialIndexReady = await hasFloodHazardPolygons();
+    const availabilitySnapshots = floodSpatialIndexReady
+      ? { ...snapshots, taipei_flood: { status: "available" } }
+      : snapshots;
     const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, availabilitySnapshots);
     if (dataStatus === "pending_refresh") {
       return { status: 202, body: {

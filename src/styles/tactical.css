@@ -30,13 +30,15 @@ input, textarea { user-select: text; }
 .hud-primary:disabled { background: #677451; color: #111810; }
 .tactical-controls { padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 .tactical-dock { position: absolute; left: 50%; right: auto; top: auto; bottom: max(8px,env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100dvh - 24px); padding: 6px 8px; flex-direction: row; align-items: center; gap: 4px; pointer-events: auto; overflow: visible; z-index: 5; }
-.tactical-dock { background: rgba(26,33,43,.78); border-color: rgba(255,255,255,.12); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+#app-root .tactical-dock { background: linear-gradient(135deg, rgba(45,57,74,.76), rgba(26,33,43,.72) 52%, rgba(15,21,30,.76)); border: 1px solid rgba(225,236,248,.16); border-radius: 22px; box-shadow: 0 18px 46px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(255,255,255,.035); backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }
 .street-telemetry { display: none; }
 .dock-brand { display: flex; align-items: center; justify-content: center; width: 26px; height: 36px; flex: 0 0 26px; font-size: 12px; letter-spacing: -.08em; font-weight: 800; color: #e4ebf4; position: relative; }
 .dock-brand i { width: 4px; height: 4px; background: #a3b0c1; position: absolute; right: -6px; top: 8px; border-radius: 50%; }
-.dock-divider { width: 1px; height: 28px; flex: 0 0 1px; background: var(--hud-border); margin: 0 2px; }
+.dock-divider { width: 1px; height: 28px; flex: 0 0 1px; background: linear-gradient(transparent,rgba(225,236,248,.22),transparent); margin: 0 2px; }
 .tactical-dock > button, .tactical-dock .dock-layer > button { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 14px; display: flex; justify-content: center; align-items: center; color: #aab7c7; }
-.tactical-dock > button:not(.hud-primary):hover, .tactical-dock .dock-layer > button:not(.hud-primary):hover { background: #283342; color: white; }
+.tactical-dock > button:not(.hud-primary), .tactical-dock .dock-layer > button:not(.hud-primary) { border: 1px solid transparent; background: rgba(255,255,255,0); transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease; }
+.tactical-dock > button:not(.hud-primary):hover, .tactical-dock .dock-layer > button:not(.hud-primary):hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.07); color: #f0f4f8; }
+#app-root .tactical-dock .dock-layer > button[aria-expanded="true"] { background: linear-gradient(145deg,rgba(255,255,255,.13),rgba(255,255,255,.055)); border-color: rgba(230,240,250,.16); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 5px 16px rgba(0,0,0,.18); color: #f0f4f8; }
 .dock-spacer { display: none; }
 .dock-layer { width: 44px; height: 44px; flex: 0 0 auto; }
 .search-toolbar { position: absolute; top: max(12px,env(safe-area-inset-top)); left: 68px; right: 12px; pointer-events: auto; }
@@ -149,7 +151,7 @@ input, textarea { user-select: text; }
   .layer-popover { position: absolute; left: 100%; top: 0; transform: none; }
 }
 #app-root .layer-popover { position: fixed; left: 8px; right: 8px; top: auto; bottom: calc(64px + env(safe-area-inset-bottom)); width: auto; max-width: none; box-sizing: border-box; transform: none; max-height: calc(100dvh - 96px - env(safe-area-inset-bottom)); }
-#app-root .layer-popover { background: rgba(26,33,43,.88); border-color: rgba(255,255,255,.12); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+#app-root .layer-popover { background: linear-gradient(145deg,rgba(36,46,60,.91),rgba(18,24,33,.88)); border-color: rgba(225,236,248,.16); box-shadow: 0 20px 52px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.11); backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%); }
 #app-root .layer-popover [role="switch"] > span { flex: 1 1 auto; min-width: 0; padding-right: 8px; }
 @media (min-width: 1024px) {
   #app-root .layer-popover { position: absolute; left: 100%; right: auto; top: 0; bottom: auto; width: 14rem; max-height: calc(100dvh - 112px); transform: none; }

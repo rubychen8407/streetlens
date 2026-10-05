@@ -76,7 +76,10 @@ try {
     const search = await view.getByLabel('搜尋地點', { exact: true }).boundingBox();
     const tools = await view.getByRole('button', { name: '定位到目前位置' }).boundingBox();
     const entry = await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).boundingBox();
-    const dock = await view.getByRole('navigation', { name: '地點功能' }).boundingBox();
+    const dockLocator = view.getByRole('navigation', { name: '地點功能' });
+    const dock = await dockLocator.boundingBox();
+    const dockBackground = await dockLocator.evaluate(element => getComputedStyle(element).backgroundImage);
+    assert.ok(dockBackground.startsWith('linear-gradient') && /rgba\([^)]*, 0\.\d+\)/.test(dockBackground), 'dock uses a translucent glass surface');
     assert.ok(search && tools && entry && dock && Math.abs(search.y - tools.y) <= 1 && search.height === tools.height);
     if (width < 1024) {
       assert.ok(dock.width > dock.height && height - (dock.y + dock.height) <= 20, 'mobile dock is a bottom horizontal bar');

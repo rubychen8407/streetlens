@@ -156,3 +156,13 @@ input, textarea { user-select: text; }
 @media (min-width: 1024px) {
   #app-root .layer-popover { position: absolute; left: 100%; right: auto; top: 0; bottom: auto; width: 14rem; max-height: calc(100dvh - 112px); transform: none; }
 }
+@media (max-width: 1023px) {
+  #app-root .cls-read-status {
+    top: calc(max(12px, env(safe-area-inset-top)) + 56px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    box-sizing: border-box;
+    align-items: center;
+  }
+}

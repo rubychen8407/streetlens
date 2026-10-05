@@ -76,7 +76,13 @@ try {
     const search = await view.getByLabel('搜尋地點', { exact: true }).boundingBox();
     const tools = await view.getByRole('button', { name: '定位到目前位置' }).boundingBox();
     const entry = await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).boundingBox();
-    assert.ok(search && tools && entry && search.x >= 60 && entry.x < search.x && Math.abs(search.y - tools.y) <= 1 && search.height === tools.height);
+    const dock = await view.getByRole('navigation', { name: '地點功能' }).boundingBox();
+    assert.ok(search && tools && entry && dock && Math.abs(search.y - tools.y) <= 1 && search.height === tools.height);
+    if (width < 1024) {
+      assert.ok(dock.width > dock.height && height - (dock.y + dock.height) <= 20, 'mobile dock is a bottom horizontal bar');
+    } else {
+      assert.ok(dock.x < search.x && entry.x < search.x, 'desktop dock remains on the left');
+    }
     assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and location action align');
     for (const label of ['CLS 結果報告', '環境觀察', 'Street Library', '圖層', '資料與設定']) {
       const box = await view.getByRole('button', { name: label, exact: true }).boundingBox();
@@ -89,6 +95,9 @@ try {
     assert.notEqual(await layer.getAttribute('aria-checked'), before);
     const popover = await view.locator('.layer-popover').boundingBox();
     assert.ok(popover && popover.x >= 0 && popover.y >= 0 && popover.y + popover.height <= height, `layers fit ${width}x${height}: ${JSON.stringify(popover)}`);
+    const label = await layer.locator('span').boundingBox();
+    assert.ok(label && label.width >= 100, 'layer labels remain readable beside their switches');
+    await view.screenshot({ path: `artifacts/walk-ui/layers-${width}.png` });
     await view.keyboard.press('Escape');
     assert.equal(await layer.count(), 0);
     assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).evaluate(element => element === document.activeElement), true);
@@ -247,4 +256,3 @@ try {
   }
   throw error;
 } finally { await browser?.close(); server.kill('SIGTERM'); }
-

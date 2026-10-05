@@ -66,35 +66,6 @@ export async function ensureDataCacheSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_external_spatial_points_source_lat_lng
       ON external_spatial_points(source_key, latitude, longitude);
 
-    CREATE TABLE IF NOT EXISTS external_spatial_areas (
-      source_key TEXT NOT NULL,
-      feature_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
-      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      source_updated_at TIMESTAMPTZ,
-      source_version TEXT,
-      geom geometry(Geometry, 4326) NOT NULL,
-      PRIMARY KEY (source_key, feature_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_external_spatial_areas_source_geom
-      ON external_spatial_areas USING GIST (geom);
-    CREATE TABLE IF NOT EXISTS external_spatial_lines (
-      source_key TEXT NOT NULL,
-      feature_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
-      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      source_updated_at TIMESTAMPTZ,
-      source_version TEXT,
-      geom geometry(LineString, 4326) NOT NULL,
-      PRIMARY KEY (source_key, feature_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_external_spatial_lines_source_geom
-      ON external_spatial_lines USING GIST (geom);
-
     CREATE TABLE IF NOT EXISTS assessment_targets (
       id BIGSERIAL PRIMARY KEY,
       latitude DOUBLE PRECISION NOT NULL,
@@ -134,7 +105,36 @@ export async function ensureDataCacheSchema(): Promise<void> {
   `);
 
   if (postgisAvailable) {
-    await dataDb.query(`
+    try {
+      await dataDb.query(`
+      CREATE TABLE IF NOT EXISTS external_spatial_areas (
+        source_key TEXT NOT NULL,
+        feature_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+        fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        source_updated_at TIMESTAMPTZ,
+        source_version TEXT,
+        geom geometry(Geometry, 4326) NOT NULL,
+        PRIMARY KEY (source_key, feature_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_external_spatial_areas_source_geom
+        ON external_spatial_areas USING GIST (geom);
+
+      CREATE TABLE IF NOT EXISTS external_spatial_lines (
+        source_key TEXT NOT NULL,
+        feature_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+        fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        source_updated_at TIMESTAMPTZ,
+        source_version TEXT,
+        geom geometry(LineString, 4326) NOT NULL,
+        PRIMARY KEY (source_key, feature_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_external_spatial_lines_source_geom
+        ON external_spatial_lines USING GIST (geom);
+
       CREATE TABLE IF NOT EXISTS flood_hazard_polygons (
         id BIGSERIAL PRIMARY KEY,
         scenario_mmh DOUBLE PRECISION NOT NULL,
@@ -172,6 +172,10 @@ export async function ensureDataCacheSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_historical_flood_events_date
         ON historical_flood_events(event_date DESC);
     `);
+    } catch (error) {
+      postgisAvailable = false;
+      console.warn("PostGIS-backed spatial features are unavailable; core CLS data remains enabled:", error);
+    }
   }
 }
 

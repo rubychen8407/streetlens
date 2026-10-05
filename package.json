@@ -16,8 +16,9 @@
     "test:snapshot-preservation": "node --import tsx scripts/test-snapshot-preservation.ts",
     "test:walk-moments": "node --import tsx scripts/test-walk-moments.ts",
     "test:walk-ui": "node --import tsx scripts/test-walk-ui.ts",
+    "test:postgis-optional": "node --import tsx scripts/test-postgis-optional.ts",
     "db:storage": "node --import tsx scripts/db-storage-report.ts",
-    "ci": "npm run lint && npm run build && npm run test:score-integrity && npm run test:assessment-policy && npm run test:snapshot-preservation && npm run test:walk-moments && npm run test:walk-ui"
+    "ci": "npm run lint && npm run build && npm run test:score-integrity && npm run test:assessment-policy && npm run test:snapshot-preservation && npm run test:walk-moments && npm run test:postgis-optional && npm run test:walk-ui"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

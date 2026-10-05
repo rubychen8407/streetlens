@@ -2,7 +2,7 @@
 
 The dark map uses slate canvas (`#0E131A`), translucent raised surfaces (`#1A212B`–`#1E2632`), 8% white hairlines and 20px corners. Chartreuse (`#D4F971`) highlights primary actions and active states. Error/warning colors retain their existing meaning. Shared tokens and responsive rules live in `src/styles/tactical.css`.
 
-- Desktop (1024px+): 64px icon dock, top search/tools and utility pills, source-backed street overview and category cards. Assessment stays in a separate right panel.
+- All screen sizes: the top search/location bar selects a street and locates the user; a left dock holds street report, field observations, Street Library, map layers and settings. On desktop the dock grows to a full-height rail; on mobile it remains a compact left rail.
 - Mobile/tablet: one aligned search/tools row, 44px main map controls, scrollable bottom assessment panel with anchored primary action and safe-area padding. Short landscape viewports and layer menus have bounded heights.
 - Overview gauges use actual CLS, keep missing scores empty and label estimates. No simulated live/video/operational data is introduced.
 - Plus Jakarta Sans is bundled locally with its SIL Open Font License; Chinese falls back to installed CJK/system fonts. Leaflet CSS is bundled, removing a runtime CDN dependency.

@@ -75,7 +75,7 @@ export default function App() {
 
   // Bottom Sheet Visibility
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<'assessment' | 'field' | 'saved' | 'settings'>('assessment');
+  const [workspaceView, setWorkspaceView] = useState<'assessment' | 'report' | 'field' | 'saved' | 'settings'>('assessment');
   const [favoriteLocations, setFavoriteLocations] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]'); } catch { return []; }
   });
@@ -957,7 +957,7 @@ export default function App() {
           fetchLocationData(coord, newDist, newCity, name, true);
         }}
         onOpenField={() => { setWorkspaceView('field'); setIsSheetOpen(true); }}
-        onOpenSheet={() => { setWorkspaceView('assessment'); setIsSheetOpen(true); }}
+        onOpenReport={() => { setWorkspaceView('assessment'); setIsSheetOpen(true); }}
         onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
         onOpenSettings={() => { setWorkspaceView('settings'); setIsSheetOpen(true); }}
         isSheetOpen={isSheetOpen}
@@ -968,7 +968,6 @@ export default function App() {
         currentLocation={currentLocation}
         targetLocation={targetLocation}
         accuracyRadius={accuracyRadius}
-        weatherData={weatherData}
       />
 
       {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{saveError || savedStorageError}</div>}
@@ -1019,7 +1018,7 @@ export default function App() {
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);
-          setWorkspaceView('assessment');
+          setWorkspaceView('report');
         }}
         onDeleteSaved={handleDeleteSaved}
         onOpenDataLogs={() => setWorkspaceView('settings')}

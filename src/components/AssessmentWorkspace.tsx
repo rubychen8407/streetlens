@@ -4,8 +4,9 @@ import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, L
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 import { favoriteKey } from '../utils/savedLocations';
+import { StreetReport } from './StreetReport';
 
-type View = 'assessment' | 'field' | 'saved' | 'settings';
+type View = 'assessment' | 'report' | 'field' | 'saved' | 'settings';
 
 interface AssessmentWorkspaceProps {
   view: View;
@@ -128,6 +129,8 @@ export function AssessmentWorkspace({
     });
   }, [savedLocations, savedFilter, savedSort, favoriteLocationKeys]);
 
+  const currentReport = savedLocations.find(item => item.id === activeSavedAssessmentId) ?? null;
+
   const handleSave = async () => {
     const ok = await onSave(name.trim() || `${district ? district + ' ' : ''}${streetName || 'Street assessment'}`, fieldNotes);
     if (!ok) return;
@@ -146,17 +149,17 @@ export function AssessmentWorkspace({
   const unavailableCategoryCount = categoryScores.filter((category) => category.score === null).length;
 
   return (
-    <aside ref={panelRef} aria-label="街道評估面板" className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
+    <aside ref={panelRef} aria-label={view === 'report' ? '街道結果報告' : view === 'saved' ? 'Street Library' : '街道評估面板'} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <button onClick={() => view === 'assessment' ? onClose() : onViewChange('assessment')} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={view === 'assessment' ? 'Close assessment' : 'Back to assessment'} aria-label={view === 'assessment' ? '關閉評估' : '返回評估'}><ArrowLeft className="w-4 h-4" /></button>
-            <div><div className="text-sm font-bold">{view === 'field' ? '詳細實勘' : 'CLS 街道評估'}</div><div className="text-[10px] text-slate-500">{view === 'field' ? '現場觀察與佐證' : '分數 · 資料來源 · 歷史比較'}</div></div>
+            <button onClick={() => view === 'assessment' ? onClose() : view === 'report' ? onViewChange('saved') : view === 'saved' ? onClose() : onViewChange('assessment')} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={view === 'assessment' ? 'Close assessment' : 'Back to assessment'} aria-label={view === 'assessment' ? '關閉報告' : view === 'report' ? '返回 Street Library' : view === 'saved' ? '關閉 Street Library' : '返回評估'}><ArrowLeft className="w-4 h-4" /></button>
+            <div><div className="text-sm font-bold">{view === 'field' ? '環境觀察' : view === 'report' ? '街道結果報告' : view === 'saved' ? 'Street Library' : 'CLS 街道報告'}</div><div className="text-[10px] text-slate-500">{view === 'field' ? '現場觀察與佐證' : view === 'report' ? streetName + ' · ' + district + ' ' + city : view === 'saved' ? '收藏、街道與歷次評估' : 'CLS · 資料來源 · 歷史比較'}</div></div>
           </div>
-          <button onClick={onToggleFavorite} title={isFavorite ? '取消最愛' : '加入最愛'} aria-label={isFavorite ? '取消最愛' : '加入最愛'} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>
+          {(view === 'assessment' || view === 'report') && <button onClick={onToggleFavorite} title={isFavorite ? '取消最愛' : '加入最愛'} aria-label={isFavorite ? '取消最愛' : '加入最愛'} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}
         </div>
 
-        {view === 'assessment' && (
+        {(view === 'assessment' || view === 'report') && (
           <>
             <div className="flex items-start justify-between">
               <div className="min-w-0">
@@ -640,6 +643,8 @@ export function AssessmentWorkspace({
           </div>
         )}
 
+        {view === 'report' && <StreetReport saved={currentReport} streetName={streetName} district={district} city={city} score={clsScore} grade={grade} assessment={assessment} fieldNotes={fieldNotes} ratings={observationRatings} adjustment={fieldAdjustment} evidence={selectedSavedEvidence} evidenceUrls={savedEvidenceUrls} aiExplanation={aiExplanation} aiExplanationError={aiExplanationError} isGeneratingAiExplanation={isGeneratingAiExplanation} canExplain={Boolean(activeSavedAssessmentId)} onExplain={onGenerateAiExplanation} isFavorite={isFavorite} onToggleFavorite={onToggleFavorite} />}
+
         {view === 'saved' && (
           <div className="space-y-3">
             <div className="mb-4">
@@ -799,7 +804,7 @@ export function AssessmentWorkspace({
         )}
       </div>
 
-      {view === 'assessment' && <footer className="assessment-footer shrink-0 p-4 border-t border-white/10"><button type="button" className="hud-primary w-full rounded-xl min-h-11 text-sm font-semibold" onClick={onOpenField}>開始實勘</button></footer>}
+      {view === 'assessment' && <footer className="assessment-footer shrink-0 p-4 border-t border-white/10"><button type="button" className="hud-primary w-full rounded-xl min-h-11 text-sm font-semibold" onClick={onOpenField}>開始環境觀察</button></footer>}
       {view === 'field' && (
         <footer className="assessment-footer shrink-0 p-4 border-t border-white/[0.08] bg-[#141A23]">
           {step < 3 ? (

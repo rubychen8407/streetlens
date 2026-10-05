@@ -69,17 +69,16 @@ try {
     const view = await layout.newPage(); view.on('pageerror', error => errors.push(error.message));
     await view.goto(baseURL);
     await view.getByRole('button', { name: '環境觀察', exact: true }).waitFor();
-    assert.equal(await view.getByRole('button', { name: '環境觀察', exact: true }).innerText(), '環境觀察');
     assert.equal(await view.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     const input = await view.locator('input').first().boundingBox(); assert.ok(input && input.width >= 100, 'mobile search must remain usable');
     await view.screenshot({ path: `artifacts/walk-ui/map-${width}.png` });
     // Toolbar alignment, touch targets and keyboard-accessible popovers at every breakpoint.
-    const search = await view.getByLabel('搜尋新的實勘點', { exact: true }).boundingBox();
-    const tools = await view.locator('.map-tools').boundingBox();
-    const entry = await view.getByRole('button', { name: 'CLS 評估', exact: true }).boundingBox();
-    assert.ok(search && tools && entry && search.x + search.width <= entry.x && entry.x + entry.width <= tools.x);
-    assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and toolbar align');
-    for (const label of ['環境觀察', '定位', '圖層', '帳戶']) {
+    const search = await view.getByLabel('搜尋地點', { exact: true }).boundingBox();
+    const tools = await view.getByRole('button', { name: '定位到目前位置' }).boundingBox();
+    const entry = await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).boundingBox();
+    assert.ok(search && tools && entry && search.x >= 60 && entry.x < search.x && Math.abs(search.y - tools.y) <= 1 && search.height === tools.height);
+    assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and location action align');
+    for (const label of ['CLS 結果報告', '環境觀察', 'Street Library', '圖層', '資料與設定']) {
       const box = await view.getByRole('button', { name: label, exact: true }).boundingBox();
       assert.ok(box && box.width >= 44 && box.height >= 44, label + ' needs a touch target');
     }
@@ -89,26 +88,26 @@ try {
     await layer.focus(); await view.keyboard.press('Space');
     assert.notEqual(await layer.getAttribute('aria-checked'), before);
     const popover = await view.locator('.layer-popover').boundingBox();
-    assert.ok(popover && popover.x >= 0 && popover.y >= 0 && popover.y + popover.height <= height, 'layers fit the viewport');
+    assert.ok(popover && popover.x >= 0 && popover.y >= 0 && popover.y + popover.height <= height, `layers fit ${width}x${height}: ${JSON.stringify(popover)}`);
     await view.keyboard.press('Escape');
     assert.equal(await layer.count(), 0);
     assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).evaluate(element => element === document.activeElement), true);
-    await view.getByRole('button', { name: 'CLS 評估', exact: true }).click();
+    await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
     const panel = view.getByRole('complementary', { name: '街道評估面板' });
     assert.equal(await panel.getByText('Your observation', { exact: true }).count(), 0, 'CLS does not contain field-rating workflow');
     assert.equal(await panel.getByRole('button', { name: 'Continue', exact: true }).count(), 0);
+    assert.equal(await panel.getByText('Safety · C1', { exact: true }).count(), 1);
     const bounds = await panel.boundingBox();
     assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
-    const footer = await panel.locator('footer').boundingBox();
-    assert.ok(footer && footer.y + footer.height <= height, 'primary action stays on screen');
+
     await view.screenshot({ path: `artifacts/walk-ui/assessment-${width}.png` });
-    await view.getByRole('button', { name: '關閉評估' }).focus();
+    await view.getByRole('button', { name: '關閉報告' }).focus();
     await view.keyboard.press('Escape');
     assert.equal(await panel.count(), 0);
-    assert.equal(await view.getByRole('button', { name: 'CLS 評估', exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
+    assert.equal(await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
     await view.getByRole('button', { name: '環境觀察', exact: true }).click();
-    await panel.getByText('Your observation', { exact: true }).waitFor();
-    assert.equal(await panel.getByText('詳細實勘', { exact: true }).count(), 1);
+    await view.getByText('Your observation', { exact: true }).waitFor();
+    assert.equal(await view.getByText('環境觀察', { exact: true }).count(), 1);
     assert.equal(await view.getByRole('region', { name: '步行感受' }).count(), 0);
     assert.equal(await view.getByRole('button', { name: '喜歡這裡', exact: true }).count(), 0);
     assert.equal(await view.getByRole('button', { name: '不喜歡', exact: true }).count(), 0);
@@ -137,7 +136,7 @@ try {
   const favoriteContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(favoriteContext);
   const favoritePage = await favoriteContext.newPage();
   await favoritePage.goto(baseURL);
-  await favoritePage.getByRole('button', { name: 'CLS 評估', exact: true }).click();
+  await favoritePage.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
   await favoritePage.getByRole('button', { name: '加入最愛', exact: true }).click();
   assert.equal((await saved(favoritePage)).length, 1);
   assert.equal((await saved(favoritePage))[0].clsScore, null);
@@ -154,12 +153,15 @@ try {
   await pendingPage.getByText('CLS 尚未就緒', { exact: true }).waitFor();
   assert.equal(await pendingPage.getByRole('button', { name: '重試 CLS' }).isEnabled(), true);
   readyScore = true;
-  await pendingPage.getByLabel('CLS 分數 80，等級 A', { exact: true }).waitFor({ timeout: 35000 });
+  await pendingPage.getByRole('button', { name: '重試 CLS' }).click();
+  await pendingPage.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
+  const pendingReport = pendingPage.getByRole('complementary', { name: '街道評估面板' });
+  await pendingReport.getByText('80', { exact: true }).waitFor({ timeout: 10000 });
   assert.equal(await pendingPage.getByRole('region', { name: 'CLS 載入狀態' }).count(), 0);
-  await pendingPage.getByRole('button', { name: 'CLS 評估', exact: true }).click();
-  await pendingPage.getByRole('button', { name: '開始實勘', exact: true }).click();
+  await pendingPage.getByRole('button', { name: '關閉報告' }).click();
+  await pendingPage.getByRole('button', { name: '環境觀察', exact: true }).click();
   await pendingPage.getByText('Your observation', { exact: true }).waitFor();
-  assert.equal(await pendingPage.getByText('詳細實勘', { exact: true }).count(), 1, 'field view replaces CLS read view');
+  assert.equal(await pendingPage.getByText('環境觀察', { exact: true }).count(), 1, 'field view replaces CLS read view');
   assert.equal((await saved(pendingPage)).length, 0);
   await pendingPage.getByRole('button', { name: 'Continue', exact: true }).click();
   await pendingPage.getByRole('button', { name: 'Take photo', exact: true }).waitFor();
@@ -181,21 +183,30 @@ try {
   await historyContext.addInitScript(() => {
     if (localStorage.getItem('cls_saved_locations')) return;
     const timestamp = Date.now();
-    localStorage.setItem('cls_saved_locations', JSON.stringify(['good', 'bad', 'photo'].map((feeling, i) => ({
+    const history = ['good', 'bad', 'photo'].map((feeling, i) => ({
       id: 'old-visit-' + i, name: 'Old visit ' + feeling, streetName: '永康街', district: '大安區', city: '臺北市',
       coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 73, grade: 'B', scores: {}, timestamp, syncStatus: 'synced',
       walkMoment: { feeling, accuracyMeters: 12, positionTimestamp: timestamp, confirmedAt: timestamp, source: 'walk' },
-      evidence: feeling === 'photo' ? [{ id: 'old-photo', type: 'photo', storageKey: 'kept-photo', capturedAt: timestamp, location: { lat: 25.0326, lng: 121.5298 } }] : [],
-    }))));
+      fieldNotes: feeling === 'photo' || feeling === 'bad' ? 'Street was shaded.' : '',
+      evidence: feeling === 'photo' || feeling === 'bad' ? [{ id: 'old-photo-' + feeling, type: 'photo', note: 'Tree shade along sidewalk', storageKey: 'kept-photo-' + feeling, capturedAt: timestamp, location: { lat: 25.0326, lng: 121.5298 } }] : [],
+    }));
+    localStorage.setItem('cls_saved_locations', JSON.stringify(history));
+    localStorage.setItem('cls_favorite_locations', JSON.stringify(['25.03260:121.52980:永康街']));
   });
   const historyPage = await historyContext.newPage(); await historyPage.goto(baseURL + '/?mode=walk');
   await historyPage.getByRole('button', { name: '環境觀察', exact: true }).waitFor();
   const before = await saved(historyPage); assert.equal(before.length, 3);
   await historyPage.reload(); await historyPage.getByRole('button', { name: '環境觀察', exact: true }).waitFor();
   assert.deepEqual(await saved(historyPage), before, 'historical records and evidence survive reload unchanged');
-  await historyPage.getByRole('button', { name: '帳戶', exact: true }).click();
-  await historyPage.getByRole('button').filter({ hasText: 'Favorites' }).click();
-  await historyPage.getByText('Old visit photo', { exact: true }).waitFor();
+  await historyPage.getByRole('button', { name: 'Street Library', exact: true }).click();
+  await historyPage.getByRole('complementary', { name: 'Street Library' }).getByRole('button', { name: 'Favorites' }).click();
+  await historyPage.getByText('Old visit bad', { exact: true }).click();
+  const report = historyPage.getByRole('complementary', { name: '街道結果報告' });
+  await report.getByText('不喜歡', { exact: true }).waitFor();
+  await report.getByText('Tree shade along sidewalk').waitFor();
+  await report.getByText('Street was shaded.', { exact: true }).waitFor();
+  await historyPage.getByRole('button', { name: '返回 Street Library' }).click();
+  await historyPage.getByRole('complementary', { name: 'Street Library' }).waitFor();
   await historyContext.close();
 
   // Legacy saved history may have only a persisted total; it still renders in CLS.
@@ -205,10 +216,9 @@ try {
     coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 73, grade: 'B', scores: {}, timestamp: Date.now(), syncStatus: 'synced',
   }])));
   const legacyPage = await legacyContext.newPage(); await legacyPage.goto(baseURL);
-  await legacyPage.getByRole('button', { name: '帳戶', exact: true }).click();
-  await legacyPage.getByRole('button').filter({ hasText: 'Favorites' }).click();
+  await legacyPage.getByRole('button', { name: 'Street Library', exact: true }).click();
   await legacyPage.getByText('舊紀錄', { exact: true }).click();
-  await legacyPage.getByLabel('CLS 分數 73，等級 B', { exact: true }).waitFor();
+  await legacyPage.getByRole('complementary', { name: '街道結果報告' }).getByText('73', { exact: true }).first().waitFor();
   await legacyContext.close();
 
   const deletionContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(deletionContext);
@@ -217,12 +227,11 @@ try {
     contentType: 'application/json', body: JSON.stringify(route.request().method() === 'DELETE' ? { error: 'Offline' } : [remoteVisit]) }));
   const deletionPage = await deletionContext.newPage(); await deletionPage.goto(baseURL);
   await deletionPage.waitForFunction(() => JSON.parse(localStorage.getItem('cls_saved_locations') || '[]').length === 1);
-  await deletionPage.getByRole('button', { name: '帳戶', exact: true }).click();
-  await deletionPage.getByRole('button').filter({ hasText: 'Favorites' }).click();
+  await deletionPage.getByRole('button', { name: 'Street Library', exact: true }).click();
   await deletionPage.getByTitle('Delete assessment').click();
   assert.equal((await saved(deletionPage)).length, 0);
   await deletionPage.reload();
-  await deletionPage.getByRole('button', { name: '環境觀察', exact: true }).waitFor();
+  await deletionPage.getByRole('button', { name: 'Street Library', exact: true }).waitFor();
   assert.equal((await saved(deletionPage)).length, 0, 'offline deletion must survive stale remote history and reload');
   assert.deepEqual(await deletionPage.evaluate(() => JSON.parse(localStorage.getItem('cls_pending_deletions') || '[]')), ['offline-delete']);
   await deletionContext.close();

@@ -1,0 +1,65 @@
+import { Sparkles, MapPin, Camera, Star } from 'lucide-react';
+import type { AssessmentEvidence, AssessmentExplanation, FieldObservationAdjustment, SavedLocation, StreetAssessmentResponse } from '../types';
+import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
+
+interface Props {
+  saved: SavedLocation | null; streetName: string; district: string; city: string;
+  score: number | null; grade: string | null; assessment: StreetAssessmentResponse | null;
+  fieldNotes: string; ratings: Record<string, number>; adjustment: FieldObservationAdjustment | null;
+  evidence: AssessmentEvidence[]; evidenceUrls: Record<string, string>;
+  aiExplanation: AssessmentExplanation | null; aiExplanationError: string | null;
+  isGeneratingAiExplanation: boolean; canExplain: boolean; onExplain: () => void;
+  isFavorite: boolean; onToggleFavorite: () => void;
+}
+
+export function StreetReport(props: Props) {
+  const { saved, streetName, district, city, score, grade, assessment, fieldNotes, ratings,
+    adjustment, evidence, evidenceUrls, aiExplanation, aiExplanationError,
+    isGeneratingAiExplanation, canExplain, onExplain, isFavorite, onToggleFavorite } = props;
+  const categories = [
+    ['C1 安全', assessment?.scores.c1], ['C2 生活機能', assessment?.scores.c2],
+    ['C3 交通', assessment?.scores.c3], ['C4 綠意環境', assessment?.scores.c4],
+    ['C5 社區', assessment?.scores.c5],
+  ] as const;
+  const photos = evidence.filter(item => item.type === 'photo');
+  const feeling = saved?.walkMoment?.feeling;
+  const savedAdjustment = saved?.fieldAdjustment ?? adjustment?.adjustment ?? null;
+
+  return (
+    <div className="street-report space-y-3" data-testid="street-result-report">
+      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-lg font-bold truncate"><MapPin className="w-4 h-4 shrink-0 text-slate-400" />{saved?.name || streetName}</div>
+            <div className="text-xs text-slate-400 mt-1">{saved?.district || district} · {saved?.city || city}</div>
+            <div className="text-[10px] text-slate-500 mt-1">{saved ? new Date(saved.timestamp).toLocaleString('zh-TW') : '目前選取地點'}</div>
+          </div>
+          <div className="text-right shrink-0"><div className="text-[10px] uppercase tracking-wider text-slate-500">CLS</div><div className="text-3xl font-bold font-mono">{score ?? '—'}</div><div className="text-[10px] text-slate-400">{grade || (score == null ? '待補' : '')}{assessment?.scores.overallMode === 'estimated' ? ' · 推估' : ''}</div></div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          <div className="rounded-xl bg-black/10 p-2.5"><div className="text-[10px] text-slate-500">外部資料 CLS</div><div className="text-sm font-bold mt-1">{saved?.baselineClsScore ?? assessment?.scores.overall ?? '—'}</div></div>
+          <div className="rounded-xl bg-black/10 p-2.5"><div className="text-[10px] text-slate-500">現場調整</div><div className="text-sm font-bold mt-1">{savedAdjustment == null ? '—' : (savedAdjustment > 0 ? '+' : '') + savedAdjustment}</div></div>
+          <button type="button" onClick={onToggleFavorite} aria-label={isFavorite ? '取消最愛' : '加入最愛'} title={isFavorite ? '取消最愛' : '加入最愛'} className={'rounded-xl border p-2 flex items-center justify-center gap-1 text-[10px] ' + (isFavorite ? 'border-amber-300/30 bg-amber-300/10 text-amber-200' : 'border-white/10 text-slate-400')}><Star className={'w-4 h-4 ' + (isFavorite ? 'fill-current' : '')} />{isFavorite ? '已收藏' : '收藏街道'}</button>
+        </div>
+        {feeling && <div className="mt-3 rounded-xl bg-white/[0.04] p-3"><div className="text-[10px] uppercase tracking-wider text-slate-500">使用者現場感受</div><div className="text-sm font-semibold mt-1">{feeling === 'good' ? '喜歡' : feeling === 'bad' ? '不喜歡' : '拍照紀錄'}</div><div className="text-[10px] text-slate-500 mt-1">{saved?.walkMoment?.accuracyMeters != null ? '定位精度 ±' + saved.walkMoment.accuracyMeters + ' m · ' : ''}{saved ? new Date(saved.timestamp).toLocaleString('zh-TW') : ''}</div></div>}
+      </section>
+
+      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+        <h3 className="text-xs font-bold text-slate-200">CLS 分類結果</h3>
+        <div className="grid grid-cols-2 gap-2 mt-2">{categories.map(([label, category]) => <div key={label} className="rounded-xl bg-white/[0.035] p-2.5"><div className="text-[10px] text-slate-500">{label}</div><div className="text-lg font-bold font-mono mt-1">{category?.score ?? '—'}{category?.mode === 'estimated' && <span className="text-[9px] text-amber-300 ml-1">推估</span>}</div></div>)}</div>
+        {assessment?.factors && assessment.factors.length > 0 && <details className="mt-3"><summary className="cursor-pointer text-[10px] text-slate-400">查看指標來源與資料時間</summary><div className="mt-2 space-y-2">{assessment.factors.map((factor, index) => <div key={factor.indicator + '-' + index} className="flex justify-between gap-3 text-[10px]"><span className="text-slate-400">{factor.category} · {factor.indicator}</span><span className="text-right text-slate-500">{factor.value ?? '—'} {factor.unit} · {factor.source}</span></div>)}</div></details>}
+      </section>
+
+      {Object.keys(ratings).length > 0 && <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3"><h3 className="text-xs font-bold text-slate-200">現場環境觀察</h3><div className="mt-2 space-y-2">{FIELD_OBSERVATION_DEFINITIONS.filter(item => ratings[item.id] != null).map(item => <div key={item.id} className="flex justify-between gap-3 text-[11px]"><span className="text-slate-400">{item.category} · {item.title}</span><span className="shrink-0 text-slate-200">{item.ratingLabels[ratings[item.id] - 1]}</span></div>)}</div>{fieldNotes.trim() && <p className="mt-3 pt-3 border-t border-white/5 text-xs leading-relaxed text-slate-300 whitespace-pre-wrap">{fieldNotes}</p>}</section>}
+      {fieldNotes.trim() && Object.keys(ratings).length === 0 && <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3"><h3 className="text-xs font-bold text-slate-200">實勘說明</h3><p className="text-xs leading-relaxed text-slate-300 whitespace-pre-wrap mt-2">{fieldNotes}</p></section>}
+      {(photos.length > 0 || !saved) && <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3"><h3 className="text-xs font-bold text-slate-200 flex items-center gap-2"><Camera className="w-4 h-4" />照片與佐證</h3>{photos.length > 0 ? <div className="grid grid-cols-2 gap-2 mt-3">{photos.map(item => { const url = evidenceUrls[item.id] || (item.storageKey ? evidenceUrls[item.storageKey] : undefined); return <figure key={item.id} className="overflow-hidden rounded-xl bg-black/20"><div className="aspect-square">{url ? <img src={url} alt={item.note || '街道實勘照片'} className="w-full h-full object-cover" /> : <div className="h-full flex items-center justify-center text-[10px] text-slate-500">照片目前無法載入</div>}</div><figcaption className="p-2 text-[10px] text-slate-400">{item.note || '未提供照片說明'}<div className="text-slate-600 mt-1">{new Date(item.capturedAt).toLocaleString('zh-TW')}</div></figcaption></figure>; })}</div> : <p className="text-[11px] text-slate-500 mt-2">這筆紀錄沒有照片。</p>}{evidence.filter(item => item.type === 'note' && item.note).map(item => <p key={item.id} className="mt-2 rounded-lg bg-white/[0.03] p-2.5 text-[11px] text-slate-400">{item.note}</p>)}</section>}
+
+      <section className="rounded-2xl border border-violet-400/20 bg-violet-400/[0.05] p-3">
+        <div className="flex items-center justify-between gap-3"><div className="text-xs font-bold text-violet-100 flex items-center gap-2"><Sparkles className="w-4 h-4 text-violet-300" />AI 解說</div><button type="button" onClick={onExplain} disabled={!canExplain || isGeneratingAiExplanation} className="px-2.5 py-2 rounded-lg bg-violet-500/15 border border-violet-400/20 text-[10px] font-bold text-violet-200 disabled:opacity-40">{isGeneratingAiExplanation ? '分析中…' : aiExplanation ? '重新產生' : '產生 AI 解說'}</button></div>
+        {!canExplain && <p className="text-[10px] text-slate-500 mt-2">先將此評估儲存至 Street Library，即可產生以該筆報告資料為依據的解說。</p>}
+        {aiExplanationError && <p role="alert" className="text-[10px] text-rose-300 mt-2">{aiExplanationError}</p>}
+        {aiExplanation && <div className="mt-3 space-y-2"><p className="text-xs leading-relaxed text-slate-300">{aiExplanation.summary}</p>{([['優點', aiExplanation.strengths], ['資料限制', aiExplanation.limitations], ['現場觀察', aiExplanation.fieldObservations], ['後續確認', aiExplanation.followUpChecks]] as const).map(([label, items]) => items.length > 0 && <div key={label}><div className="text-[10px] text-slate-500">{label}</div>{items.map(item => <p key={item} className="text-[11px] text-slate-300 mt-1">{item}</p>)}</div>)}</div>}
+      </section>
+    </div>
+  );
+}

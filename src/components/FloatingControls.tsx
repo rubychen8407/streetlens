@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
-  Navigation,
   Layers,
-  Sun,
   X,
   MapPin,
   Loader2,
   Check,
-  Compass,
+  ClipboardList,
+  Library,
   ChevronRight,
   Key,
   ShieldCheck,
@@ -16,13 +15,10 @@ import {
   Crosshair,
   Copy,
   ExternalLink,
-  UserCircle,
-  Star,
   SlidersHorizontal,
-  Footprints,
 } from 'lucide-react';
 import { StreetTelemetry } from './StreetTelemetry';
-import { LocationCoord, WeatherData, StreetAssessmentResponse } from '../types';
+import { LocationCoord, StreetAssessmentResponse } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
 import { CARTO_STORAGE_KEY, getActiveCartoKey } from './ScoutMap';
 
@@ -39,7 +35,7 @@ interface FloatingControlsProps {
   isLocatingGPS: boolean;
   onLocateMe: () => void;
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
-  onOpenSheet: () => void;
+  onOpenReport: () => void;
   onOpenField: () => void;
   isSheetOpen: boolean;
   onOpenSaved: () => void;
@@ -59,7 +55,6 @@ interface FloatingControlsProps {
   currentLocation: LocationCoord;
   targetLocation: LocationCoord;
   accuracyRadius?: number;
-  weatherData?: WeatherData | null;
 }
 
 // Helper to parse coordinate string (e.g. "25.033, 121.564" or "25.033 121.564")
@@ -93,7 +88,7 @@ export function FloatingControls({
   isLocatingGPS,
   onLocateMe,
   onSelectCoordinate,
-  onOpenSheet,
+  onOpenReport,
   onOpenField,
   isSheetOpen,
   activeLayers,
@@ -103,7 +98,6 @@ export function FloatingControls({
   currentLocation,
   targetLocation,
   accuracyRadius,
-  weatherData,
   onOpenSaved,
   onOpenSettings,
 }: FloatingControlsProps) {
@@ -113,10 +107,8 @@ export function FloatingControls({
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showLayerMenu, setShowLayerMenu] = useState(false);
-  const [showWeatherDetail, setShowWeatherDetail] = useState(false);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showCoordModal, setShowCoordModal] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Custom coordinate input in modal
   const [customLat, setCustomLat] = useState(currentLocation.lat.toFixed(6));
@@ -202,8 +194,8 @@ export function FloatingControls({
     const dismiss = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (layerMenuRef.current?.contains(document.activeElement)) layerMenuRef.current.querySelector<HTMLButtonElement>('button[aria-label="圖層"]')?.focus();
-      setIsSearchOpen(false); setShowLayerMenu(false); setShowWeatherDetail(false);
-      setShowProfileMenu(false); setShowKeyModal(false); setShowCoordModal(false);
+      setIsSearchOpen(false); setShowLayerMenu(false);
+      setShowKeyModal(false); setShowCoordModal(false);
     };
     document.addEventListener('keydown', dismiss);
     return () => document.removeEventListener('keydown', dismiss);
@@ -264,230 +256,17 @@ export function FloatingControls({
 
   return (
     <div data-panel-open={isSheetOpen} className="tactical-controls pointer-events-none absolute inset-0 z-[500] flex flex-col justify-between p-3 sm:p-4 select-none">
-      <nav className="tactical-dock hud-card" aria-label="主要導覽">
+      <nav className="tactical-dock hud-card" aria-label="地點功能">
         <div className="dock-brand" title="StreetLens"><span>SL</span><i /></div>
         <div className="dock-divider" />
-        <button type="button" onClick={onOpenSheet} aria-label="街道評估" title="街道評估"><Compass size={21} /></button>
-        <button type="button" onClick={onOpenField} aria-label="實勘模式" title="實勘模式" className="hud-primary"><Footprints size={21} /></button>
-        <button type="button" onClick={onOpenSaved} aria-label="已儲存街道" title="已儲存街道"><Star size={21} /></button>
-        <div className="dock-spacer" />
-        <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
-      </nav>
-      <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenSheet} />
-      {clsScore == null && !isSheetOpen && <section className="cls-read-status hud-card" aria-label="CLS 載入狀態">
-        <div role="status"><strong>{isLoadingScore ? '正在讀取 CLS…' : 'CLS 尚未就緒'}</strong><p>{isLoadingScore ? '正在查詢此地點的已儲存資料。' : scoreStatus}</p></div>
-        <button type="button" onClick={onRetryScore} disabled={isLoadingScore} aria-label="重試 CLS">{isLoadingScore ? <Loader2 className="w-4 h-4 animate-spin" /> : '重試'}</button>
-      </section>}
-      {/* TOP FLOATING ROW */}
-      <div className="utility-bar flex items-start justify-between gap-2 pointer-events-auto">
-        {/* Top-Left Weather Pill (Apple Maps style: ☀️ 29°) */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowWeatherDetail((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1A212B]/85 hover:bg-[#1A212B] backdrop-blur-md text-white text-xs font-semibold shadow-lg border border-white/[0.08] transition-transform active:scale-95"
-            title="天氣" aria-label="天氣" aria-expanded={showWeatherDetail}
-          >
-            <Sun className="w-4 h-4 text-amber-400" />
-            <span className="font-bold font-mono">{weatherData?.temperature != null ? `${weatherData.temperature}°` : '—'}</span>
-            <span className="text-[11px] text-slate-400 hidden xs:inline">
-              {weatherData?.stationDistrict || district || '台北'}
-            </span>
-          </button>
-
-          {/* Mini Weather Popover */}
-          {showWeatherDetail && (
-            <div className="absolute top-full left-0 mt-2 w-56 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md text-white shadow-xl border border-white/[0.08] text-xs space-y-2">
-              <div className="flex justify-between items-center text-slate-300">
-                <span className="font-medium">
-                  {weatherData?.stationDistrict || `${city || '台北市'} ${district || '大安區'}`}
-                </span>
-                <span className="font-bold text-amber-400">
-                  {weatherData?.condition || '資料不可用'}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-bold font-mono">
-                  {weatherData?.temperature != null ? `${weatherData.temperature}°C` : '—'}
-                </div>
-                <div className="text-[11px] text-slate-400">
-                  {weatherData?.stationName ? `資料來源：${weatherData.stationName}` : weatherData?.source || '資料尚未取得'}
-                </div>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/[0.08] pt-1.5">
-                <div className="flex justify-between items-center">
-                  <span>空氣品質 AQI：</span>
-                  <span className="font-mono font-semibold text-emerald-400">
-                    {weatherData?.aqi != null ? `${weatherData.aqi} (${weatherData.aqiStatus})` : '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>相對濕度：</span>
-                  <span className="font-mono font-semibold text-slate-300">
-                    {weatherData?.humidity != null ? `${weatherData.humidity}%` : '—'}
-                  </span>
-                </div>
-                {weatherData?.pm25 !== undefined && (
-                  <div className="flex justify-between items-center text-[10px] text-slate-400">
-                    <span>細懸浮微粒 PM2.5：</span>
-                    <span className="font-mono">{weatherData.pm25} µg/m³</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Center CLS score: always visible without creating another entry point */}
-        <div className="flex-1 flex justify-center min-w-0 px-1 pointer-events-none">
-          <div
-            className={`h-10 px-3 sm:px-3.5 rounded-full bg-[#1A212B]/90 backdrop-blur-md border border-white/[0.08] shadow-lg flex items-center gap-2 text-white pointer-events-auto ${
-              clsScore == null ? 'opacity-80' : ''
-            }`}
-            title="CLS 分數"
-            aria-label={clsScore == null ? 'CLS 分數暫無' : `CLS 分數 ${clsScore.toFixed(0)}，等級 ${grade || '—'}`}
-          >
-            <span className="text-[10px] sm:text-[11px] font-semibold tracking-wide text-slate-400">CLS</span>
-            <span
-              className={`text-sm sm:text-base font-bold font-mono leading-none ${
-                grade === 'S' || grade === 'A'
-                  ? 'text-slate-200'
-                  : grade === 'B'
-                    ? 'text-slate-300'
-                    : grade === 'C'
-                      ? 'text-slate-200'
-                      : grade === 'D'
-                        ? 'text-slate-200'
-                        : 'text-slate-300'
-              }`}
-            >
-              {clsScore == null ? (isLoadingScore ? '載入中' : '待補') : clsScore.toFixed(0)}
-            </span>
-            {grade && (
-              <span className="text-[10px] font-bold text-slate-400 border-l border-white/[0.08] pl-2">
-                {grade}
-              </span>
-            )}
-          </div>
-        </div>
-        {/* Environment observations stay outside the search row so mobile search keeps its width. */}
-        <div className="relative flex items-center gap-2">
-          <button type="button" onClick={onOpenField} className="mobile-field hud-primary h-10 shrink-0 rounded-full text-white shadow-lg border border-white/[0.08] flex items-center justify-center active:scale-95" title="環境觀察" aria-label="環境觀察">
-            <Footprints className="w-5 h-5" /><span>環境觀察</span>
-          </button>
-          <button type="button" onClick={() => setShowProfileMenu(v => !v)} className="w-10 h-10 rounded-full bg-[#1A212B]/90 backdrop-blur-md border border-white/[0.08] shadow-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-[#26313E] transition-all" title="帳戶" aria-label="帳戶" aria-expanded={showProfileMenu}>
-            <UserCircle className="w-5 h-5" />
-          </button>
-          {showProfileMenu && (
-            <div className="absolute top-full right-0 mt-2 w-60 rounded-2xl bg-[#1A212B]/98 backdrop-blur-md border border-white/[0.08] shadow-2xl p-2 text-white">
-              <div className="px-3 py-2.5 border-b border-white/[0.08] mb-1">
-                <div className="text-sm font-bold">StreetLens</div>
-                <div className="text-[10px] text-slate-500">Street assessment workspace</div>
-              </div>
-              <button onClick={() => { onOpenSaved(); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-left">
-                <Star className="w-4 h-4 text-amber-300" /><div><div className="text-xs font-semibold">Favorites</div><div className="text-[10px] text-slate-500">Favorite streets & CLS list</div></div>
-              </button>
-              <button onClick={() => { onOpenSettings(); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-left">
-                <SlidersHorizontal className="w-4 h-4 text-slate-300" /><div><div className="text-xs font-semibold">Settings</div><div className="text-[10px] text-slate-500">Data sources & system status</div></div>
-              </button>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* BOTTOM FLOATING CONTROLS */}
-      <div className="search-toolbar pointer-events-auto pb-1 w-full">
-        <div className="w-full max-w-3xl mx-auto flex items-end gap-2 sm:gap-3">
-          {/* Unified address search + field assessment entry */}
-          <div className="relative flex-1 min-w-0" ref={searchContainerRef}>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 min-w-0">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 pointer-events-none">
-                {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-              </div>
-              <input
-                type="text"
-                value={searchQuery || currentStreetName}
-                onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
-                onFocus={() => setIsSearchOpen(true)}
-                placeholder="搜尋新的實勘點..."
-                className="w-full h-12 pl-11 pr-10 bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-indigo-400 shadow-2xl transition-all"
-                aria-label="搜尋新的實勘點"
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white" aria-label="清除搜尋" title="清除">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-              {isSearchOpen && (
-                <div className="search-results absolute bottom-full left-0 right-0 mb-2 bg-[#1A212B]/98 backdrop-blur-md border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
-                  {suggestions.length > 0 ? (
-                    <div className="p-1">
-                      {suggestions.map((item, idx) => (
-                        <button key={idx} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-xs hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors">
-                          <MapPin className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div>
-                            <div className="text-[11px] text-slate-400 truncate">{item.display_name}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 text-center text-xs text-slate-500">輸入地址或街道名稱搜尋新的實勘點</div>
-                  )}
-                </div>
-              )}
-            </div>
-            <button type="button" onClick={onOpenSheet} className="assessment-entry w-12 h-12 shrink-0 rounded-2xl bg-white/10 text-white shadow-2xl border border-white/[0.08] flex items-center justify-center transition-all active:scale-90" title="CLS 評估" aria-label="CLS 評估">
-              <Compass className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Map tools share the bottom row but keep a fixed footprint, so resizing
-            never lets them overlap the search field or assessment button. */}
-        <div
-          className="map-tools relative shrink-0 h-12 flex items-center bg-[#1A212B]/90 backdrop-blur-md rounded-2xl shadow-xl border border-white/[0.08] p-0.5"
-          ref={layerMenuRef}
-        >
-            {/* Layer Button */}
-            <button
-              type="button"
-              onClick={() => setShowLayerMenu((v) => !v)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                showLayerMenu ? 'text-slate-300 bg-white/10' : 'text-slate-300 hover:text-white'
-              }`}
-              title="圖層" aria-label="圖層" aria-expanded={showLayerMenu}
-            >
-              <Layers className="w-5 h-5" />
-            </button>
-
-            <div className="h-6 w-px bg-white/10 mx-0.5" />
-
-            {/* Locate Me Button */}
-            <button
-              type="button"
-              onClick={onLocateMe}
-              disabled={isLocatingGPS}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                isLocatingGPS
-                  ? 'text-slate-300 bg-white/10'
-                  : 'text-slate-300 hover:text-white active:scale-95'
-              }`}
-              title="定位" aria-label="定位"
-            >
-              {isLocatingGPS ? (
-                <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
-              ) : (
-                <Navigation className="w-5 h-5 -rotate-45 fill-current" />
-              )}
-            </button>
-
+        <button type="button" onClick={onOpenReport} aria-label="CLS 結果報告" title="CLS 結果報告"><ClipboardList size={21} /></button>
+        <button type="button" onClick={onOpenField} aria-label="環境觀察" title="環境觀察"><Crosshair size={21} /></button>
+        <button type="button" onClick={onOpenSaved} aria-label="Street Library" title="Street Library"><Library size={21} /></button>
+        <div className="dock-layer relative" ref={layerMenuRef}>
+          <button type="button" onClick={() => setShowLayerMenu(value => !value)} aria-label="圖層" title="圖層" aria-expanded={showLayerMenu} className={showLayerMenu ? 'bg-white/10 text-white' : ''}><Layers size={21} /></button>
             {/* Layer Popover Menu */}
             {showLayerMenu && (
-              <div className="layer-popover absolute bottom-full right-0 mb-2 w-56 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md text-white shadow-2xl border border-white/[0.08] text-xs space-y-2.5">
+              <div className="layer-popover absolute left-full top-0 ml-2 w-56 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md text-white shadow-2xl border border-white/[0.08] text-xs space-y-2.5">
                 <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
                   <span className="font-bold text-slate-200">地圖圖層設定</span>
                   <button
@@ -584,7 +363,41 @@ export function FloatingControls({
                 </div>
               </div>
             )}
+        </div>
+        <div className="dock-spacer" />
+        <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
+      </nav>
+      <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenReport} />
+      {clsScore == null && !isSheetOpen && <section className="cls-read-status hud-card" aria-label="CLS 載入狀態">
+        <div role="status"><strong>{isLoadingScore ? '正在讀取 CLS…' : 'CLS 尚未就緒'}</strong><p>{isLoadingScore ? '正在查詢此地點的已儲存資料。' : scoreStatus}</p></div>
+        <button type="button" onClick={onRetryScore} disabled={isLoadingScore} aria-label="重試 CLS">{isLoadingScore ? <Loader2 className="w-4 h-4 animate-spin" /> : '重試'}</button>
+      </section>}
+      {/* LOCATION SELECTOR */}
+      <div className="search-toolbar pointer-events-auto">
+        <div className="location-selector w-full max-w-3xl flex items-center gap-2">
+          <div className="relative flex-1 min-w-0" ref={searchContainerRef}>
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+            </div>
+            <input
+              type="text"
+              value={searchQuery || currentStreetName}
+              onChange={event => { setSearchQuery(event.target.value); setIsSearchOpen(true); }}
+              onFocus={() => setIsSearchOpen(true)}
+              placeholder="搜尋地點或輸入座標"
+              className="w-full h-12 pl-11 pr-10 bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 shadow-2xl transition-all"
+              aria-label="搜尋地點"
+            />
+            {searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white" aria-label="清除搜尋" title="清除"><X className="w-4 h-4" /></button>}
+            {isSearchOpen && <div className="search-results absolute top-full left-0 right-0 mt-2 bg-[#1A212B]/98 backdrop-blur-md border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
+              {suggestions.length > 0 ? <div className="p-1">{suggestions.map((item, index) => <button key={index} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-xs hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors"><MapPin className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" /><div className="min-w-0"><div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div><div className="text-[11px] text-slate-400 truncate">{item.display_name}</div></div></button>)}</div> : <div className="p-4 text-center text-xs text-slate-500">輸入地址、街道名稱或經緯度</div>}
+              {matchedCoord && <button type="button" onClick={() => { onSelectCoordinate(matchedCoord, `${matchedCoord.lat.toFixed(5)}, ${matchedCoord.lng.toFixed(5)}`); setSearchQuery(''); setIsSearchOpen(false); }} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-xs text-slate-300 hover:bg-white/10">使用座標 {matchedCoord.lat.toFixed(5)}, {matchedCoord.lng.toFixed(5)}</button>}
+              {PRESET_EXPLORATION_LOCATIONS.filter(preset => searchQuery && preset.name.toLowerCase().includes(searchQuery.toLowerCase())).map(preset => <button key={preset.name} type="button" onClick={() => handleSelectPreset(preset)} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-xs text-slate-300 hover:bg-white/10">{preset.name}</button>)}
+            </div>}
           </div>
+          <button type="button" onClick={onLocateMe} disabled={isLocatingGPS} aria-label="定位到目前位置" title="定位到目前位置" className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center disabled:opacity-50">
+            {isLocatingGPS ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crosshair className="w-5 h-5" />}
+          </button>
         </div>
       </div>
 
@@ -774,7 +587,7 @@ export function FloatingControls({
                     </>
                   ) : (
                     <>
-                      <Navigation className="w-3.5 h-3.5 -rotate-45" />
+                      <Crosshair className="w-3.5 h-3.5" />
                       <span>重新偵測 GPS</span>
                     </>
                   )}
@@ -886,4 +699,3 @@ export function FloatingControls({
     </div>
   );
 }
-

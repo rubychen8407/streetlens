@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t, bilingual, useLanguage } from '../i18n';
 import L from 'leaflet';
-import { LocationCoord, POIMarker, StreetSegmentScore } from '../types';
+import { LocationCoord, POIMarker, StreetSegmentScore, SavedLocation } from '../types';
+import { savedScoreLocations, visibleSavedScores } from '../utils/savedScoreMap';
+import { formatNumber } from '../utils/formatNumber';
 
 interface ScoutMapProps {
   currentLocation: LocationCoord;
@@ -10,6 +12,8 @@ interface ScoutMapProps {
   onBackgroundClick?: () => boolean;
   streetSegments: StreetSegmentScore[];
   poiMarkers: POIMarker[];
+  savedLocations?: SavedLocation[];
+  onSelectSaved?: (saved: SavedLocation) => void;
   activeLayers: {
     c1Safety: boolean;
     c2Amenity: boolean;
@@ -25,6 +29,7 @@ interface ScoutMapProps {
 }
 
 export const CARTO_STORAGE_KEY = 'cls_scout_carto_api_key';
+const NO_SAVED_LOCATIONS: SavedLocation[] = [];
 
 export function getActiveCartoKey(): string {
   if (typeof window !== 'undefined') {
@@ -73,12 +78,17 @@ export function ScoutMap({
   onBackgroundClick,
   streetSegments,
   poiMarkers,
+  savedLocations = NO_SAVED_LOCATIONS,
+  onSelectSaved,
   activeLayers,
   mapTheme,
   accuracyRadius,
   heading,
 }: ScoutMapProps) {
   const language = useLanguage();
+  const savedScores = useMemo(() => savedScoreLocations(savedLocations), [savedLocations]);
+  const savedSelectionHandler = useRef(onSelectSaved);
+  savedSelectionHandler.current = onSelectSaved;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const selectionHandler = useRef(onSelectLocation);
   selectionHandler.current = onSelectLocation;
@@ -388,6 +398,56 @@ export function ScoutMap({
       });
     }
   }, [mapInstance, streetSegments, activeLayers.streetScores, language]);
+
+  // Local-only score overlay. Pan/zoom/layer changes never request history,
+  // assessment, reverse-geocoding or source data. Bound DOM work to 200 labels.
+  useEffect(() => {
+    if (!mapInstance) return;
+    const layer = L.layerGroup().addTo(mapInstance);
+    const markers = new Map<string, L.Marker>();
+    const draw = () => {
+      if (!activeLayers.streetScores) return;
+      const bounds = mapInstance.getBounds().pad(0.1);
+      const records = visibleSavedScores(savedScores, { south:bounds.getSouth(), north:bounds.getNorth(), west:bounds.getWest(), east:bounds.getEast() });
+      const visibleIds = new Set(records.map(record => record.id));
+      for (const [id, marker] of markers) {
+        if (!visibleIds.has(id)) { layer.removeLayer(marker); markers.delete(id); }
+      }
+      for (const record of records) {
+        if (markers.has(record.id)) continue;
+        const score = formatNumber(record.clsScore);
+        const label = bilingual('已儲存 CLS', 'Saved CLS') + ' ' + score + ' · ' + (record.name || record.streetName);
+        const badge = document.createElement('div');
+        badge.className = 'saved-score-badge';
+        const caption = document.createElement('span'); caption.textContent = 'CLS';
+        const value = document.createElement('strong'); value.textContent = score;
+        badge.append(caption, value);
+        const marker = L.marker([record.coords.lat, record.coords.lng], {
+          icon:L.divIcon({ className:'saved-score-marker', html:badge, iconSize:[64,44], iconAnchor:[32,-8] }),
+          title:label, alt:label, keyboard:true, bubblingMouseEvents:false, zIndexOffset:1800,
+        });
+        const tooltip = document.createElement('div');
+        // User names are text, never HTML. No photo URLs or remote icons.
+        tooltip.textContent = label + '\n' + new Date(record.timestamp).toLocaleString(language === 'en' ? 'en' : 'zh-TW');
+        marker.bindTooltip(tooltip, { direction:'bottom', offset:[0,48], className:'saved-score-tooltip' });
+        marker.on('click', () => savedSelectionHandler.current?.(record));
+        layer.addLayer(marker);
+        markers.set(record.id, marker);
+        const element = marker.getElement();
+        element?.setAttribute('aria-label',label);
+        element?.setAttribute('role','button');
+        element?.setAttribute('data-saved-assessment-id',record.id);
+        element?.addEventListener('keydown', event => {
+          if (event.key === ' ' || event.key === 'Enter') {
+            event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
+          }
+        });
+      }
+    };
+    draw();
+    mapInstance.on('moveend',draw);
+    return () => { mapInstance.off('moveend',draw); layer.remove(); };
+  }, [mapInstance, savedScores, activeLayers.streetScores, language]);
 
   // Update POI Markers (Apple Maps style icons)
   useEffect(() => {

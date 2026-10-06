@@ -1,0 +1,52 @@
+.dock-button { position: relative; }
+#app-root .tactical-dock .dock-button[aria-pressed="true"] { background: rgba(212,249,113,.14); border-color: rgba(212,249,113,.45); color: #d4f971; box-shadow: inset 0 0 0 1px rgba(212,249,113,.08); }
+.dock-tooltip { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); white-space: nowrap; pointer-events: none; visibility: hidden; opacity: 0; background: var(--hud-surface); color: var(--hud-text); border: 1px solid var(--hud-border); border-radius: 8px; padding: 7px 10px; font-size: 11px; line-height: 1.4; box-shadow: var(--hud-shadow); z-index: 10; }
+.dock-button:hover .dock-tooltip, .dock-button:focus-visible .dock-tooltip { visibility: visible; opacity: 1; }
+@media (min-width: 1024px) {
+  .dock-tooltip { bottom: auto; top: 50%; left: calc(100% + 18px); transform: translateY(-50%); }
+}
+.profile-settings { position: fixed; inset: 0; margin: auto; width: min(380px,calc(100vw - 32px)); height: fit-content; max-height: calc(100dvh - 32px); padding: 0; overflow-y: auto; pointer-events: auto; background: var(--hud-surface); color: var(--hud-text); border: 1px solid var(--hud-border); border-radius: 20px; box-shadow: var(--hud-shadow); }
+.profile-settings::backdrop { background: rgba(4,9,16,.55); backdrop-filter: blur(4px); }
+.profile-settings-body { padding: 20px; }
+.profile-settings header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.profile-settings h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; }
+.profile-settings header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: rgba(127,142,163,.1); }
+.profile-settings fieldset + fieldset { margin-top: 24px; }
+.profile-settings legend { font-size: 12px; color: var(--hud-muted); margin-bottom: 10px; }
+.profile-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.profile-options label { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px; border: 1px solid var(--hud-border); border-radius: 12px; cursor: pointer; font-size: 12px; }
+.profile-options label:has(input:checked) { background: rgba(212,249,113,.12); border-color: #96b347; }
+.profile-options input { accent-color: #96b347; }
+.profile-options label:focus-within { outline: 2px solid #96b347; outline-offset: 2px; }
+
+:root[data-theme="light"] { color-scheme: light; --hud-canvas: #edf1f5; --hud-surface: #fff; --hud-border: rgba(31,48,69,.16); --hud-text: #203047; --hud-muted: #53647a; --hud-shadow: 0 12px 40px rgba(31,48,69,.12), 0 2px 8px rgba(31,48,69,.08); }
+#app-root[data-map-theme="light"] { background: var(--hud-canvas); color: var(--hud-text); }
+#app-root[data-map-theme="light"] :is(.assessment-panel,.hud-card,.search-results,.location-action,.location-selector input,.cls-read-status) { background: rgba(255,255,255,.96); color: var(--hud-text); border-color: var(--hud-border); }
+#app-root[data-map-theme="light"] .tactical-dock { background: linear-gradient(135deg,rgba(255,255,255,.91),rgba(232,239,247,.88)); border-color: rgba(31,48,69,.2); box-shadow: var(--hud-shadow), inset 0 1px 0 rgba(255,255,255,.8); }
+#app-root[data-map-theme="light"] .dock-button { color: #53647a; }
+#app-root[data-map-theme="light"] .dock-button:hover { background: rgba(31,48,69,.06); color: #203047; }
+#app-root[data-map-theme="light"] .dock-button[aria-pressed="true"] { background: #e4f4b6; border-color: #718c2f; color: #324d12; }
+#app-root[data-map-theme="light"] .dock-divider { background: rgba(31,48,69,.2); }
+/* Existing report surfaces share the same light palette; camera overlays keep
+   their dark contrast so live photos and video are never recolored. */
+#app-root[data-map-theme="light"] [class*="bg-[#"]:not(.walk-panel,.walk-panel *) { background-color: var(--hud-surface); }
+#app-root[data-map-theme="light"] [class*="bg-white/"]:not(.walk-panel,.walk-panel *) { background-color: rgba(31,48,69,.045); }
+#app-root[data-map-theme="light"] [class*="bg-black/"]:not(.walk-panel,.walk-panel *) { background-color: rgba(31,48,69,.035); }
+#app-root[data-map-theme="light"] :is(.text-white,[class*="text-slate-100"],[class*="text-slate-200"],[class*="text-slate-300"]):not(.walk-panel,.walk-panel *) { color: var(--hud-text); }
+#app-root[data-map-theme="light"] :is(.text-slate-400,.text-slate-500,.text-slate-600):not(.walk-panel,.walk-panel *) { color: var(--hud-muted); }
+#app-root[data-map-theme="light"] [class*="border-white/"]:not(.walk-panel,.walk-panel *) { border-color: var(--hud-border); }
+#app-root[data-map-theme="light"] [class*="text-emerald-"]:not(.walk-panel,.walk-panel *) { color: #17684b; }
+#app-root[data-map-theme="light"] [class*="text-rose-"]:not(.walk-panel,.walk-panel *) { color: #a42145; }
+#app-root[data-map-theme="light"] [class*="text-amber-"]:not(.walk-panel,.walk-panel *) { color: #875409; }
+#app-root[data-map-theme="light"] [class*="text-violet-"]:not(.walk-panel,.walk-panel *) { color: #6342a8; }
+#app-root[data-map-theme="light"] [class*="bg-rose-"]:not(.walk-panel,.walk-panel *) { background-color: #fff0f2; color: #a42145; }
+#app-root[data-map-theme="light"] .hud-primary { color: #17200e; background: var(--hud-accent); }
+#app-root[data-map-theme="light"] .hud-primary:disabled { background: #c8d3b5; }
+#app-root[data-map-theme="light"] .assessment-panel button[aria-current="step"] { background: #edf7d3; color: #324d12; border-color: #9bb565; }
+#app-root[data-map-theme="light"] .cls-read-status button { background: #edf1f5; color: #203047; }
+#app-root[data-map-theme="light"] :is(.target-badge-label,.user-badge-label) { background: #fff; color: #324d12; border-color: #718c2f; }
+#app-root[data-map-theme="light"] .leaflet-control-attribution { background: rgba(255,255,255,.85) !important; color: #53647a !important; }
+#app-root[data-map-theme="light"] .leaflet-control-attribution a { color: #344b6e !important; }
+#app-root[data-map-theme="light"] .leaflet-tooltip { background: #fff !important; color: #203047; border-color: var(--hud-border) !important; }
+#app-root[data-map-theme="light"] :is(input,textarea)::placeholder { color: #65758a; }
+:root[data-theme="light"] :is(button,input,select,textarea,a):focus-visible { outline-color: #526a30; }

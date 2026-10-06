@@ -80,6 +80,8 @@ export function ScoutMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const selectionHandler = useRef(onSelectLocation);
   selectionHandler.current = onSelectLocation;
+  const themeRef = useRef(mapTheme);
+  themeRef.current = mapTheme;
   const mapRef = useRef<L.Map | null>(null);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -157,7 +159,7 @@ export function ScoutMap({
 
     // Listen for custom event when key is updated in dialog
     const handleKeyChange = () => {
-      setupTileLayer(mapTheme, map);
+      setupTileLayer(themeRef.current, map);
     };
     window.addEventListener('carto_key_updated', handleKeyChange);
 

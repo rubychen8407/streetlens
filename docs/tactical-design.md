@@ -12,6 +12,8 @@ The dark map uses slate canvas (`#0E131A`), translucent raised surfaces (`#1A212
 
 ## Language selection
 
+The former SL mark is now a Profile Settings button. It opens a keyboard-accessible modal with language and dark/light appearance choices. Theme is remembered separately in `streetlens-theme`; the light palette applies to the map, reports and controls, while live camera overlays retain dark contrast. Desktop dock height fits its contents and Data Status sits directly below observations. Every dock action has a hover/focus tooltip and the currently open view is highlighted; closing a view clears its selection.
+
 The search toolbar, assessment panel and full-screen field walk include a language switch. The interface defaults to Traditional Chinese and remembers `zh-TW` or `en` in the separate `streetlens-language` preference. UI labels, accessibility text, field definitions, system notices and dates follow the selection. Proper place names and user-authored notes retain their original text; saved assessments and evidence are not migrated or rewritten.
 
 AI explanation requests include `language=zh-TW` or `language=en`. The server validates the value and instructs Gemini to use it for the summary and every list item. An output guard rejects obvious language mismatches. Changing language or saved assessment clears the prior explanation and cancels its request; late replies cannot replace an explanation in the new language. Generate again to get the selected language. CI covers translation completeness, request language, mobile layout, preference persistence, stale responses and unchanged saved records. Real Gemini generation requires the deployment's credentials and is not exercised by deterministic fixtures.

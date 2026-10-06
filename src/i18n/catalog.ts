@@ -1,5 +1,10 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+個人設定|Profile settings
+語言|Language
+外觀|Appearance
+深色模式|Dark mode
+淺色模式|Light mode
 實勘|Field walk
 CLS 結果報告|CLS report
 環境觀察|Environment observations

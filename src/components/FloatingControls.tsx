@@ -1,5 +1,7 @@
 import { t, displayPlace } from '../i18n';
 import { LanguageSwitch } from './LanguageSwitch';
+import { DockButton } from './DockButton';
+import { ProfileSettings } from './ProfileSettings';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
@@ -19,6 +21,7 @@ import {
   Copy,
   ExternalLink,
   Database,
+  UserRound,
 } from 'lucide-react';
 import { StreetTelemetry } from './StreetTelemetry';
 import { LocationCoord, StreetAssessmentResponse } from '../types';
@@ -26,6 +29,7 @@ import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
 import { CARTO_STORAGE_KEY, getActiveCartoKey } from './ScoutMap';
 
 interface FloatingControlsProps {
+  activeDock: 'walk' | 'report' | 'field' | 'settings' | null;
   currentStreetName: string;
   district: string;
   city: string;
@@ -70,6 +74,7 @@ function parseCoordinateInput(text: string): LocationCoord | null {
 }
 
 export function FloatingControls({
+  activeDock,
   currentStreetName,
   district,
   city,
@@ -89,6 +94,7 @@ export function FloatingControls({
   onOpenSaved,
   onOpenSettings,
 }: FloatingControlsProps) {
+  const [profileOpen, setProfileOpen] = useState(false);
   const [statusDismissed, setStatusDismissed] = useState(false);
   useEffect(() => {
     setStatusDismissed(false);
@@ -244,14 +250,14 @@ export function FloatingControls({
   return (
     <div data-panel-open={isSheetOpen} className="tactical-controls pointer-events-none absolute inset-0 z-[500] flex flex-col justify-between p-3 sm:p-4 select-none">
       <nav className="tactical-dock hud-card" aria-label={t("地點功能")}>
-        <div className="dock-brand" title="StreetLens"><span>SL</span><i /></div>
+        <DockButton label={t('個人設定')} active={profileOpen} expanded={profileOpen} onClick={() => setProfileOpen(true)}><UserRound size={21} /></DockButton>
         <div className="dock-divider" />
-        <button type="button" onClick={onOpenWalk} aria-label={t("實勘")} title={t("實勘")}><Footprints size={21} /></button>
-        <button type="button" onClick={onOpenReport} aria-label={t("CLS 結果報告")} title={t("CLS 結果報告")}><ClipboardList size={21} /></button>
-        <button type="button" onClick={onOpenField} aria-label={t("環境觀察")} title={t("環境觀察")}><NotebookPen size={21} /></button>
-        <div className="dock-spacer" />
-        <button type="button" onClick={onOpenSettings} aria-label={t("資料狀態")} title={t("資料狀態")}><Database size={21} /></button>
+        <DockButton label={t('實勘')} active={!profileOpen && activeDock === 'walk'} onClick={onOpenWalk}><Footprints size={21} /></DockButton>
+        <DockButton label={t('CLS 結果報告')} active={!profileOpen && activeDock === 'report'} onClick={onOpenReport}><ClipboardList size={21} /></DockButton>
+        <DockButton label={t('環境觀察')} active={!profileOpen && activeDock === 'field'} onClick={onOpenField}><NotebookPen size={21} /></DockButton>
+        <DockButton label={t('資料狀態')} active={!profileOpen && activeDock === 'settings'} onClick={onOpenSettings}><Database size={21} /></DockButton>
       </nav>
+      <ProfileSettings open={profileOpen} onClose={() => setProfileOpen(false)} />
       <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenReport} />
       {/* LOCATION SELECTOR */}
       <div className="search-toolbar pointer-events-auto">

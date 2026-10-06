@@ -1,4 +1,5 @@
 import { t, bilingual, useLanguage, errorText } from './i18n';
+import { useTheme } from './utils/theme';
 import { QuickWalk } from './components/QuickWalk';
 import { sameFieldPlace, upsertFieldRecord } from './utils/fieldRecordMerge';
 /**
@@ -78,7 +79,7 @@ export default function App() {
   // Map theme: default to dark to match the Apple Maps dark screenshot
   const [isWalkOpen, setIsWalkOpen] = useState(false);
   const [walkLocation, setWalkLocation] = useState<LocationCoord | null>(null);
-  const [mapTheme, setMapTheme] = useState<'dark' | 'light'>('dark');
+  const mapTheme = useTheme();
 
   // Bottom Sheet Visibility
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -963,6 +964,7 @@ export default function App() {
 
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
       <FloatingControls
+        activeDock={isWalkOpen ? 'walk' : !isSheetOpen ? null : workspaceView === 'assessment' || workspaceView === 'report' ? 'report' : workspaceView === 'field' || workspaceView === 'settings' ? workspaceView : null}
         onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
         assessment={assessment}
         isLoadingScore={isLoadingBaseline}

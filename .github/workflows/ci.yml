@@ -32,6 +32,9 @@ jobs:
       - name: Score integrity tests
         run: npm run test:score-integrity
 
+      - name: Database egress regression tests
+        run: npm run test:egress-budget
+
       - name: Assessment snapshot policy tests
         run: npm run test:assessment-policy
 

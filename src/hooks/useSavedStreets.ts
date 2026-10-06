@@ -3,6 +3,7 @@ import type { SavedLocation } from '../types';
 import { deletePersistedAssessment, listPersistedAssessments, persistAssessment } from '../utils/assessmentApi';
 import { FAVORITES_KEY, SAVED_LOCATIONS_KEY, mergeSavedRecords, migrateFavoriteKeys } from '../utils/savedLocations';
 import { resolveSavedScore } from '../utils/savedScoreApi';
+import { ReadRetry } from '../utils/readRetry';
 
 type Change = SavedLocation[] | ((current: SavedLocation[]) => SavedLocation[]);
 const DELETIONS_KEY = 'cls_pending_deletions';
@@ -27,7 +28,7 @@ export function useSavedStreets(workspaceId: string) {
   const deletedDuringSession = useRef(new Set(pendingDeletions.current));
   const deletionRetryAt = useRef(new Map<string, number>());
   const run = useRef<() => void>(() => {});
-  const retryAt = useRef(new Map<string, number>());
+  const retryAt = useRef(new ReadRetry());
   const [error, setError] = useState<string | null>(null);
 
   // Synchronous ref + durable write prevents concurrent saves/backfills losing entries.
@@ -46,7 +47,7 @@ export function useSavedStreets(workspaceId: string) {
     return next;
   }, []);
 
-  const retry = useCallback(() => { retryAt.current.clear(); deletionRetryAt.current.clear(); run.current(); }, []);
+  const retry = useCallback(() => { run.current(); }, []);
 
   useEffect(() => {
     let stopped = false;
@@ -95,10 +96,10 @@ export function useSavedStreets(workspaceId: string) {
             continue;
           }
           const next = records.current.find(item => (item.clsScore == null || item.scoreSyncPending || item.syncStatus === 'local')
-            && !attempted.has(item.id) && (retryAt.current.get(item.id) || 0) <= Date.now());
+            && !attempted.has(item.id) && retryAt.current.due(item.id));
           if (!next) break;
           attempted.add(next.id);
-          retryAt.current.set(next.id, Date.now() + 30_000);
+          retryAt.current.defer(next.id);
           const controller = new AbortController(); active = controller;
           const timeout = window.setTimeout(() => controller.abort(), 20_000);
           try {
@@ -108,6 +109,7 @@ export function useSavedStreets(workspaceId: string) {
               if (result.ok && result.record) updated = mergeSavedRecords(next, result.record);
             }
             if (updated.clsScore == null || updated.scoreSyncPending) updated = await resolveSavedScore(updated, workspaceId, controller.signal);
+            if (updated.clsScore != null && !updated.scoreSyncPending && updated.syncStatus !== 'local') retryAt.current.reset(next.id);
             if (stopped || controller.signal.aborted) continue;
             if (!records.current.some(item => item.id === next.id)) {
               if (updated.syncStatus === 'synced') void deletePersistedAssessment(workspaceId, next.id).catch(() => {});

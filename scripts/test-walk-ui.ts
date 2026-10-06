@@ -251,13 +251,18 @@ try {
   readyScore = false;
   const favoriteContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(favoriteContext);
   const favoritePage = await favoriteContext.newPage();
+  await favoritePage.clock.install();
   await favoritePage.goto(baseURL);
   await favoritePage.getByRole('button', { name: t("CLS 結果報告"), exact: true }).click();
   await favoritePage.getByRole('button', { name: t("加入最愛"), exact: true }).click();
   assert.equal((await saved(favoritePage)).length, 1);
   assert.equal((await saved(favoritePage))[0].clsScore, null);
+  await favoritePage.clock.runFor(500);
   readyScore = true;
   await favoritePage.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await favoritePage.clock.runFor(500);
+  assert.equal((await saved(favoritePage))[0].clsScore, null, 'focus must not bypass the pending-score cooldown');
+  await favoritePage.clock.fastForward(30_000);
   await favoritePage.waitForFunction(() => JSON.parse(localStorage.getItem('cls_saved_locations') || '[]')[0]?.clsScore === 80);
   await favoriteContext.close();
 

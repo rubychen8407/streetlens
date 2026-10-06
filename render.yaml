@@ -5,7 +5,7 @@ services:
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
-    healthCheckPath: /api/health
+    healthCheckPath: /api/live
     envVars:
       - key: STREETLENS_ENABLE_CACHE_PRUNE
         value: "false"

@@ -1,4 +1,5 @@
 import { t, bilingual, useLanguage, errorText } from './i18n';
+import { ReadRetry } from './utils/readRetry';
 import { useTheme } from './utils/theme';
 import { backLabels, useNavigation } from './hooks/useNavigation';
 import { QuickWalk } from './components/QuickWalk';
@@ -127,6 +128,10 @@ export default function App() {
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
   const assessmentRequestRef = useRef(0);
   const assessmentAbortRef = useRef<AbortController | null>(null);
+  const assessmentRetry = useRef(new ReadRetry());
+  const assessmentRetryKey = JSON.stringify([targetLocation, district, city, streetName]);
+  const assessmentRetryKeyRef = useRef(assessmentRetryKey);
+  assessmentRetryKeyRef.current = assessmentRetryKey;
   const [assessmentReadState, setAssessmentReadState] = useState<'loading' | 'pending' | 'error' | 'ready'>('loading');
   const addressRequestRef = useRef(0);
   const [fieldAdjustment, setFieldAdjustment] = useState<FieldObservationAdjustment | null>(null);
@@ -280,6 +285,8 @@ export default function App() {
 
   // Read persisted assessment data. This request never fetches external sources.
   const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
+    const retryKey = JSON.stringify([coord, targetDist, targetCity, targetStreet]);
+    assessmentRetry.current.defer(retryKey);
     const requestId = ++assessmentRequestRef.current;
     assessmentAbortRef.current?.abort();
     const controller = new AbortController(); assessmentAbortRef.current = controller;
@@ -343,6 +350,7 @@ export default function App() {
       if (requestId !== assessmentRequestRef.current) return;
       setAssessment(data);
       setAssessmentReadState(data.scores.overall == null ? 'pending' : 'ready');
+      if (data.scores.overall != null) assessmentRetry.current.reset(retryKey);
       setFieldAdjustment(null);
       setPendingAssessmentSources([]);
       setBaselineSummary(data.dataSources.length ? '資料來源：' + data.dataSources.join('、') : '資料來源資訊不足');
@@ -375,7 +383,9 @@ export default function App() {
   retryAssessmentRef.current = handleAutoFetchBaseline;
   useEffect(() => {
     if (activeSavedAssessmentId || !['pending', 'error'].includes(assessmentReadState)) return;
-    const retry = () => { if (!document.hidden && navigator.onLine) retryAssessmentRef.current(); };
+    const retry = () => {
+      if (!document.hidden && navigator.onLine && assessmentRetry.current.due(assessmentRetryKeyRef.current)) retryAssessmentRef.current();
+    };
     const timer = window.setInterval(retry, 30000);
     window.addEventListener('online', retry); window.addEventListener('focus', retry);
     document.addEventListener('visibilitychange', retry);

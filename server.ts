@@ -1,4 +1,5 @@
 import { backfillPendingPage } from './scheduledScoreBackfill';
+import { assessmentReadCache } from './readCache';
 import { parseExplanationLanguage, explanationLanguageInstruction, explanationMatchesLanguage } from './src/utils/explanationLanguage';
 import { ensureStorageBudget } from './storageBudget';
 import { registerSavedScoreRoutes, type AssessmentReadResult } from "./savedScoreBackfill";
@@ -12,7 +13,7 @@ import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiMrtStations, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, fetchTaipeiAed, fetchTaipeiFireHydrants, fetchTaipeiOfficialAirQuality, fetchTaipeiFireStations, OFFICIAL_SOURCE_URLS } from "./official";
-import { dataDb, ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference, pruneExpiredAssessmentCache } from "./db";
+import { dataDb, ensureDataCacheSchema, getSnapshotMetadata, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference, pruneExpiredAssessmentCache } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -78,6 +79,9 @@ async function generateGeminiContentWithFallback(
 }
 
 // Health check
+// Render's frequent liveness probe must not wake Neon or depend on DB quota.
+// /api/health remains the database readiness endpoint for explicit diagnostics.
+app.get("/api/live", (_req: Request, res: Response) => res.json({ status: "ok" }));
 app.get("/api/health", async (_req: Request, res: Response) => {
   if (!dataDb) return res.status(503).json({ status: "error", error: "database_required" });
   try {
@@ -891,7 +895,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
 
     for (const sourceKey of sourceKeys) {
       if (citywideSpatialSourceKeys.has(sourceKey)) {
-        const existing = await getCachedSnapshot(sourceKey, "__citywide__");
+        const existing = await getSnapshotMetadata(sourceKey, "__citywide__");
         const due = !existing
           || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
 
@@ -1038,7 +1042,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
       }
 
       if (sourceKey === "taipei_historical_flood") {
-        const existing = await getCachedSnapshot(sourceKey, "__citywide__");
+        const existing = await getSnapshotMetadata(sourceKey, "__citywide__");
         const due = !existing
           || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000;
 
@@ -1126,7 +1130,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
 
       const targetStates = await Promise.all(targets.map(async (target) => ({
         target,
-        existing: await getCachedSnapshot(sourceKey, target.scopeKey),
+        existing: await getSnapshotMetadata(sourceKey, target.scopeKey),
       })));
 
       const dueStates = targetStates.filter(({ existing }) =>
@@ -1562,7 +1566,15 @@ export function getAssessmentSnapshotStatus(
   };
 }
 
-async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
+async function loadStreetAssessment(input: {
+  lat: number; lng: number; district: string; city: string; streetName: string;
+}): Promise<AssessmentReadResult> {
+  // Exact coordinates/address labels: never silently substitute another location.
+  return assessmentReadCache.get(JSON.stringify(input), () => calculateStreetAssessment(input),
+    result => result.status === 200);
+}
+
+async function calculateStreetAssessment({ lat, lng, district, city, streetName }: {
   lat: number; lng: number; district: string; city: string; streetName: string;
 }): Promise<AssessmentReadResult> {
   try {

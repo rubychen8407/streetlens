@@ -8,6 +8,23 @@ The dock 實勘 button opens a full-screen rear-camera preview and automatically
 
 ## CLS loading recovery
 
+Repeated actions in field mode update one record instead of creating a new ID.
+The same coordinate (within 2 m), or the same named street/city/district within
+35 m, identifies the same field place, accommodating GPS drift without merging
+distant segments of a road. The original anchor coordinate and visit time remain;
+each photo retains its actual capture coordinate and time. Evidence accumulates
+by evidence ID, while a newer feeling or note replaces the same field. Taking a
+photo does not reset a selected feeling. Missing CLS from a new field action does
+not erase an existing source-backed CLS. Existing separate historical visits are
+retained; this is not a destructive historical migration.
+
+Field records carry a monotonic `fieldUpdatedAt`. PostgreSQL locks the saved row,
+accepts only newer field revisions and merges metadata in the same transaction.
+Identical retries and late uploads cannot overwrite a newer revision. Cloud
+responses arriving during another action leave that newer local action queued
+for synchronization. Photo bytes and old evidence rows are never deleted by
+this update. Ordinary saved assessment retries remain idempotent.
+
 A pending HTTP 202 no longer leaves the map score permanently blank. The UI distinguishes loading, pending data and request/database errors, provides a retry button, and rechecks persisted data every 30 seconds while visible/online, plus on resume/reconnect. Assessment requests time out after 20 seconds; reverse-geocoding has a 5-second timeout so an unavailable address service cannot block CLS indefinitely. This does not run external refresh jobs or fabricate a missing score. Saved historical totals render even for older records without a full assessment snapshot.
 
 Favorites now create a saved street if one does not exist. Older favorite-only keys migrate locally without inventing a score. Missing scores display **CLS 待補** and retry in a bounded sequential queue every 30 seconds while the app is visible/online; focus and reconnect also trigger a check. This reads persisted source data and does not call source-refresh jobs. Data availability still depends on the existing refresh pipeline.

@@ -6,6 +6,7 @@ import { createSavedStreet, favoriteKey, fillSavedScore, mergeSavedRecords, migr
 import { normalizeWalkMoment } from '../src/utils/walkMoments';
 import { resolveSavedScore } from '../src/utils/savedScoreApi';
 import { frameCrop } from '../src/utils/cameraFrame';
+import { mergeFieldRecord, upsertFieldRecord } from '../src/utils/fieldRecordMerge';
 import type { StreetAssessmentResponse } from '../src/types';
 
 const now = 1_800_000_000_000;
@@ -24,6 +25,34 @@ test('camera captures the visible cover crop in portrait and landscape, bounded 
 const fix = { lat: 25.03, lng: 121.53, accuracy: 12, timestamp: now };
 const address = { streetName: '永康街', district: '大安區', city: '臺北市' };
 const saved = () => createSavedStreet({ ...address, coords: { lat: fix.lat, lng: fix.lng } });
+test('field actions merge into one ID; newer feelings win, evidence and CLS survive', () => {
+  const photo = { ...saved(), id: 'one', timestamp: 100, evidence: [{ id: 'photo', storageKey: 'local-photo',
+    type: 'photo' as const, capturedAt: 100, location: fix }], walkMoment: {
+    feeling: 'photo' as const, accuracyMeters: 12, positionTimestamp: 100, confirmedAt: 100, source: 'walk' as const } };
+  const like = { ...saved(), timestamp: 200, walkMoment: { ...photo.walkMoment, feeling: 'good' as const } };
+  const merged = upsertFieldRecord([photo], like);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, 'one');
+  assert.equal(merged[0].walkMoment?.feeling, 'good');
+  assert.equal(merged[0].evidence?.[0].storageKey, 'local-photo');
+  const bad = { ...like, timestamp: 300, walkMoment: { ...like.walkMoment, feeling: 'bad' as const } };
+  const scored = { ...merged[0], clsScore: 81, baselineClsScore: 81 };
+  const updated = upsertFieldRecord([scored], bad)[0];
+  assert.equal(updated.walkMoment?.feeling, 'bad');
+  assert.equal(updated.clsScore, 81);
+  assert.equal(updated.syncStatus, 'local');
+  const edited = mergeFieldRecord(updated, { ...bad, fieldUpdatedAt: 350, fieldNotes: 'new note',
+    evidence: [{ ...photo.evidence[0], note: 'new caption' }] });
+  assert.equal(edited.fieldNotes, 'new note');
+  assert.equal(edited.evidence?.[0].note, 'new caption');
+  assert.equal(edited.evidence?.[0].storageKey, 'local-photo');
+  assert.equal(mergeFieldRecord(updated, { ...photo, timestamp: 400 }).walkMoment?.feeling, 'bad', 'taking another photo retains the feeling');
+  const stale = mergeSavedRecords(updated, merged[0]);
+  assert.equal(stale.walkMoment?.feeling, 'bad');
+  assert.equal(stale.syncStatus, 'local', 'late upload cannot acknowledge newer edits');
+  assert.equal(stale.evidence?.[0].storageKey, 'local-photo');
+  assert.equal(upsertFieldRecord([updated], { ...like, coords: { lat: 26, lng: 121 } }).length, 2);
+});
 const snapshot = (score = 50): StreetAssessmentResponse => ({
   location: { ...address, lat: fix.lat, lng: fix.lng },
   scores: { ...calculateAssessment({}, {}, undefined, undefined, undefined, undefined, undefined, Array.from({ length: 19 }, (_, i) => i + 1)), overall: score },

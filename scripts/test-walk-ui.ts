@@ -81,9 +81,6 @@ try {
   const livePanel = walkPage.getByRole('region', { name: '步行感受' });
   const liveBox = await livePanel.boundingBox();
   assert.ok(liveBox && liveBox.x === 0 && liveBox.y === 0 && liveBox.width === 390 && liveBox.height === 844);
-  await walkPage.getByRole('button', { name: '喜歡這裡', exact: true }).click();
-  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
-  assert.equal((await saved(walkPage))[0].baselineClsScore, null);
   await walkPage.getByRole('button', { name: '拍下畫面', exact: true }).click();
   await walkPage.getByText('目前畫面與位置已儲存。', { exact: true }).waitFor();
   const frameRecord = (await saved(walkPage))[0];
@@ -103,10 +100,16 @@ try {
   }, frameRecord.evidence[0].storageKey);
   assert.ok(storedBytes.bytes > 0 && storedBytes.bytes <= 2 * 1024 * 1024);
   assert.equal(storedBytes.type, 'image/jpeg');
+  await walkPage.getByRole('button', { name: '喜歡這裡', exact: true }).click();
+  assert.equal((await saved(walkPage)).length, 1, 'photo followed by like updates the same record');
+  assert.equal((await saved(walkPage))[0].id, frameRecord.id);
+  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
+  assert.equal((await saved(walkPage))[0].evidence[0].storageKey, frameRecord.evidence[0].storageKey);
+  assert.equal((await saved(walkPage))[0].baselineClsScore, null);
   await walkPage.evaluate(() => { (window as any).__failStorage = true; });
   await walkPage.getByRole('button', { name: '拍下畫面', exact: true }).click();
   await walkPage.getByText('儲存空間不足，尚未儲存；請釋出空間後重試。', { exact: true }).waitFor();
-  assert.equal((await saved(walkPage)).length, 2, 'failed capture cannot overwrite earlier visits');
+  assert.equal((await saved(walkPage)).length, 1, 'failed capture cannot overwrite the existing record');
   await walkPage.evaluate(() => { (window as any).__failStorage = false; });
   await walkPage.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: true });
@@ -129,7 +132,7 @@ try {
   assert.equal(await walkPage.evaluate(() => (window as any).__cameraTracks.every((track: MediaStreamTrack) => track.readyState === 'ended')), true);
   await walkPage.reload();
   await walkPage.getByRole('button', { name: '實勘', exact: true }).waitFor();
-  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'photo');
+  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
   await walkContext.close();
   const deniedCameraContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await prepare(deniedCameraContext);

@@ -114,7 +114,8 @@ export function useSavedStreets(workspaceId: string) {
               continue;
             }
             if (updated !== next) commit(current => current.map(item => item.id === next.id
-              ? { ...updated, ...(item.clsScore != null && updated.clsScore == null ? item : {}) } : item));
+              ? (item.fieldRecord ? mergeSavedRecords(item, updated)
+                : { ...updated, ...(item.clsScore != null && updated.clsScore == null ? item : {}) }) : item));
           } catch (cause) {
             if (!stopped && !controller.signal.aborted && cause instanceof DOMException && cause.name === 'QuotaExceededError') {
               setError('CLS 已取得，但儲存空間不足；請釋出空間後重試。');

@@ -279,6 +279,8 @@ export interface SavedLocation {
   };
   scoreUpdatedAt?: string;
   syncStatus?: 'local' | 'synced';
+  fieldRecord?: boolean;
+  fieldUpdatedAt?: number;
   scoreSyncPending?: boolean;
 }
 

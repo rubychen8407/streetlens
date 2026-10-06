@@ -1,4 +1,5 @@
 import type { FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
+import { mergeFieldRecord } from './fieldRecordMerge';
 
 export const SAVED_LOCATIONS_KEY = 'cls_saved_locations';
 export const FAVORITES_KEY = 'cls_favorite_locations';
@@ -64,6 +65,12 @@ export function fillSavedScore(
 }
 
 export function mergeSavedRecords(local: SavedLocation, remote: SavedLocation): SavedLocation {
+  if (local.fieldRecord || remote.fieldRecord) {
+    const merged = mergeFieldRecord(local, remote);
+    const needsSync = (local.fieldUpdatedAt ?? local.timestamp) > (remote.fieldUpdatedAt ?? remote.timestamp);
+    return { ...merged, syncStatus: needsSync ? 'local' : 'synced',
+      scoreSyncPending: local.clsScore != null && remote.clsScore == null };
+  }
   const photos = new Map((local.evidence || []).map(item => [item.id, item]));
   // A late remote response must not erase a completed local backfill.
   const chosen = local.clsScore != null && remote.clsScore == null ? local : remote;

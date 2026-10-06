@@ -1,4 +1,5 @@
 import { QuickWalk } from './components/QuickWalk';
+import { sameFieldPlace, upsertFieldRecord } from './utils/fieldRecordMerge';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -821,11 +822,17 @@ export default function App() {
   const handleSaveFavorite = useCallback((entry: SavedLocation, favorite = true) => {
     const previous = localStorage.getItem(FAVORITES_KEY) || '[]';
     const keys: string[] = JSON.parse(previous);
-    const key = favoriteKey(entry.coords, entry.streetName);
-    const nextKeys = favorite && !keys.includes(key) ? [...keys, key] : keys;
+    let nextKeys = keys;
     try {
-      localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextKeys));
-      setSavedLocations(current => [entry, ...current]);
+      setSavedLocations(current => {
+        const merged = entry.walkMoment ? upsertFieldRecord(current, entry) : [entry, ...current];
+        const previousRecord = entry.walkMoment ? current.find(item => sameFieldPlace(item, entry)) : undefined;
+        const changed = merged.find(item => item.id === (previousRecord?.id ?? entry.id)) ?? entry;
+        const key = favoriteKey(changed.coords, changed.streetName);
+        nextKeys = favorite && !keys.includes(key) ? [...keys, key] : keys;
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextKeys));
+        return merged;
+      });
       setFavoriteLocations(nextKeys);
     } catch {
       try { localStorage.setItem(FAVORITES_KEY, previous); } catch {}

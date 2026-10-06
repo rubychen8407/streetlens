@@ -1,5 +1,6 @@
 
 import { dataDb } from "./db";
+import { mergeFieldRecord, sameFieldPlace } from './src/utils/fieldRecordMerge';
 import { applyFieldObservationAdjustment } from "./scoring";
 import { normalizeWalkMoment } from "./src/utils/walkMoments";
 import type { SavedLocation } from "./src/types";
@@ -60,6 +61,8 @@ export interface PersistedAssessmentRecord {
   timestamp: number;
   walkMoment?: SavedLocation['walkMoment'];
   scoreUpdatedAt?: string;
+  fieldRecord?: boolean;
+  fieldUpdatedAt?: number;
 }
 
 export async function ensureAssessmentSchema(): Promise<void> {
@@ -155,10 +158,10 @@ function normalizeRatings(value: unknown): Record<string, number> {
   return ratings;
 }
 
-function normalizeEvidence(evidence: unknown): PersistedEvidenceInput[] {
+function normalizeEvidence(evidence: unknown, limit = MAX_EVIDENCE_PER_ASSESSMENT): PersistedEvidenceInput[] {
   if (evidence == null) return [];
-  if (!Array.isArray(evidence) || evidence.length > MAX_EVIDENCE_PER_ASSESSMENT) {
-    throw new Error("evidence must contain at most " + MAX_EVIDENCE_PER_ASSESSMENT + " items");
+  if (!Array.isArray(evidence) || evidence.length > limit) {
+    throw new Error("evidence must contain at most " + limit + " items");
   }
 
   return evidence.map((item: any) => {
@@ -208,7 +211,7 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
   const coords = validateLocation(assessment.coords);
   const baselineClsScore = normalizeBaseline(assessment.baselineClsScore);
   const observationRatings = normalizeRatings(assessment.observationRatings);
-  const evidence = normalizeEvidence(input.evidence);
+  const evidence = normalizeEvidence(input.evidence, assessment.fieldRecord === true ? 1000 : MAX_EVIDENCE_PER_ASSESSMENT);
 
   const adjustment = applyFieldObservationAdjustment(baselineClsScore, observationRatings);
   const adjustedCls = adjustment.adjustedCls;
@@ -226,7 +229,7 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     c5: assessment?.scores?.c5 == null ? null : Number.isFinite(Number(assessment.scores.c5)) ? Number(assessment.scores.c5) : null,
   };
 
-  const payload: PersistedAssessmentRecord = {
+  let payload: PersistedAssessmentRecord = {
     id,
     name: String(assessment.name || assessment.streetName || "Street assessment").slice(0, 300),
     streetName: String(assessment.streetName || "Selected street").slice(0, 300),
@@ -256,6 +259,8 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     timestamp: Number.isFinite(Number(assessment.timestamp)) ? Number(assessment.timestamp) : Date.now(),
     walkMoment: normalizeWalkMoment(assessment.walkMoment),
     scoreUpdatedAt: typeof assessment.scoreUpdatedAt === 'string' ? assessment.scoreUpdatedAt : undefined,
+    fieldRecord: assessment.fieldRecord === true,
+    fieldUpdatedAt: Number.isFinite(assessment.fieldUpdatedAt) ? assessment.fieldUpdatedAt : undefined,
   };
 
   const client = await dataDb.connect();
@@ -285,11 +290,21 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
 
   if ((persisted.rowCount ?? 0) === 0) {
     const existing = await client.query(
-      "SELECT payload FROM assessment_sessions WHERE id = $1 AND workspace_id = $2", [id, workspaceId],
+      "SELECT payload FROM assessment_sessions WHERE id = $1 AND workspace_id = $2 FOR UPDATE", [id, workspaceId],
     );
     if (!existing.rows.length) throw new Error("assessment id belongs to another workspace");
-    await client.query("COMMIT");
-    return existing.rows[0].payload as PersistedAssessmentRecord;
+    const previous = existing.rows[0].payload as PersistedAssessmentRecord;
+    if (!payload.fieldRecord || !payload.fieldUpdatedAt || !sameFieldPlace(previous as SavedLocation, payload as SavedLocation)
+      || payload.fieldUpdatedAt <= (previous.fieldUpdatedAt ?? previous.timestamp)) {
+      await client.query("COMMIT");
+      return previous;
+    }
+    payload = mergeFieldRecord(previous as SavedLocation, payload as SavedLocation) as PersistedAssessmentRecord;
+    await client.query(`UPDATE assessment_sessions SET payload = $3::jsonb,
+      baseline_cls = $4, adjusted_cls = $5, street_name = $6, district = $7, city = $8, updated_at = NOW()
+      WHERE id = $1 AND workspace_id = $2`,
+      [id, workspaceId, JSON.stringify(payload), payload.baselineClsScore, payload.clsScore,
+        payload.streetName, payload.district, payload.city]);
   }
 
 

@@ -244,6 +244,7 @@ CLS 以已儲存的外部資料計算；現場環境觀察另記為實勘調整�
 開始環境觀察|Start environment observations
 未取得|Not retrieved
 更新時間未知|Unknown freshness
+資料已過期|Data expired
 不到 1 小時前更新|Updated <1h ago
 1 天前更新|Updated 1d ago
 資料來源資訊不足|Insufficient source information
@@ -482,6 +483,7 @@ const metadata: Record<string, [string, string]> = {
   regionalReferencePrior: ['區域參考資料推估', 'Regional reference estimate'],
   marketDist: ['市場距離', 'Market distance'],
   taipei_youbike: ['臺北 YouBike', 'Taipei YouBike'],
+  osm_static_taipei: ['OSM 臺北靜態備援', 'OSM Taipei static fallback'],
   taipei_medical: ['臺北醫療設施', 'Taipei medical facilities'],
   taipei_street_lights: ['臺北路燈', 'Taipei street lights'],
   taipei_bus_stops: ['臺北公車站', 'Taipei bus stops'],

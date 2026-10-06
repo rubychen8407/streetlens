@@ -17,6 +17,8 @@ services:
         sync: false
       - key: GOOGLE_MAPS_API_KEY
         sync: false
+      - key: MOENV_API_KEY
+        sync: false
       - key: TDX_CLIENT_ID
         sync: false
       - key: TDX_CLIENT_SECRET

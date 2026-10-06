@@ -1,3 +1,4 @@
+import { formatNumber, visibleFactors } from '../utils/formatNumber';
 import { t, dateLocale, displayPlace } from '../i18n';
 import {
   Sparkles,
@@ -166,7 +167,7 @@ export function StreetReport(props: Props) {
           <div className="flex flex-col items-end shrink-0">
             <div className="text-sm uppercase tracking-wider font-semibold text-slate-300">CLS 綜合評分</div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-3xl font-extrabold font-mono tracking-tight text-white">{score ?? '—'}</span>
+              <span className="text-3xl font-extrabold font-mono tracking-tight text-white">{formatNumber(score)}</span>
               {grade && (
                 <span className={`px-2.5 py-1 rounded-md text-sm font-bold uppercase tracking-wider ${gradeColors[grade] || 'bg-white/10 text-white'}`}>
                   {grade}
@@ -184,7 +185,7 @@ export function StreetReport(props: Props) {
           <div className="rounded-xl bg-black/20 border border-white/[0.06] p-3">
             <div className="text-sm text-slate-300">{t("外部資料 CLS")}</div>
             <div className="text-lg font-bold font-mono text-white mt-0.5">
-              {saved?.baselineClsScore ?? assessment?.scores.overall ?? '—'}
+              {formatNumber(saved?.baselineClsScore ?? assessment?.scores.overall)}
             </div>
           </div>
           <div className="rounded-xl bg-black/20 border border-white/[0.06] p-3">
@@ -271,7 +272,7 @@ export function StreetReport(props: Props) {
                       <span className="text-sm font-semibold text-slate-200">{t(item.label)}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-base font-bold font-mono text-white">{val ?? '—'}</span>
+                      <span className="text-base font-bold font-mono text-white">{formatNumber(val)}</span>
                       {item.score?.mode === 'estimated' && (
                         <span className="text-sm px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30">
                           {t("推估")}
@@ -299,10 +300,10 @@ export function StreetReport(props: Props) {
               {t("查看指標來源與資料時間")}
             </summary>
             <div className="mt-2 space-y-2 bg-black/20 rounded-xl p-3 border border-white/[0.05]">
-              {assessment.factors.map((factor, index) => (
+              {visibleFactors(assessment.factors).map((factor, index) => (
                 <div key={factor.indicator + '-' + index} className="flex justify-between gap-3 text-sm py-1 border-b border-white/[0.03] last:border-0">
                   <span className="text-slate-300">{factor.category} · {t(factor.indicator)}</span>
-                  <span className="text-right text-slate-200 font-mono">{factor.value ?? '—'} {t(factor.unit)} · {t(factor.source)}</span>
+                  <span className="text-right text-slate-200 font-mono">{formatNumber(factor.value)} {t(factor.unit)} · {t(factor.source)}</span>
                 </div>
               ))}
             </div>

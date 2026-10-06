@@ -628,46 +628,6 @@ export function calculateAssessment(
     },
     {
       category: "C3",
-      indicator: "youBikeAvailableBikes",
-      value: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes)) ? Number(c3TransitMetrics?.youBikeAvailableBikes) : null,
-      unit: "bikes",
-      direction: "higher_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes))
-        ? (c3TransitMetrics?.source || "unavailable")
-        : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes))
-        ? (c3TransitMetrics?.method || "calculated")
-        : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes))
-        ? (c3TransitMetrics?.confidence || "low")
-        : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      scoringMethod: "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableBikes)) ? undefined : "no_observation",
-    },
-    {
-      category: "C3",
-      indicator: "youBikeAvailableDocks",
-      value: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? Number(c3TransitMetrics?.youBikeAvailableDocks) : null,
-      unit: "docks",
-      direction: "higher_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks))
-        ? (c3TransitMetrics?.source || "unavailable")
-        : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks))
-        ? (c3TransitMetrics?.method || "calculated")
-        : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks))
-        ? (c3TransitMetrics?.confidence || "low")
-        : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      scoringMethod: "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeAvailableDocks)) ? undefined : "no_observation",
-    },
-    {
-      category: "C3",
       indicator: "bikeLaneLength500m",
       value: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? Number(c3TransitMetrics?.bikeLaneLength500m) : null,
       unit: "m",

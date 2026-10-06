@@ -1,3 +1,5 @@
+import { fetchMoenvAirQuality, shouldReplaceInventory, STATIC_OSM_SOURCE, STATIC_MAX_AGE_MS, AQI_MAX_AGE_MS, isSourceFresh, poiIdentity, withinStaticCoverage } from './sourceFallbacks';
+import { persistStaticImport, staticPointsToPois } from './staticOsm';
 import { backfillPendingPage } from './scheduledScoreBackfill';
 import { parseExplanationLanguage, explanationLanguageInstruction, explanationMatchesLanguage } from './src/utils/explanationLanguage';
 import { ensureStorageBudget } from './storageBudget';
@@ -20,6 +22,15 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
+app.post('/api/internal/import-static-osm', (req, res, next) => {
+  if (!process.env.STREETLENS_REFRESH_TOKEN || req.headers.authorization !== 'Bearer ' + process.env.STREETLENS_REFRESH_TOKEN) {
+    res.status(401).json({ error: 'Unauthorized' }); return;
+  }
+  next();
+}, express.json({ limit: '8mb' }), async (req, res) => {
+  try { await schemaReady; res.json(await persistStaticImport(req.body)); }
+  catch (error: any) { res.status(400).json({ error: error.message }); }
+});
 app.use(express.json());
 
 // Assessment data is persisted first. User requests never crawl scoring sources.
@@ -615,6 +626,7 @@ async function fetchOsmPoisNearby(lat: number, lng: number): Promise<PoiFetchRes
         /clinic|doctors|pharmacy|hospital|dentist/.test(tags.amenity || "") ? "clinic" :
         /school|kindergarten|college|university/.test(tags.amenity || "") ? "school" :
         /bank|post_office/.test(tags.amenity || "") ? "bank_post" :
+        /park|garden|playground/.test(tags.leisure || "") ? "park" :
         /station|subway|tram|railway_station/.test(tags.railway || "") ? "rail" :
         tags.highway === "bus_stop" || /bus_stop|bus_station|platform|stop_position/.test(tags.public_transport || tags.amenity || "") ? "bus" :
         "other";
@@ -660,7 +672,7 @@ function mergePois(lat: number, lng: number, results: PoiFetchResult[]): any[] {
   const merged: any[] = [];
   for (const result of results) {
     for (const poi of result.pois) {
-      const key = `${poi.name}|${poi.amenityType}|${poi.lat.toFixed(5)}|${poi.lng.toFixed(5)}`;
+      const key = poiIdentity(poi) || `${poi.name}|${poi.amenityType}|${poi.lat.toFixed(5)}|${poi.lng.toFixed(5)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push({ ...poi, distanceMeters: haversineDistanceMeters(lat, lng, poi.lat, poi.lng) });
@@ -697,7 +709,7 @@ const VALIDATOR_RESOURCES: Record<string, string[]> = {
   taipei_cooling_points: [OFFICIAL_SOURCE_URLS.taipeiCoolingPoints],
   taipei_aed: [OFFICIAL_SOURCE_URLS.taipeiAed],
   taipei_fire_hydrants: [OFFICIAL_SOURCE_URLS.taipeiFireHydrants],
-  taipei_official_aqi: [OFFICIAL_SOURCE_URLS.taipeiOfficialAqi, OFFICIAL_SOURCE_URLS.taipeiAirStations],
+  // AQI uses its payload publication time; never validate it against the legacy feed.
   taipei_fire_stations: [OFFICIAL_SOURCE_URLS.taipeiFireStations],
 };
 
@@ -811,6 +823,13 @@ const REFRESH_INTERVAL_HOURS: Record<string, number> = {
   taipei_fire_stations: 2160,
   open_meteo_air_quality: 24,
 };
+
+async function fetchPreferredAirQuality() {
+  const national = await fetchMoenvAirQuality();
+  if (national.status === 'available') return national;
+  const legacy = await fetchTaipeiOfficialAirQuality();
+  return legacy.status === 'available' ? legacy : { ...national, error: national.error + '; legacy AQI: ' + (legacy.error || legacy.status) };
+}
 
 const REFRESH_SOURCE_KEYS = Object.keys(REFRESH_INTERVAL_HOURS);
 
@@ -960,10 +979,10 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
                                 : sourceKey === "taipei_fire_hydrants"
                                   ? await fetchTaipeiFireHydrants()
                                   : sourceKey === "taipei_official_aqi"
-                                    ? await fetchTaipeiOfficialAirQuality()
+                                    ? await fetchPreferredAirQuality()
                                     : await fetchTaipeiFireStations();
 
-        if (citywide.status === "available" || citywide.status === "empty") {
+        if (shouldReplaceInventory(citywide)) {
           if (Array.isArray(citywide.points)) {
             await replaceExternalSpatialPoints(
               sourceKey,
@@ -1129,13 +1148,22 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
         existing: await getCachedSnapshot(sourceKey, target.scopeKey),
       })));
 
-      const dueStates = targetStates.filter(({ existing }) =>
+      const staticCache = sourceKey === 'openstreetmap' ? await getCachedSnapshot(STATIC_OSM_SOURCE, '__citywide__') : null;
+      const staticReady = Boolean(staticCache && isSourceFresh(staticCache.sourceUpdatedAt, STATIC_MAX_AGE_MS));
+      const candidates = targetStates.filter(({ target }) => {
+        if (staticReady && withinStaticCoverage(target.latitude, target.longitude)) {
+          results.push({ scopeKey: target.scopeKey, sourceKey, changed: false, status: 'available', skipped: true, reason: 'covered-by-static-osm' });
+          return false;
+        }
+        return true;
+      });
+      const dueStates = candidates.filter(({ existing }) =>
         !existing
         || (now - new Date(existing.fetchedAt).getTime()) >= REFRESH_INTERVAL_HOURS[sourceKey] * 60 * 60 * 1000,
       );
 
       if (!dueStates.length) {
-        for (const { target, existing } of targetStates) {
+        for (const { target, existing } of candidates) {
           results.push({
             scopeKey: target.scopeKey,
             sourceKey,
@@ -1307,12 +1335,15 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Valid lat/lng are required" });
     const scopeKey = await registerAssessmentTarget(lat, lng);
     if (!scopeKey) return res.status(503).json({ error: "Persistent data cache is not configured" });
-    const [google, osm] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey)]);
-    if (!google && !osm) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
-    const pois = mergePois(lat, lng, [google?.payload, osm?.payload].filter(Boolean));
+    const [google, osm, staticSnapshot] = await Promise.all([getCachedSnapshot("google_places", scopeKey), getCachedSnapshot("openstreetmap", scopeKey), getCachedSnapshot(STATIC_OSM_SOURCE, '__citywide__')]);
+    const staticPois = staticSnapshot && isSourceFresh(staticSnapshot.sourceUpdatedAt, STATIC_MAX_AGE_MS)
+      ? staticPointsToPois(await getNearbyExternalSpatialPoints(STATIC_OSM_SOURCE, lat, lng, 1500, 2000)) : [];
+    if (!google && !osm && !staticPois.length) return res.status(202).json({ pois: [], dataStatus: "pending_refresh", scopeKey });
+    const pois = mergePois(lat, lng, [google?.payload, { pois: staticPois }, osm?.payload].filter(Boolean));
     return res.json({ pois, dataStatus: "cached", scopeKey, sources: [
       google ? { source: google.sourceKey, status: google.status, retrievedAt: google.fetchedAt } : { source: "google_places", status: "unavailable" },
       osm ? { source: osm.sourceKey, status: osm.status, retrievedAt: osm.fetchedAt } : { source: "openstreetmap", status: "unavailable" },
+      { source: STATIC_OSM_SOURCE, status: staticPois.length ? "available" : "unavailable", retrievedAt: staticSnapshot?.sourceUpdatedAt || null },
     ] });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to load cached POIs" });
@@ -1573,6 +1604,9 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
     const scopeKey = await registerAssessmentTarget(lat, lng);
     if (!scopeKey) return { status: 503, body: { error: "Persistent data cache is not configured", dataStatus: "database_required" } };
 
+    const staticSnapshot = await getCachedSnapshot(STATIC_OSM_SOURCE, '__citywide__');
+    const staticFresh = Boolean(staticSnapshot && isSourceFresh(staticSnapshot.sourceUpdatedAt, STATIC_MAX_AGE_MS));
+    const staticPois = staticFresh ? staticPointsToPois(await getNearbyExternalSpatialPoints(STATIC_OSM_SOURCE, lat, lng, 1500, 2000)) : [];
     const sourceKeys = ["google_places", "openstreetmap", "tdx_transit", "taipei_green", "taipei_safety", "taipei_flood", "open_meteo_air_quality"];
     const nearbyCacheSources = new Set([
       "google_places",
@@ -1648,7 +1682,7 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
       ? { ...snapshots, taipei_flood: { status: "available" } }
       : snapshots;
     const { missingSources: missing, dataStatus } = getAssessmentSnapshotStatus(sourceKeys, availabilitySnapshots);
-    if (dataStatus === "pending_refresh") {
+    if (dataStatus === "pending_refresh" && !staticPois.length) {
       return { status: 202, body: {
         location: { lat, lng, city, district, streetName },
         scopeKey,
@@ -1747,11 +1781,12 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
       : (snapshots.taipei_flood?.payload || { riskCells: [], status: "unavailable" });
     const nearestOfficialAqi = officialAqiSnapshot
       ? nearbyOfficialAqi
-        .filter((point) => Number.isFinite(Number(point.properties?.aqi)))
+        .filter((point) => point.properties?.aqi != null && Number.isFinite(Number(point.properties.aqi))
+          && isSourceFresh(point.properties.publishTime || officialAqiSnapshot?.sourceUpdatedAt, AQI_MAX_AGE_MS))
         .sort((a, b) => a.distanceMeters - b.distanceMeters)[0]
       : undefined;
     const officialAqiValue = nearestOfficialAqi ? Number(nearestOfficialAqi.properties?.aqi) : undefined;
-    const officialPm25Value = nearestOfficialAqi ? Number(nearestOfficialAqi.properties?.pm25) : undefined;
+    const officialPm25Value = nearestOfficialAqi ? nearestOfficialAqi.properties?.pm25 == null ? undefined : Number(nearestOfficialAqi.properties.pm25) : undefined;
     const weather = officialAqiValue != null && Number.isFinite(officialAqiValue)
       ? {
           aqi: officialAqiValue,
@@ -1762,10 +1797,12 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
           retrievedAt: nearestOfficialAqi?.properties?.publishTime || officialAqiSnapshot?.fetchedAt,
         }
       : {
-          ...(snapshots.open_meteo_air_quality?.payload || { aqi: null, pm25: null, status: "unavailable" }),
+          ...(isSourceFresh(snapshots.open_meteo_air_quality?.payload?.airQualityTimestamp, 48 * 3600_000)
+            ? snapshots.open_meteo_air_quality.payload
+            : { aqi: null, pm25: null, status: "unavailable" }),
           retrievedAt: snapshots.open_meteo_air_quality?.fetchedAt || undefined,
         };
-    const pois = mergePois(lat, lng, [google, osm]);
+    const pois = mergePois(lat, lng, [google, { pois: staticPois } as PoiFetchResult, osm]);
     const nearest = (type: string): number | undefined => {
       const values = pois.filter((poi: any) => poi.amenityType === type && Number.isFinite(poi.distanceMeters)).map((poi: any) => poi.distanceMeters);
       return values.length ? Math.min(...values) : undefined;
@@ -1823,11 +1860,11 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
 
     const c2PoiMetrics = {
       supermarketDist: nearest("supermarket"), convenienceDist: nearest("convenience"), clinicDist: c2ClinicDist, schoolDist: nearest("school"), bankPostDist: nearest("bank_post"), marketDist: c2MarketDist,
-      poiDensityCount: c2DensityEntities.length,
+      poiDensityCount: c2SourceNames.length ? c2DensityEntities.length : undefined,
       source: c2SourceNames.length ? [...new Set(c2SourceNames)].join(" + ") : "unavailable", method: "calculated" as const,
       confidence: c2SourceNames.length > 1 ? "high" as const : c2SourceNames.length === 1 ? "medium" as const : "low" as const,
       status: c2SourceNames.length ? "available" as const : "empty" as const,
-      retrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt || medicalSnapshot?.fetchedAt || marketSnapshot?.fetchedAt,
+      retrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt || medicalSnapshot?.fetchedAt || marketSnapshot?.fetchedAt || staticSnapshot?.sourceUpdatedAt,
     };
 
     const railDistances = (officialTransit.railStations || [])
@@ -1879,21 +1916,15 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
       ? (youBikeSnapshot?.payload?.source || "Taipei City Transportation Department YouBike 2.0")
       : undefined;
     const youBikeRetrievedAt = nearestYouBike?.fetchedAt || undefined;
-    const youBikeAvailableBikes = nearestYouBike
-      ? Number(nearestYouBike.properties?.availableRentBikes)
-      : undefined;
-    const youBikeAvailableDocks = nearestYouBike
-      ? Number(nearestYouBike.properties?.availableReturnBikes)
-      : undefined;
     const youBikeDistance = nearestYouBike?.distanceMeters;
     const bikeLaneLength500m = nearbyBikeLanes.reduce(
       (sum, line) => sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0),
       0,
     );
-    const bikeLaneSource = nearbyBikeLanes.length
+    const bikeLaneSource = bikeLaneSnapshot
       ? (bikeLaneSnapshot?.payload?.source || "Taipei City official urban bicycle lane GIS data")
       : undefined;
-    const sidewalkSource = sidewalkCoverage?.featureCount
+    const sidewalkSource = sidewalkCoverage
       ? (sidewalkSnapshot?.payload?.source || "Taipei City Transportation Department official sidewalks and marked sidewalks (WheelRoute)")
       : undefined;
     const c3SourcesWithBike = [
@@ -1906,9 +1937,7 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
       mrtOrRailDist: railDist,
       busStopDist: busDist,
       youBikeNearestDist: youBikeDistance,
-      youBikeAvailableBikes: Number.isFinite(youBikeAvailableBikes) ? youBikeAvailableBikes : undefined,
-      youBikeAvailableDocks: Number.isFinite(youBikeAvailableDocks) ? youBikeAvailableDocks : undefined,
-      bikeLaneLength500m,
+      bikeLaneLength500m: bikeLaneSnapshot ? bikeLaneLength500m : undefined,
       sidewalkCoverage500mPct: sidewalkCoverage?.coveragePct,
       sidewalkFeatureCount500m: sidewalkCoverage?.featureCount,
       source: c3SourcesWithBike.length ? [...new Set(c3SourcesWithBike)].join(" + ") : "unavailable", method: "calculated" as const,
@@ -1928,6 +1957,15 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
       ...officialParkCandidates.map((point) => point.distanceMeters).filter(Number.isFinite),
     ];
     const nearestParkDist = parkDistances.length ? Math.min(...parkDistances) : undefined;
+    const parkSources = [...new Set([
+      ...parkPois.map((point: any) => point.source).filter(Boolean),
+      ...(parkSnapshot ? [parkSnapshot.payload?.source || "Taipei City official parks"] : []),
+    ])].join(" + ") || undefined;
+    const parkRetrievedAt = [
+      ...(parkPois.length ? [snapshots.google_places?.fetchedAt, snapshots.openstreetmap?.fetchedAt] : []),
+      parkSnapshot?.fetchedAt,
+    ].filter(Boolean).sort().at(-1);
+
     const communityPois = pois.filter((x: any) =>
       (x.category === "C5" || /community|library|活動中心|圖書館|服務中心|公民/.test(String(x.name || "")))
       && Number.isFinite(x.distanceMeters)
@@ -1961,11 +1999,11 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
     const nearestCommunityCulturalDistance = mergedCommunity.length
       ? Math.min(...mergedCommunity.map((x) => x.distanceMeters))
       : undefined;
-    const coolingPointCount1200m = nearbyCoolingPoints.length;
+    const coolingPointCount1200m = coolingPointSnapshot ? nearbyCoolingPoints.length : undefined;
     const GREEN_RADIUS_METERS = 800;
     const GREEN_OBSERVATION_AREA_KM2 = Math.PI * (GREEN_RADIUS_METERS / 1000) ** 2;
-    const streetTreeCount800m = greenData.streetTrees?.length;
-    const parkTreeCount800m = greenData.parkTrees?.length;
+    const streetTreeCount800m = snapshots.taipei_green?.status === "available" ? greenData.streetTrees?.length : undefined;
+    const parkTreeCount800m = snapshots.taipei_green?.status === "available" ? greenData.parkTrees?.length : undefined;
     const c4GreenMetrics: C4GreenMetrics = {
       streetTreeCount800m: Number.isFinite(Number(streetTreeCount800m)) ? Number(streetTreeCount800m) : undefined,
       parkTreeCount800m: Number.isFinite(Number(parkTreeCount800m)) ? Number(parkTreeCount800m) : undefined,
@@ -1976,7 +2014,7 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
         ? Number(parkTreeCount800m) / GREEN_OBSERVATION_AREA_KM2
         : undefined,
       nearestParkDist,
-      parkCount800m: parkPois.length,
+      parkCount800m: parkSnapshot || parkPois.length ? parkPois.length + officialParkCandidates.filter(point => !parkPois.some((poi: any) => distanceMetersFromTarget(point.lat, point.lng, Number(poi.lat), Number(poi.lng)) <= 35)).length : undefined,
       coolingPointCount1200m,
       source: greenData.source || "Taipei City Parks and Street Trees dataset",
       method: "calculated" as const,
@@ -2057,10 +2095,10 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
         c5NearestCommunityDistances: nearestCommunityReference,
       },
       {
-        c4NearestParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
-        c4NearestParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
-        c4ParkSource: parkPois.length ? [...new Set(parkPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
-        c4ParkRetrievedAt: parkPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+        c4NearestParkSource: parkSources,
+        c4NearestParkRetrievedAt: parkRetrievedAt,
+        c4ParkSource: parkSources,
+        c4ParkRetrievedAt: parkRetrievedAt,
         c5Source: communityPois.length ? [...new Set(communityPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
         c5RetrievedAt: communityPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
       },
@@ -2125,12 +2163,15 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
           ["taipei_fire_hydrants", hydrantSnapshot],
           ["taipei_official_aqi", officialAqiSnapshot],
           ["taipei_fire_stations", fireStationSnapshot],
+          [STATIC_OSM_SOURCE, staticSnapshot],
         ].map((entry) => {
           const source = String(entry[0]);
           const snapshot = entry[1] as any;
           return {
             source,
             status: snapshot?.status || "unavailable",
+            stale: Boolean(snapshot) && (source === STATIC_OSM_SOURCE ? !staticFresh : source === 'taipei_official_aqi' ? !isSourceFresh(snapshot?.sourceUpdatedAt, AQI_MAX_AGE_MS) : false),
+            sourceUpdatedAt: snapshot?.sourceUpdatedAt || null,
             retrievedAt: snapshot?.fetchedAt || null,
             checkedAt: snapshot?.checkedAt || null,
             sourceVersion: snapshot?.sourceVersion || null,
@@ -2143,15 +2184,13 @@ async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
       c2DataMode: "persisted-cache", c2PoiMetrics, c2PoiCount: c2DensityEntities.length,
       c3TransitMetrics, c4GreenMetrics, c1SafetyMetrics, c1TrafficAccidents: accidents, floodHazard: floodData.riskCells || [],
       historicalFloodEvents,
-      parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: parkPois.length },
+      parkMetrics: { nearestParkDist: nearestParkDist ?? null, parkCount800m: c4GreenMetrics.parkCount800m ?? null },
       communityMetrics: {
         nearestCommunityCulturalDistance: nearestCommunityCulturalDistance ?? null,
         communityCulturalPoiCount800m: communityCount,
       },
       officialServiceMetrics: {
         youBikeNearestDistance: youBikeDistance ?? null,
-        youBikeAvailableBikes: Number.isFinite(youBikeAvailableBikes) ? youBikeAvailableBikes : null,
-        youBikeAvailableDocks: Number.isFinite(youBikeAvailableDocks) ? youBikeAvailableDocks : null,
         medicalFacilityNearestDistance: c2ClinicDist ?? null,
         busStopNearestDistance: officialBusDistances.length ? Math.min(...officialBusDistances) : null,
         mrtStationNearestDistance: officialMrtDistances.length ? Math.min(...officialMrtDistances) : null,

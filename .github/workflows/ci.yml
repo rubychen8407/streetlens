@@ -32,6 +32,17 @@ jobs:
       - name: Score integrity tests
         run: npm run test:score-integrity
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Static OSM extraction tests
+        run: |
+          pip install osmium==4.3.1 shapely==2.1.2
+          python scripts/test-static-osm.py
+
+      - name: Source fallback tests
+        run: npm run test:source-fallbacks && npm run test:static-import-api
+
       - name: Assessment snapshot policy tests
         run: npm run test:assessment-policy
 

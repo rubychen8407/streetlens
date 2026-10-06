@@ -533,11 +533,11 @@ export function FloatingControls({
               <div className="grid grid-cols-2 gap-2 text-sm font-mono">
                 <div className="p-2 rounded-xl bg-black/40 border border-white/[0.08]">
                   <div className="text-sm text-slate-300 font-sans">{t("緯度 (Latitude)")}</div>
-                  <div className="text-sm font-bold text-slate-300">{currentLocation.lat.toFixed(6)}°</div>
+                  <div className="text-sm font-bold text-slate-300">{currentLocation.lat.toFixed(2)}°</div>
                 </div>
                 <div className="p-2 rounded-xl bg-black/40 border border-white/[0.08]">
                   <div className="text-sm text-slate-300 font-sans">{t("經度 (Longitude)")}</div>
-                  <div className="text-sm font-bold text-slate-300">{currentLocation.lng.toFixed(6)}°</div>
+                  <div className="text-sm font-bold text-slate-300">{currentLocation.lng.toFixed(2)}°</div>
                 </div>
               </div>
 

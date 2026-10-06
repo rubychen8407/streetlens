@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { calculateAssessment, applyFieldObservationAdjustment } from '../scoring';
 import { backfillSavedScore } from '../savedScoreBackfill';
-import { createSavedStreet, favoriteKey, fillSavedScore, mergeSavedRecords, migrateFavoriteKeys } from '../src/utils/savedLocations';
+import { createSavedStreet, favoriteKey, fillSavedScore, mergeSavedRecords, migrateFavoriteKeys, groupSavedStreets } from '../src/utils/savedLocations';
 import { normalizeWalkMoment } from '../src/utils/walkMoments';
 import { resolveSavedScore } from '../src/utils/savedScoreApi';
 import type { StreetAssessmentResponse } from '../src/types';
@@ -15,6 +15,19 @@ const snapshot = (score = 50): StreetAssessmentResponse => ({
   location: { ...address, lat: fix.lat, lng: fix.lng },
   scores: { ...calculateAssessment({}, {}, undefined, undefined, undefined, undefined, undefined, Array.from({ length: 19 }, (_, i) => i + 1)), overall: score },
   factors: [], poiCount: 0, dataSources: ['test fixture'], generatedAt: '2026-09-25T00:00:00Z',
+});
+
+test('library groups coordinates, not names, without deleting or changing visits', () => {
+  const first = { ...saved(), id: 'first', timestamp: 1, clsScore: 0 };
+  const second = { ...saved(), id: 'second', timestamp: 2, streetName: 'different geocoded name' };
+  const other = { ...saved(), id: 'other', coords: { lat: 25.04, lng: 121.53 } };
+  const input = [first, second, other];
+  const before = JSON.stringify(input);
+  const grouped = groupSavedStreets(input);
+  assert.equal(grouped.length, 2);
+  assert.deepEqual(grouped[0].map(item => item.id), ['second', 'first']);
+  assert.equal(grouped[0][1].clsScore, 0);
+  assert.equal(JSON.stringify(input), before);
 });
 
 test('legacy walk metadata survives validation without creating new records', () => {
@@ -154,4 +167,3 @@ test('backfill failures roll back and release the connection', async () => {
   await assert.rejects(backfillSavedScore(db.pool, 'workspace', original.id, snapshot()), /write failed/);
   assert.equal(db.queries.at(-1)?.sql, 'ROLLBACK'); assert.equal(db.released(), true);
 });
-

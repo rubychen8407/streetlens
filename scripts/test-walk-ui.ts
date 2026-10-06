@@ -32,7 +32,7 @@ async function prepare(context: BrowserContext, permissionDenied = false) {
         factors: [], poiCount: 0, dataSources: ['UI test fixture only'], generatedAt: new Date().toISOString(),
       };
     } else if (url.pathname === '/api/assessments') {
-      status = route.request().method() === 'GET' ? 200 : 503; body = route.request().method() === 'GET' ? [] : { error: 'Offline test' };
+      status = route.request().method() === 'GET' ? 200 : 507; body = route.request().method() === 'GET' ? [] : { error: 'STORAGE_WRITE_LIMIT' };
     } else body = { pois: [], segments: [] };
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   });
@@ -61,7 +61,32 @@ try {
   assert.equal((await saved(page)).length, 0);
   assert.equal(cameraOpens, 0);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]').length), 0);
+  const status = page.getByRole('region', { name: 'CLS 載入狀態' });
+  await status.waitFor();
+  const statusBox = await status.boundingBox();
+  const searchBox = await page.getByLabel('搜尋地點', { exact: true }).boundingBox();
+  assert.ok(statusBox && searchBox && Math.abs(statusBox.x - searchBox.x) <= 1 && statusBox.y >= searchBox.y + searchBox.height);
+  await page.getByRole('button', { name: '關閉 CLS 提示' }).click();
+  assert.equal(await status.count(), 0);
+  await page.reload();
+  await status.waitFor();
+  await status.waitFor({ state: 'hidden', timeout: 7500 });
   await context.close();
+  const walkContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await prepare(walkContext);
+  const walkPage = await walkContext.newPage();
+  await walkPage.goto(baseURL);
+  await walkPage.getByRole('button', { name: '實勘', exact: true }).click();
+  const confirm = walkPage.getByRole('button', { name: '位置正確，開始', exact: true });
+  await confirm.click();
+  await walkPage.getByRole('button', { name: '喜歡這裡', exact: true }).click();
+  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
+  assert.equal((await saved(walkPage))[0].baselineClsScore, null);
+  await walkPage.getByRole('button', { name: '結束步行' }).click();
+  await walkPage.reload();
+  await walkPage.getByRole('button', { name: '實勘', exact: true }).waitFor();
+  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
+  await walkContext.close();
   readyScore = true;
 
   for (const [width, height] of [[320, 740], [390, 844], [768, 1024], [844, 390], [1024, 768], [1440, 900]]) {
@@ -87,23 +112,14 @@ try {
       assert.ok(dock.x < search.x && entry.x < search.x, 'desktop dock remains on the left');
     }
     assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and location action align');
-    for (const label of ['CLS 結果報告', '環境觀察', 'Street Library', '圖層', '資料與設定']) {
+    for (const label of ['CLS 結果報告', '環境觀察', 'Street Library', '實勘', '資料與設定']) {
       const box = await view.getByRole('button', { name: label, exact: true }).boundingBox();
       assert.ok(box && box.width >= 44 && box.height >= 44, label + ' needs a touch target');
     }
-    await view.getByRole('button', { name: '圖層', exact: true }).click();
-    const layer = view.getByRole('switch', { name: '300m / 500m 步行圈' });
-    const before = await layer.getAttribute('aria-checked');
-    await layer.focus(); await view.keyboard.press('Space');
-    assert.notEqual(await layer.getAttribute('aria-checked'), before);
-    const popover = await view.locator('.layer-popover').boundingBox();
-    assert.ok(popover && popover.x >= 0 && popover.y >= 0 && popover.y + popover.height <= height, `layers fit ${width}x${height}: ${JSON.stringify(popover)}`);
-    const label = await layer.locator('span').boundingBox();
-    assert.ok(label && label.width >= 100, 'layer labels remain readable beside their switches');
-    await view.screenshot({ path: `artifacts/walk-ui/layers-${width}.png` });
-    await view.keyboard.press('Escape');
-    assert.equal(await layer.count(), 0);
-    assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).evaluate(element => element === document.activeElement), true);
+    assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).count(), 0);
+    await view.getByRole('button', { name: '實勘', exact: true }).click();
+    await view.getByRole('region', { name: '步行感受' }).waitFor();
+    await view.getByRole('button', { name: '結束步行' }).click();
     await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
     const panel = view.getByRole('complementary', { name: '街道評估面板' });
     assert.equal(await panel.getByText('Your observation', { exact: true }).count(), 0, 'CLS does not contain field-rating workflow');
@@ -212,7 +228,9 @@ try {
   assert.deepEqual(await saved(historyPage), before, 'historical records and evidence survive reload unchanged');
   await historyPage.getByRole('button', { name: 'Street Library', exact: true }).click();
   await historyPage.getByRole('complementary', { name: 'Street Library' }).getByRole('button', { name: 'Favorites' }).click();
-  await historyPage.getByText('Old visit bad', { exact: true }).click();
+  assert.equal(await historyPage.getByTitle('Delete assessment').count(), 1, 'one library card per location');
+  await historyPage.getByText('查看此地全部實勘紀錄（照片、筆記與感受保留）', { exact: true }).click();
+  await historyPage.getByRole('button', { name: /CLS 73 · 不喜歡/ }).click();
   const report = historyPage.getByRole('complementary', { name: '街道結果報告' });
   await report.getByText('不喜歡', { exact: true }).waitFor();
   await report.getByText('Tree shade along sidewalk').waitFor();
@@ -248,7 +266,7 @@ try {
   assert.deepEqual(await deletionPage.evaluate(() => JSON.parse(localStorage.getItem('cls_pending_deletions') || '[]')), ['offline-delete']);
   await deletionContext.close();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
-  console.log('Field UI checks passed: removed quick recording and shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');
+  console.log('Field UI checks passed: restored explicit field recording, inert background shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');
 } catch (error) {
   console.error('Browser errors:', errors);
   for (const context of browser?.contexts() || []) {

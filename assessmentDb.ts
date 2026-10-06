@@ -258,24 +258,15 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
     scoreUpdatedAt: typeof assessment.scoreUpdatedAt === 'string' ? assessment.scoreUpdatedAt : undefined,
   };
 
-  const persisted = await dataDb.query(
+  const client = await dataDb.connect();
+  try {
+    await client.query("BEGIN");
+  const persisted = await client.query(
     `INSERT INTO assessment_sessions
       (id, workspace_id, street_name, district, city, latitude, longitude,
        baseline_cls, adjusted_cls, session_timestamp, payload, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW(), NOW())
-     ON CONFLICT (id)
-     DO UPDATE SET workspace_id = EXCLUDED.workspace_id,
-                   street_name = EXCLUDED.street_name,
-                   district = EXCLUDED.district,
-                   city = EXCLUDED.city,
-                   latitude = EXCLUDED.latitude,
-                   longitude = EXCLUDED.longitude,
-                   baseline_cls = EXCLUDED.baseline_cls,
-                   adjusted_cls = EXCLUDED.adjusted_cls,
-                   session_timestamp = EXCLUDED.session_timestamp,
-                   payload = EXCLUDED.payload,
-                   updated_at = NOW()
-       WHERE assessment_sessions.workspace_id = EXCLUDED.workspace_id
+     ON CONFLICT (id) DO NOTHING
      RETURNING id`,
     [
       payload.id,
@@ -293,17 +284,25 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
   );
 
   if ((persisted.rowCount ?? 0) === 0) {
-    throw new Error("assessment id belongs to another workspace");
+    const existing = await client.query(
+      "SELECT payload FROM assessment_sessions WHERE id = $1 AND workspace_id = $2", [id, workspaceId],
+    );
+    if (!existing.rows.length) throw new Error("assessment id belongs to another workspace");
+    await client.query("COMMIT");
+    return existing.rows[0].payload as PersistedAssessmentRecord;
   }
 
-  await dataDb.query("DELETE FROM assessment_evidence WHERE assessment_id = $1", [id]);
+
 
   for (const item of evidence) {
-    await dataDb.query(
+    await client.query(
       `INSERT INTO assessment_evidence
         (assessment_id, evidence_id, type, captured_at, latitude, longitude, note,
          mime_type, width, height, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+       ON CONFLICT (assessment_id, evidence_id) DO UPDATE SET
+         note = EXCLUDED.note,
+         updated_at = NOW()`,
       [
         id,
         item.id,
@@ -317,6 +316,14 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
         item.height ?? null,
       ],
     );
+  }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 
   return payload;

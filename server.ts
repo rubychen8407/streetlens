@@ -1,3 +1,5 @@
+import { backfillPendingPage } from './scheduledScoreBackfill';
+import { ensureStorageBudget } from './storageBudget';
 import { registerSavedScoreRoutes, type AssessmentReadResult } from "./savedScoreBackfill";
 import express, { Request, Response } from "express";
 import path from "path";
@@ -9,7 +11,7 @@ import { fetchTaiwanTransitData as fetchTdxTransitData } from "./transit";
 import { fetchTaipeiGreenData, fetchTaipeiGreenDataForTargets, GREEN_RESOURCE_URLS } from "./green";
 import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloodHazardData, fetchTaipeiFloodHazardDataForTargets, fetchTaipeiHistoricalFloodEvents, getLastFetchedFloodPolygons, FLOOD_RESOURCE_URLS, SAFETY_RESOURCE_URLS } from "./safety";
 import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiMrtStations, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, fetchTaipeiAed, fetchTaipeiFireHydrants, fetchTaipeiOfficialAirQuality, fetchTaipeiFireStations, OFFICIAL_SOURCE_URLS } from "./official";
-import { dataDb, ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference } from "./db";
+import { dataDb, ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference, pruneExpiredAssessmentCache } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
 
 dotenv.config();
@@ -20,7 +22,7 @@ const PORT = Number(process.env.PORT || 3000);
 app.use(express.json());
 
 // Assessment data is persisted first. User requests never crawl scoring sources.
-const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema()]);
+const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema()]).then(() => ensureStorageBudget(dataDb));
 schemaReady.catch((error) => console.error("Data schema initialization failed:", error));
 const DATA_REFRESH_TOKEN = process.env.STREETLENS_REFRESH_TOKEN || "";
 
@@ -116,7 +118,7 @@ app.post("/api/assessments", async (req: Request, res: Response) => {
   } catch (error: any) {
     const message = error?.message || "Unable to persist assessment";
     console.error("Assessment persistence error:", error);
-    return res.status(400).json({ error: message });
+    return res.status(message.includes("STORAGE_WRITE_LIMIT") ? 507 : 400).json({ error: message });
   }
 });
 
@@ -858,7 +860,8 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
   }
 
   try {
-    await ensureDataCacheSchema();
+    await schemaReady;
+    const cachePrune = await pruneExpiredAssessmentCache();
     const targets = await listActiveAssessmentTargets();
     const results: any[] = [];
     const now = Date.now();
@@ -1284,6 +1287,7 @@ app.post("/api/internal/refresh-data", async (req: Request, res: Response) => {
     return res.json({
       refreshedAt: new Date().toISOString(),
       targetCount: targets.length,
+      cachePrune,
       sourceKeys,
       snapshots: results,
     });
@@ -2182,6 +2186,22 @@ app.get("/api/assessment", async (req: Request, res: Response) => {
   return res.status(result.status).json(result.body);
 });
 registerSavedScoreRoutes(app, loadStreetAssessment, schemaReady);
+
+app.post('/api/internal/backfill-saved-scores', async (req: Request, res: Response) => {
+  if (!DATA_REFRESH_TOKEN || req.headers.authorization !== `Bearer ${DATA_REFRESH_TOKEN}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await schemaReady;
+    if (!dataDb) return res.status(503).json({ error: 'Database unavailable' });
+    const after = typeof req.query.after === 'string' ? req.query.after : '';
+    if (after.length > 200) return res.status(400).json({ error: 'Invalid cursor' });
+    return res.json(await backfillPendingPage(dataDb, loadStreetAssessment, after));
+  } catch {
+    return res.status(503).json({ error: 'Saved score batch unavailable' });
+  }
+});
+
 
 // 實勘結果綜合分析與診斷報告
 app.post("/api/assessment/field-adjustment", async (req: Request, res: Response) => {

@@ -166,3 +166,11 @@ input, textarea { user-select: text; }
     align-items: center;
   }
 }
+
+/* Status belongs to the location selector, never a detached map overlay. */
+#app-root .search-toolbar .cls-read-status {
+  position: static; width: 100%; max-width: 48rem; margin-top: 8px;
+  box-sizing: border-box; padding: 8px 12px; gap: 8px;
+}
+#app-root .search-toolbar .cls-read-status > div { flex: 1; min-width: 0; }
+#app-root .search-toolbar .cls-read-status button { flex-shrink: 0; margin-left: 0; }

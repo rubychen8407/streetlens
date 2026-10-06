@@ -54,7 +54,7 @@ StreetLens 不使用隨機分數、合成 POI 數量或 AI 生成的外部測量
 | --- | --- |
 | 前端 | React 19、TypeScript、Vite、Tailwind CSS、Leaflet |
 | 後端 | Node.js、Express、TypeScript；評估與實勘調整計算 |
-| 資料庫 | PostgreSQL / Neon；外部快照、評估、證據與照片 |
+| 資料庫 | PostgreSQL / Neon；已保存街道 CLS、分數、回饋與必要報告資料 |
 | AI 解說 | Google Gemini；解釋既有評估 |
 | 座標轉換 | proj4；處理官方資料的座標系統 |
 | 驗證 | TypeScript、回歸測試、Playwright、GitHub Actions |
@@ -158,7 +158,7 @@ npm run ci
 - 目前使用瀏覽器產生的匿名 `workspaceId` 識別紀錄，尚非正式帳號登入與跨裝置同步機制。
 - 實勘紀錄先寫入 localStorage，照片先寫入 IndexedDB；成功同步後才有伺服器副本。
 - 「已存於此裝置，等待同步」代表尚未確認伺服器保存。清除瀏覽器資料可能刪除未同步紀錄。
-- 目前伺服器照片儲存在 PostgreSQL `BYTEA`，每張上限 5 MB；容量規劃見 [`docs/storage-budget.md`](docs/storage-budget.md)。
+- 新照片只存於瀏覽器 IndexedDB，PostgreSQL 僅保存照片說明與索引；換裝置或清除網站資料後，快取照片可能無法取回。容量規劃見 [`docs/storage-budget.md`](docs/storage-budget.md)。
 - 本應用程式不提供離線地圖或 iOS 原生背景紀錄。
 - CLS 是依現有資料與方法計算的探索工具；判讀時應一併查看資料時效、缺值與推估標示。
 
@@ -191,4 +191,3 @@ npm run ci
 ## 授權
 
 目前 repository 未提供專案 `LICENSE`。外部資料、地圖服務、字型與第三方套件各自適用其授權及使用條款。
-

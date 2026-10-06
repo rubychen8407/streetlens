@@ -86,3 +86,16 @@ export function migrateFavoriteKeys(saved: SavedLocation[], keys: string[]): Sav
   }
   return [...missing, ...saved];
 }
+
+
+/** Same coordinate to ~1 m; names can differ after reverse geocoding.
+ * Group for display only: every visit and its evidence keep their original IDs.
+ */
+export function groupSavedStreets(saved: SavedLocation[]): SavedLocation[][] {
+  const groups = new Map<string, SavedLocation[]>();
+  for (const record of saved) {
+    const key = `${record.coords.lat.toFixed(5)}:${record.coords.lng.toFixed(5)}`;
+    groups.set(key, [...(groups.get(key) || []), record]);
+  }
+  return [...groups.values()].map(visits => visits.sort((a, b) => b.timestamp - a.timestamp));
+}

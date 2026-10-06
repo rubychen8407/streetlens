@@ -4,7 +4,7 @@
 
 Open **環境觀察** beside the account menu, or **開始實勘** from the CLS panel. Both open the structured field-observation view for the selected map location, separate from the CLS read view. Rate conditions actually observed, continue to review, optionally add notes or evidence photos, and explicitly save the assessment.
 
-The quick feeling/photo recording panel and its keyboard and iPhone shortcut entries have been removed. Old `?mode=walk` URLs open the normal map and never record a visit. Existing saved visits, feeling metadata, favorites and photos are preserved; no data cleanup or migration deletes them. Evidence photos in the assessment save flow remain available.
+The dock 實勘 button opens the GPS-confirmed feeling/photo panel. New photos stay in IndexedDB and only metadata syncs. Old `?mode=walk` URLs open the normal map and never record a visit. Existing saved visits, feeling metadata, favorites and photos are preserved; no data cleanup or migration deletes them. Evidence photos in the assessment save flow remain available.
 
 ## CLS loading recovery
 
@@ -16,6 +16,29 @@ Favorites now create a saved street if one does not exist. Older favorite-only k
 
 ## Validation
 
-`npm run ci` retains score, assessment-policy, snapshot-preservation, saved-score and browser checks. Browser regressions verify that old URLs and the 1/2/C keys cannot save a visit or open a camera, the environment-observation entry remains accessible, favorites and delayed CLS still work, and existing records survive reloads. The tests use synthetic fixtures confined to the test process.
+`npm run ci` retains score, assessment-policy, snapshot-preservation, saved-score and browser checks. Browser regressions verify that URLs and keys outside field mode cannot save a visit or open a camera, the environment-observation entry remains accessible, favorites and delayed CLS still work, and existing records survive reloads. The tests use synthetic fixtures confined to the test process.
 
 Native camera capture and HEIC decoding in the assessment evidence workflow still require a physical-device smoke test. For a read-only capacity report, see [storage-budget.md](storage-budget.md).
+# Street Library grouping and missing CLS
+
+Street Library shows one card per coordinate rounded to five decimal places
+(about one metre). Different reverse-geocoded names do not create duplicate
+cards. The card opens the most recent visit with a completed CLS, or the newest
+visit when none is scored. Expand the card to open every original visit.
+Grouping is presentation-only: IDs, photographs, notes, feelings and historical
+scores remain intact. Deleting a visit deletes that visit, not its whole group.
+
+The visible website retries missing/local saved scores every 30 seconds and on
+reconnect. Scheduled data-refresh workflows now run `npm run backfill:scores`
+after refreshing sources, including when another refresh step fails. The
+six-hour workflow therefore fills remotely stored pending visits even when the
+browser is closed. Browser-only visits must first synchronize while the browser
+is open. The internal endpoint requires the refresh bearer token and processes
+20 pending records per page, using a cursor so unavailable early records do not
+starve later ones. Completed scores are never recomputed. Missing source data
+stays pending; errors and storage-limit failures are reported, not converted to
+zero or a synthetic score.
+
+The CLS map status is inside the search toolbar, can be closed manually and
+automatically disappears six seconds after selecting a location. Hiding it does
+not mark data as ready or hide the report's pending-data state.

@@ -21,3 +21,12 @@ jobs:
           STREETLENS_BASE_URL: ${{ secrets.STREETLENS_BASE_URL }}
           STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}
         run: npm run refresh:data
+
+
+      - name: Backfill saved CLS from refreshed snapshots
+        if: ${{ !cancelled() }}
+        timeout-minutes: 20
+        env:
+          STREETLENS_REFRESH_URL: ${{ secrets.STREETLENS_REFRESH_URL || secrets.STREETLENS_BASE_URL }}
+          STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}
+        run: npm run backfill:scores

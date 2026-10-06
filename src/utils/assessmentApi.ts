@@ -54,39 +54,10 @@ export async function persistAssessment(
     return { ok: false, error: message || "Cloud SQL persistence failed: " + response.status };
   }
 
+  // Photo blobs stay in the browser's IndexedDB. PostgreSQL receives the
+  // assessment and evidence metadata only, never the image bytes.
+  void evidenceDrafts;
   const record = await response.json() as SavedLocation;
-  const draftsById = new Map(evidenceDrafts.map((draft) => [draft.id, draft]));
-
-  try {
-    for (const item of record.evidence || []) {
-      if (item.type !== "photo") continue;
-      const draft = draftsById.get(item.id);
-      if (!draft) throw new Error("Missing photo draft for evidence " + item.id);
-
-      const upload = await fetch(
-        "/api/assessments/" + encodeURIComponent(record.id)
-          + "/evidence/" + encodeURIComponent(item.id)
-          + "/photo?workspaceId=" + encodeURIComponent(workspaceId),
-        {
-          method: "PUT",
-          signal,
-          headers: { "Content-Type": draft.mimeType || "application/octet-stream" },
-          body: draft.blob,
-        },
-      );
-      if (!upload.ok) {
-        throw new Error("Photo upload failed: " + upload.status);
-      }
-    }
-  } catch (error) {
-    await fetch(
-      "/api/assessments/" + encodeURIComponent(record.id)
-        + "?workspaceId=" + encodeURIComponent(workspaceId),
-      { method: "DELETE" },
-    ).catch(() => {});
-    return { ok: false, error: error instanceof Error ? error.message : "Photo upload failed" };
-  }
-
   return { ok: true, record };
 }
 

@@ -35,6 +35,9 @@ jobs:
       - name: Assessment snapshot policy tests
         run: npm run test:assessment-policy
 
+      - name: Storage and safe write tests
+        run: npm run test:photo-storage && npm run test:safe-writes && npm run test:storage-budget && npm run test:scheduled-backfill
+
       - name: Snapshot preservation tests
         run: npm run test:snapshot-preservation
 

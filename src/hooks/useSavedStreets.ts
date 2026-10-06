@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { EvidencePhotoDraft, SavedLocation } from '../types';
-import { getEvidencePhoto } from '../utils/evidenceStore';
+import type { SavedLocation } from '../types';
 import { deletePersistedAssessment, listPersistedAssessments, persistAssessment } from '../utils/assessmentApi';
 import { FAVORITES_KEY, SAVED_LOCATIONS_KEY, mergeSavedRecords, migrateFavoriteKeys } from '../utils/savedLocations';
 import { resolveSavedScore } from '../utils/savedScoreApi';
@@ -77,6 +76,7 @@ export function useSavedStreets(workspaceId: string) {
     const pump = async () => {
       if (running || stopped || document.hidden || !navigator.onLine) return;
       running = true;
+      const attempted = new Set<string>();
       try {
         while (!stopped && !document.hidden && navigator.onLine) {
           const deletedId = [...pendingDeletions.current].find(id => (deletionRetryAt.current.get(id) || 0) <= Date.now());
@@ -95,23 +95,16 @@ export function useSavedStreets(workspaceId: string) {
             continue;
           }
           const next = records.current.find(item => (item.clsScore == null || item.scoreSyncPending || item.syncStatus === 'local')
-            && (retryAt.current.get(item.id) || 0) <= Date.now());
+            && !attempted.has(item.id) && (retryAt.current.get(item.id) || 0) <= Date.now());
           if (!next) break;
+          attempted.add(next.id);
           retryAt.current.set(next.id, Date.now() + 30_000);
           const controller = new AbortController(); active = controller;
           const timeout = window.setTimeout(() => controller.abort(), 20_000);
           try {
             let updated = next;
             if (next.syncStatus === 'local') {
-              const drafts: EvidencePhotoDraft[] = [];
-              for (const evidence of next.evidence || []) {
-                if (evidence.type !== 'photo') continue;
-                const blob = evidence.storageKey ? await getEvidencePhoto(evidence.storageKey) : null;
-                if (!blob) throw new Error('Local photo unavailable');
-                drafts.push({ ...evidence, blob, fileName: evidence.id, previewUrl: '', note: evidence.note || '',
-                  mimeType: evidence.mimeType || blob.type, width: evidence.width || 0, height: evidence.height || 0 });
-              }
-              const result = await persistAssessment(workspaceId, next, drafts, controller.signal);
+              const result = await persistAssessment(workspaceId, next, [], controller.signal);
               if (result.ok && result.record) updated = mergeSavedRecords(next, result.record);
             }
             if (updated.clsScore == null || updated.scoreSyncPending) updated = await resolveSavedScore(updated, workspaceId, controller.signal);

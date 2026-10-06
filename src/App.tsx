@@ -1,3 +1,4 @@
+import { QuickWalk } from './components/QuickWalk';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -71,6 +72,8 @@ export default function App() {
   const [realStreetSegments, setRealStreetSegments] = useState<StreetSegmentScore[]>([]);
 
   // Map theme: default to dark to match the Apple Maps dark screenshot
+  const [isWalkOpen, setIsWalkOpen] = useState(false);
+  const [walkLocation, setWalkLocation] = useState<LocationCoord | null>(null);
   const [mapTheme, setMapTheme] = useState<'dark' | 'light'>('dark');
 
   // Bottom Sheet Visibility
@@ -815,11 +818,11 @@ export default function App() {
     }
   }, [activeSavedAssessmentId, workspaceId]);
 
-  const handleSaveFavorite = useCallback((entry: SavedLocation) => {
+  const handleSaveFavorite = useCallback((entry: SavedLocation, favorite = true) => {
     const previous = localStorage.getItem(FAVORITES_KEY) || '[]';
     const keys: string[] = JSON.parse(previous);
     const key = favoriteKey(entry.coords, entry.streetName);
-    const nextKeys = !keys.includes(key) ? [...keys, key] : keys;
+    const nextKeys = favorite && !keys.includes(key) ? [...keys, key] : keys;
     try {
       localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextKeys));
       setSavedLocations(current => [entry, ...current]);
@@ -883,7 +886,7 @@ export default function App() {
       {/* 1. Fullscreen Edge-to-Edge Map (Apple Maps Aesthetic) */}
       <ScoutMap
         currentLocation={currentLocation}
-        targetLocation={targetLocation}
+        targetLocation={isWalkOpen && walkLocation ? walkLocation : targetLocation}
         onSelectLocation={(coord, customName) => {
           setTargetLocation(coord);
           setActiveSavedAssessmentId(null);
@@ -933,6 +936,7 @@ export default function App() {
 
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
       <FloatingControls
+        onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
         assessment={assessment}
         isLoadingScore={isLoadingBaseline}
         scoreStatus={baselineSummary}
@@ -961,10 +965,6 @@ export default function App() {
         onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
         onOpenSettings={() => { setWorkspaceView('settings'); setIsSheetOpen(true); }}
         isSheetOpen={isSheetOpen}
-        activeLayers={activeLayers}
-        onToggleLayer={(key) => setActiveLayers((prev) => ({ ...prev, [key]: !prev[key] }))}
-        mapTheme={mapTheme}
-        onToggleMapTheme={() => setMapTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         currentLocation={currentLocation}
         targetLocation={targetLocation}
         accuracyRadius={accuracyRadius}
@@ -972,6 +972,7 @@ export default function App() {
 
       {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{saveError || savedStorageError}</div>}
 
+      {isWalkOpen && <QuickWalk source="walk" onPreview={setWalkLocation} onSave={handleSaveFavorite} onClose={() => setIsWalkOpen(false)} onOpenDetailed={coord => { setTargetLocation(coord); void fetchAddressFromCoords(coord); setIsWalkOpen(false); setWorkspaceView('field'); setIsSheetOpen(true); }} />}
       <AssessmentWorkspace
         onOpenField={() => { setWorkspaceView('field'); setIsSheetOpen(true); }}
         isOpen={isSheetOpen}

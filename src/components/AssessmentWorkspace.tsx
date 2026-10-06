@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, Sparkles, X } from 'lucide-react';
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
-import { favoriteKey } from '../utils/savedLocations';
+import { favoriteKey, groupSavedStreets } from '../utils/savedLocations';
 import { StreetReport } from './StreetReport';
 
 type View = 'assessment' | 'report' | 'field' | 'saved' | 'settings';
@@ -104,30 +104,21 @@ export function AssessmentWorkspace({
     ['Community', factor('communityCulturalPoiCount800m'), 'C5'],
   ] as const;
 
-  const historyGroups = useMemo(() => {
-    const groups = new Map<string, SavedLocation[]>();
-    for (const saved of savedLocations) {
-      const key = saved.coords.lat.toFixed(5) + ':' + saved.coords.lng.toFixed(5) + ':' + saved.streetName.trim().toLowerCase();
-      groups.set(key, [...(groups.get(key) || []), saved]);
-    }
-    return [...groups.values()]
-      .filter(group => group.length > 1)
-      .map(group => [...group].sort((a, b) => b.timestamp - a.timestamp));
-  }, [savedLocations]);
+  const locationGroups = useMemo(() => groupSavedStreets(savedLocations), [savedLocations]);
 
   const savedList = useMemo(() => {
     const gradeRank: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
     const favoriteKeyFor = (saved: SavedLocation) =>
       saved.coords.lat.toFixed(5) + ':' + saved.coords.lng.toFixed(5) + ':' + saved.streetName.trim().toLowerCase();
-    const filtered = savedFilter === 'favorites'
-      ? savedLocations.filter(saved => favoriteLocationKeys.includes(favoriteKeyFor(saved)))
-      : savedLocations;
+    const filtered = locationGroups
+      .filter(visits => savedFilter !== 'favorites' || visits.some(saved => favoriteLocationKeys.includes(favoriteKeyFor(saved))))
+      .map(visits => visits.find(saved => saved.clsScore != null) || visits[0]);
     return [...filtered].sort((a, b) => {
       if (savedSort === 'score') return (b.clsScore ?? -1) - (a.clsScore ?? -1);
       if (savedSort === 'grade') return (gradeRank[b.grade ?? ''] ?? 0) - (gradeRank[a.grade ?? ''] ?? 0);
       return b.timestamp - a.timestamp;
     });
-  }, [savedLocations, savedFilter, savedSort, favoriteLocationKeys]);
+  }, [locationGroups, savedFilter, savedSort, favoriteLocationKeys]);
 
   const currentReport = savedLocations.find(item => item.id === activeSavedAssessmentId) ?? null;
 
@@ -697,45 +688,6 @@ export function AssessmentWorkspace({
                 </div>
               </section>
             )}
-            {historyGroups.length > 0 && (
-              <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <div className="text-xs font-bold text-slate-200">Assessment history</div>
-                    <div className="text-[10px] text-slate-500">Repeated assessments for the same street are kept as separate field sessions.</div>
-                  </div>
-                  <span className="text-[10px] text-slate-500">{historyGroups.length} streets</span>
-                </div>
-                <div className="space-y-2">
-                  {historyGroups.slice(0, 4).map(group => (
-                    <div key={group[0].id} className="rounded-xl border border-white/5 bg-white/[0.02] p-2.5">
-                      <div className="text-[11px] font-semibold text-slate-300 truncate">{group[0].streetName}</div>
-                      <div className="mt-1.5 space-y-1">
-                        {group.slice(0, 5).map(saved => (
-                          <button key={saved.id} type="button" onClick={() => onSelectSaved(saved)} className="w-full flex items-center justify-between gap-2 text-left hover:bg-white/5 rounded-lg px-1 py-1">
-                            <span className="text-[10px] text-slate-500">
-                        {saved.evidence && saved.evidence.length > 0 ? 'Evidence ' + saved.evidence.length + ' · ' : ''}
-                        {new Date(saved.timestamp).toLocaleString('zh-TW')}
-                      </span>
-                            <span className="flex items-center gap-2 text-[10px] font-mono font-bold text-slate-200">
-                              {saved.evidence && saved.evidence.length > 0 && (
-                                <span className="text-slate-500">Evidence {saved.evidence.length}</span>
-                              )}
-                              <span>
-                                {saved.clsScore ?? '—'}
-                                {saved.fieldAdjustment != null && saved.baselineClsScore != null && (
-                                  <span className="ml-1 text-slate-300">{saved.fieldAdjustment >= 0 ? '+' : ''}{saved.fieldAdjustment}</span>
-                                )}
-                              </span>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
             {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-500">{savedFilter === 'favorites' ? 'No favorite streets yet.' : 'No saved assessments yet.'}</div>}
             {savedList.map(saved => (
               <div key={saved.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
@@ -748,7 +700,7 @@ export function AssessmentWorkspace({
                       <span className={`px-2 py-1 rounded-lg border text-xs font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? 'CLS 待補' : `CLS ${saved.clsScore}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? ' · 推估' : ''}</span>
                       <span className="text-[10px] text-slate-500">{new Date(saved.timestamp).toLocaleString('zh-TW')}</span>
                     </div>
-                    {saved.clsScore == null && <div className="mt-2 text-xs text-slate-400">有資料後自動補上</div>}
+                    {saved.clsScore == null && <div className="mt-2 text-xs text-slate-400">開啟網站時每 30 秒重試；有來源資料後自動補上</div>}
                     {saved.syncStatus === 'local' && <div className="mt-1 text-xs text-slate-400">已存於此裝置，等待同步</div>}
                   </button>
                   <div className="flex items-center gap-1">
@@ -763,6 +715,12 @@ export function AssessmentWorkspace({
                     <button onClick={() => onDeleteSaved(saved.id)} className="w-8 h-8 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center" title="Delete assessment"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
+                {(locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length || 0) > 1 && <details className="mt-3 border-t border-white/10 pt-3">
+                  <summary className="text-xs text-slate-400 cursor-pointer">查看此地全部實勘紀錄（照片、筆記與感受保留）</summary>
+                  {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.map(visit => <button key={visit.id} type="button" onClick={() => onSelectSaved(visit)} className="block w-full text-left text-xs text-slate-300 py-3">
+                    {new Date(visit.timestamp).toLocaleString('zh-TW')} · CLS {visit.clsScore ?? '待補'} · {visit.walkMoment?.feeling === 'good' ? '喜歡' : visit.walkMoment?.feeling === 'bad' ? '不喜歡' : '實勘'} · 照片 {(visit.evidence || []).filter(item => item.type === 'photo').length}
+                  </button>)}
+                </details>}
               </div>
             ))}
           </div>

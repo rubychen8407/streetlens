@@ -39,7 +39,7 @@ Neon PostgreSQL is the durable source for:
 - Saved assessment sessions.
 - Field observation ratings and adjustment details.
 - Evidence metadata, including capture time and coordinates.
-- Assessment photos in the current v1 implementation (`BYTEA`, max 5 MB per photo).
+- Evidence metadata in PostgreSQL; new photo bytes stay in browser IndexedDB. Legacy `BYTEA` photos can still be read.
 
 The browser may keep a local copy for offline-friendly UX, but Neon PostgreSQL is the durable persistence path.
 
@@ -70,7 +70,7 @@ The current `workspaceId` is a browser-generated anonymous owner key. It is inte
 
 ## Photo storage note
 
-Neon PostgreSQL `BYTEA` is used for the current prototype because Neon PostgreSQL is the selected persistence platform. At larger scale, photo blobs can be moved to object storage while retaining the same evidence metadata model in Neon PostgreSQL.
+New evidence photos are stored in browser IndexedDB; PostgreSQL stores only the report and evidence metadata. This keeps image bytes out of the database but makes each photo local to its browser profile. Clearing that browser's StreetLens data can remove the photo. Legacy photos already stored as PostgreSQL `BYTEA` remain available through the existing read endpoint; no migration deletes them.
 ## Gemini explanation layer
 
 Saved assessment explanations are generated only from the persisted assessment session in Neon PostgreSQL.

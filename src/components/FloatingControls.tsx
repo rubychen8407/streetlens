@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
-  Layers,
+  Footprints,
   X,
   MapPin,
   Loader2,
@@ -37,21 +37,10 @@ interface FloatingControlsProps {
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
   onOpenReport: () => void;
   onOpenField: () => void;
+  onOpenWalk: () => void;
   isSheetOpen: boolean;
   onOpenSaved: () => void;
   onOpenSettings: () => void;
-  activeLayers: {
-    c1Safety: boolean;
-    c2Amenity: boolean;
-    c3Transit: boolean;
-    c4Green: boolean;
-    c5Vitality: boolean;
-    streetScores: boolean;
-    walkingRadius: boolean;
-  };
-  onToggleLayer: (layer: keyof FloatingControlsProps['activeLayers']) => void;
-  mapTheme: 'dark' | 'light';
-  onToggleMapTheme: () => void;
   currentLocation: LocationCoord;
   targetLocation: LocationCoord;
   accuracyRadius?: number;
@@ -89,24 +78,26 @@ export function FloatingControls({
   onLocateMe,
   onSelectCoordinate,
   onOpenReport,
-  onOpenField,
+  onOpenField, onOpenWalk,
   isSheetOpen,
-  activeLayers,
-  onToggleLayer,
-  mapTheme,
-  onToggleMapTheme,
   currentLocation,
   targetLocation,
   accuracyRadius,
   onOpenSaved,
   onOpenSettings,
 }: FloatingControlsProps) {
+  const [statusDismissed, setStatusDismissed] = useState(false);
+  useEffect(() => {
+    setStatusDismissed(false);
+    const timer = window.setTimeout(() => setStatusDismissed(true), 6000);
+    return () => window.clearTimeout(timer);
+  }, [targetLocation.lat, targetLocation.lng]);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showCoordModal, setShowCoordModal] = useState(false);
 
@@ -168,7 +159,6 @@ export function FloatingControls({
   };
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
-  const layerMenuRef = useRef<HTMLDivElement>(null);
 
   // Close search/layers on click outside
   useEffect(() => {
@@ -179,12 +169,7 @@ export function FloatingControls({
       ) {
         setIsSearchOpen(false);
       }
-      if (
-        layerMenuRef.current &&
-        !layerMenuRef.current.contains(e.target as Node)
-      ) {
-        setShowLayerMenu(false);
-      }
+
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -193,8 +178,7 @@ export function FloatingControls({
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (layerMenuRef.current?.contains(document.activeElement)) layerMenuRef.current.querySelector<HTMLButtonElement>('button[aria-label="圖層"]')?.focus();
-      setIsSearchOpen(false); setShowLayerMenu(false);
+      setIsSearchOpen(false);
       setShowKeyModal(false); setShowCoordModal(false);
     };
     document.addEventListener('keydown', dismiss);
@@ -259,119 +243,14 @@ export function FloatingControls({
       <nav className="tactical-dock hud-card" aria-label="地點功能">
         <div className="dock-brand" title="StreetLens"><span>SL</span><i /></div>
         <div className="dock-divider" />
+        <button type="button" onClick={onOpenWalk} aria-label="實勘" title="實勘"><Footprints size={21} /></button>
         <button type="button" onClick={onOpenReport} aria-label="CLS 結果報告" title="CLS 結果報告"><ClipboardList size={21} /></button>
         <button type="button" onClick={onOpenField} aria-label="環境觀察" title="環境觀察"><Crosshair size={21} /></button>
         <button type="button" onClick={onOpenSaved} aria-label="Street Library" title="Street Library"><Library size={21} /></button>
-        <div className="dock-layer relative" ref={layerMenuRef}>
-          <button type="button" onClick={() => setShowLayerMenu(value => !value)} aria-label="圖層" title="圖層" aria-expanded={showLayerMenu} className={showLayerMenu ? 'bg-white/10 text-white' : ''}><Layers size={21} /></button>
-            {/* Layer Popover Menu */}
-            {showLayerMenu && (
-              <div className="layer-popover absolute left-full top-0 ml-2 w-56 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md text-white shadow-2xl border border-white/[0.08] text-xs space-y-2.5">
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
-                  <span className="font-bold text-slate-200">地圖圖層設定</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowLayerMenu(false)}
-                    aria-label="關閉圖層" className="text-slate-400 hover:text-white"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Map Theme Toggle */}
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-300">地圖色彩模式</span>
-                  <button
-                    type="button"
-                    onClick={onToggleMapTheme}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold"
-                  >
-                    {mapTheme === 'dark' ? '🌙 深色夜間' : '☀️ 淺色日間'}
-                  </button>
-                </div>
-
-                {/* Walking Radius Toggle */}
-                <button type="button" role="switch" aria-checked={activeLayers.walkingRadius}
-                  onClick={() => onToggleLayer('walkingRadius')}
-                  className="w-full text-left flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
-                >
-                  <span>300m / 500m 步行圈</span>
-                  <div
-                    className={`w-4 h-4 rounded flex items-center justify-center border ${
-                      activeLayers.walkingRadius
-                        ? 'bg-white/10 border-white/[0.08] text-white'
-                        : 'border-slate-500'
-                    }`}
-                  >
-                    {activeLayers.walkingRadius && <Check className="w-3 h-3 stroke-[3]" />}
-                  </div>
-                </button>
-
-                {/* Street heatmap scores */}
-                <button type="button" role="switch" aria-checked={activeLayers.streetScores}
-                  onClick={() => onToggleLayer('streetScores')}
-                  className="w-full text-left flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
-                >
-                  <span>街道評分熱力標線</span>
-                  <div
-                    className={`w-4 h-4 rounded flex items-center justify-center border ${
-                      activeLayers.streetScores
-                        ? 'bg-white/10 border-white/[0.08] text-white'
-                        : 'border-slate-500'
-                    }`}
-                  >
-                    {activeLayers.streetScores && <Check className="w-3 h-3 stroke-[3]" />}
-                  </div>
-                </button>
-
-                {/* POIs Toggle */}
-                <button type="button" role="switch" aria-checked={activeLayers.c2Amenity}
-                  onClick={() => onToggleLayer('c2Amenity')}
-                  className="w-full text-left flex items-center justify-between cursor-pointer py-1 text-[11px] text-slate-300 hover:text-white"
-                >
-                  <span>生活設施 POI 標記</span>
-                  <div
-                    className={`w-4 h-4 rounded flex items-center justify-center border ${
-                      activeLayers.c2Amenity
-                        ? 'bg-white/10 border-white/[0.08] text-white'
-                        : 'border-slate-500'
-                    }`}
-                  >
-                    {activeLayers.c2Amenity && <Check className="w-3 h-3 stroke-[3]" />}
-                  </div>
-                </button>
-
-                {/* Basemap Source Info & Key Config */}
-                <div className="pt-2 border-t border-white/[0.08] text-[10px] space-y-1.5">
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span>底圖圖資</span>
-                    <span className="font-mono font-bold text-slate-300">
-                      {getActiveCartoKey() ? 'CARTO (已授權)' : 'OSM (免金鑰)'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowLayerMenu(false);
-                      setShowKeyModal(true);
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg bg-white/10 hover:bg-white/10 text-slate-300 border border-white/[0.08] transition-colors"
-                  >
-                    <Key className="w-3 h-3" />
-                    <span>CARTO 金鑰管理與測試</span>
-                  </button>
-                </div>
-              </div>
-            )}
-        </div>
         <div className="dock-spacer" />
         <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
       </nav>
       <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenReport} />
-      {clsScore == null && !isSheetOpen && <section className="cls-read-status hud-card" aria-label="CLS 載入狀態">
-        <div role="status"><strong>{isLoadingScore ? '正在讀取 CLS…' : 'CLS 尚未就緒'}</strong><p>{isLoadingScore ? '正在查詢此地點的已儲存資料。' : scoreStatus}</p></div>
-        <button type="button" onClick={onRetryScore} disabled={isLoadingScore} aria-label="重試 CLS">{isLoadingScore ? <Loader2 className="w-4 h-4 animate-spin" /> : '重試'}</button>
-      </section>}
       {/* LOCATION SELECTOR */}
       <div className="search-toolbar pointer-events-auto">
         <div className="location-selector w-full max-w-3xl flex items-center gap-2">
@@ -399,6 +278,11 @@ export function FloatingControls({
             {isLocatingGPS ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crosshair className="w-5 h-5" />}
           </button>
         </div>
+      {clsScore == null && !isSheetOpen && !statusDismissed && <section className="cls-read-status hud-card" aria-label="CLS 載入狀態">
+        <div role="status"><strong>{isLoadingScore ? '正在讀取 CLS…' : 'CLS 尚未就緒'}</strong><p>{isLoadingScore ? '正在查詢此地點的已儲存資料。' : scoreStatus}</p></div>
+        <button type="button" onClick={onRetryScore} disabled={isLoadingScore} aria-label="重試 CLS">{isLoadingScore ? <Loader2 className="w-4 h-4 animate-spin" /> : '重試'}</button>
+        <button type="button" aria-label="關閉 CLS 提示" title="關閉" onClick={() => setStatusDismissed(true)}><X size={16} /></button>
+      </section>}
       </div>
 
       {/* CARTO Key Management & Test Modal */}

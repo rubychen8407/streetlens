@@ -188,7 +188,8 @@ export function spatialScopeKey(lat: number, lng: number): string {
 export async function registerAssessmentTarget(lat: number, lng: number): Promise<string | null> {
   if (!dataDb) return null;
   const scopeKey = spatialScopeKey(lat, lng);
-  await dataDb.query(
+  try {
+    await dataDb.query(
     `INSERT INTO assessment_targets (latitude, longitude, scope_key, last_requested_at)
      VALUES ($1, $2, $3, NOW())
      ON CONFLICT (scope_key)
@@ -196,6 +197,10 @@ export async function registerAssessmentTarget(lat: number, lng: number): Promis
                    last_requested_at = NOW(), active = TRUE`,
     [lat, lng, scopeKey],
   );
+  } catch (error) {
+    // A read must still serve existing snapshots when target registration is full.
+    if (!(error instanceof Error) || !error.message.includes('STORAGE_WRITE_LIMIT')) throw error;
+  }
   return scopeKey;
 }
 
@@ -208,6 +213,49 @@ export async function listActiveAssessmentTargets(): Promise<Array<{ latitude: n
      ORDER BY last_requested_at DESC`,
   );
   return result.rows;
+}
+
+/**
+ * Drop rebuildable public-source cache for places that have not been requested
+ * in 30 days. Saved assessments/evidence and global source datasets are outside
+ * this cleanup path; reports retain their own compact score/provenance payload.
+ */
+export async function pruneExpiredAssessmentCache(): Promise<{ targets: number; snapshots: number }> {
+  if (!dataDb || process.env.STREETLENS_ENABLE_CACHE_PRUNE !== "true") return { targets: 0, snapshots: 0 };
+  const client = await dataDb.connect();
+  try {
+    await client.query("BEGIN");
+    const stale = await client.query(
+      `SELECT t.scope_key AS "scopeKey"
+       FROM assessment_targets t
+       WHERE t.last_requested_at < NOW() - INTERVAL '30 days'
+       FOR UPDATE OF t SKIP LOCKED`,
+    );
+    const scopeKeys = stale.rows.map((row: { scopeKey: string }) => row.scopeKey);
+    if (scopeKeys.length === 0) {
+      await client.query("COMMIT");
+      return { targets: 0, snapshots: 0 };
+    }
+
+    const removedSnapshots = await client.query(
+      `DELETE FROM external_data_snapshots WHERE scope_key = ANY($1::text[])`,
+      [scopeKeys],
+    );
+    const removedTargets = await client.query(
+      `DELETE FROM assessment_targets WHERE scope_key = ANY($1::text[])`,
+      [scopeKeys],
+    );
+    await client.query("COMMIT");
+    return {
+      targets: removedTargets.rowCount ?? 0,
+      snapshots: removedSnapshots.rowCount ?? 0,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getCachedSnapshot(sourceKey: string, scopeKey: string): Promise<CachedSnapshot | null> {
@@ -830,9 +878,10 @@ export async function replaceExternalSpatialPoints(
 ): Promise<void> {
   if (!dataDb) return;
 
-  await dataDb.query("BEGIN");
+  const client = await dataDb.connect();
   try {
-    await dataDb.query(
+    await client.query("BEGIN");
+    await client.query(
       "DELETE FROM external_spatial_points WHERE source_key = $1",
       [sourceKey],
     );
@@ -859,9 +908,9 @@ export async function replaceExternalSpatialPoints(
           sourceUpdatedAt,
           sourceVersion,
         );
-        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}, ${offset + 5}, ${offset + 6}::jsonb, ${offset + 7}, ${offset + 8}, ${offset + 9})`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::jsonb, $${offset + 7}, $${offset + 8}, $${offset + 9})`;
       });
-      await dataDb.query(
+      await client.query(
         `INSERT INTO external_spatial_points
           (source_key, feature_id, name, latitude, longitude, properties, fetched_at, source_updated_at, source_version)
          VALUES ${correctedRows.join(",")}
@@ -877,10 +926,12 @@ export async function replaceExternalSpatialPoints(
       );
     }
 
-    await dataDb.query("COMMIT");
+    await client.query("COMMIT");
   } catch (error) {
-    await dataDb.query("ROLLBACK");
+    await client.query("ROLLBACK");
     throw error;
+  } finally {
+    client.release();
   }
 }
 

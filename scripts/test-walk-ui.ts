@@ -317,14 +317,19 @@ try {
   await historyPage.getByRole('button', { name: t("Street Library"), exact: true }).click();
   await historyPage.getByRole('complementary', { name: t("Street Library") }).getByRole('button', { name: t("Favorites"), exact: true }).click();
   assert.equal(await historyPage.getByTitle(t("Delete assessment")).count(), 1, 'one library card per location');
-  await historyPage.getByText(t("查看此地全部實勘紀錄（照片、筆記與感受保留）"), { exact: true }).click();
+  await historyPage.getByText(t("查看此地全部紀錄（照片、筆記與感受保留）"), { exact: true }).click();
   await historyPage.getByRole('button', { name: /CLS 73 · 不喜歡/ }).click();
   const report = historyPage.getByRole('complementary', { name: t("街道結果報告") });
   await report.getByText(t("不喜歡"), { exact: true }).waitFor();
   await report.getByText('Tree shade along sidewalk').waitFor();
   await report.getByText('Street was shaded.', { exact: true }).waitFor();
+  await report.getByRole('button', { name: t('資料狀態'), exact: true }).click();
+  await historyPage.getByRole('button', { name: t('返回評估'), exact: true }).click();
+  await report.waitFor();
   await historyPage.getByRole('button', { name: t("返回 Street Library") }).click();
   await historyPage.getByRole('complementary', { name: t("Street Library") }).waitFor();
+  await historyPage.getByRole('button', { name: t('返回地圖'), exact: true }).click();
+  assert.equal(await historyPage.getByRole('complementary').count(), 0, 'library report data-status chain unwinds to map');
   await historyContext.close();
 
   // Legacy saved history may have only a persisted total; it still renders in CLS.

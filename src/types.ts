@@ -362,6 +362,10 @@ export interface HistoricalFloodEvent {
 }
 
 export interface StreetAssessmentResponse {
+  baseline?: {
+    streetIdentity: string; segmentId: string; anchor: LocationCoord;
+    version: string; scoringVersion: string;
+  };
   location: LocationCoord & {
     city: string;
     district: string;

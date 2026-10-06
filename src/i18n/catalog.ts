@@ -1,5 +1,7 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+外部 CLS 以路段共用取樣點計算；總分另加此筆實勘調整。|External CLS uses the street portion's shared sampling point; the final score adds this visit's field adjustment.
+讀取最新共用外部 CLS，保留此筆實勘加減分。|Reading the latest shared external CLS while retaining this visit's field adjustment.
 🎯 評估地點|🎯 Assessment location
 最愛可追蹤街道；地點紀錄保留實勘感受、照片與環境觀察。|Favorites track streets; place records preserve walk impressions, photos and environment observations.
 返回地圖|Back to map

@@ -29,7 +29,7 @@ A pending HTTP 202 no longer leaves the map score permanently blank. The UI dist
 
 Favorites now create a saved street if one does not exist. Older favorite-only keys migrate locally without inventing a score. Missing scores display **CLS 待補** and retry in a bounded sequential queue every 30 seconds while the app is visible/online; focus and reconnect also trigger a check. This reads persisted source data and does not call source-refresh jobs. Data availability still depends on the existing refresh pipeline.
 
-`POST /api/assessments/:id/score?workspaceId=...` loads the stored coordinates and ratings, computes the source-backed result with the same assessment loader, then fills a missing score in a transaction. It accepts no client score. The update never replaces photo/evidence rows, retains the visit timestamp, notes and name, and rechecks the row after locking. Already-scored historical visits stay unchanged. Local-only records use the same backend baseline and field-adjustment endpoints before syncing.
+`POST /api/assessments/:id/score?workspaceId=...` loads the stored coordinates and ratings, computes the source-backed result with the same assessment loader, then fills a missing score or rebases a completed visit onto a versioned shared street baseline in a transaction. It accepts no client score. The update never replaces photo/evidence rows, retains the visit timestamp, notes and name, and rechecks the row after locking. Rebasing preserves recorded field adjustment points instead of freezing the historical total or re-running its questionnaire. Unversioned legacy backfill still only fills missing scores. See [unified CLS](unified-cls.md).
 
 ## Validation
 

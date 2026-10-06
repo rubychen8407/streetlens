@@ -196,14 +196,17 @@ export function applyFieldObservationAdjustment(
   );
 
   const normalizedBaseline = baselineCls == null ? null : clampScore(Number(baselineCls));
+  const observationPoints = Math.round(rawAdjustment) || 0;
   const adjustedCls = normalizedBaseline == null
     ? null
-    : clampScore(normalizedBaseline + rawAdjustment);
+    : clampScore(normalizedBaseline + observationPoints);
 
   return {
     baselineCls: normalizedBaseline,
     adjustedCls,
-    adjustment: adjustedCls == null || normalizedBaseline == null ? 0 : adjustedCls - normalizedBaseline,
+    // Record observation points independently of the external baseline. Clamp
+    // the final score only; otherwise a baseline near 0/100 erases the points.
+    adjustment: normalizedBaseline == null ? 0 : observationPoints,
     categoryAdjustments,
     itemAdjustments,
     ratedItemCount,

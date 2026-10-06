@@ -41,7 +41,7 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   const report = page.getByRole('complementary',{name:t('街道結果報告')});
   await report.waitFor();
   await report.getByText('Keep this note',{exact:true}).waitFor();
-  assert.equal(count('/api/assessment'),before.assessment,'opening a saved badge must not recompute its historical score');
+  assert.equal(count('/api/assessment'),before.assessment + 1,'explicit report opening reads the shared baseline once, as library selection does');
   assert.equal(count('/api/reverse-geocode'),before.address,'saved badge selection must not reverse-geocode');
   assert.equal(await page.evaluate(() => localStorage.getItem('cls_saved_locations')),original,'opening the report preserves exact history');
   assert.equal(await page.evaluate(() => Boolean((window as any).mapXss)),false);

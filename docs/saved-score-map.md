@@ -14,12 +14,14 @@ or rewritten: labels show at most two decimals only.
 The current viewport, with a small edge buffer, displays at most 200 badges,
 newest first. Offscreen/older records remain in personal history. Saved badges
 follow the existing street-score layer state and adapt to dark/light themes.
-The tooltip identifies the saved visit and timestamp so historical scores are
-not mistaken for a fresh/live assessment.
+The tooltip identifies the saved visit and timestamp. Labels use the current
+locally cached total, including shared-baseline updates from the existing flow.
 
 Click, Enter or Space opens that saved visit through the existing report flow;
-it never selects a new address or recomputes the historical CLS. Existing report
-weather refresh behavior is unchanged. With paginated history, only records
+it never selects a new address. The existing report flow reads the shared
+external baseline and retains the visit adjustment points. This explicit read
+also updates matching local map labels; map movement adds no assessment reads.
+Existing report weather refresh behavior is unchanged. With paginated history, only records
 already loaded/cached appear; loading more in the library populates the overlay
 without a separate full-history map download. A full uncached report may load
 on explicit selection using the history detail behavior, not on map movement.

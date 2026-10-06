@@ -181,11 +181,12 @@ export function StreetReport(props: Props) {
         </div>
 
         {/* Stats Grid */}
+        {assessment?.baseline && <div className="text-sm leading-relaxed text-slate-300 mt-3">{t('外部 CLS 以路段共用取樣點計算；總分另加此筆實勘調整。')}</div>}
         <div className="grid grid-cols-3 gap-2 mt-4">
           <div className="rounded-xl bg-black/20 border border-white/[0.06] p-3">
             <div className="text-sm text-slate-300">{t("外部資料 CLS")}</div>
             <div className="text-lg font-bold font-mono text-white mt-0.5">
-              {formatNumber(saved?.baselineClsScore ?? assessment?.scores.overall)}
+              {formatNumber(assessment?.scores.overall)}
             </div>
           </div>
           <div className="rounded-xl bg-black/20 border border-white/[0.06] p-3">
@@ -198,7 +199,7 @@ export function StreetReport(props: Props) {
                   <TrendingDown className="w-4 h-4 text-rose-400 inline" />
                 )
               )}
-              {savedAdjustment == null ? '—' : (savedAdjustment > 0 ? '+' : '') + savedAdjustment}
+              {savedAdjustment == null ? '—' : (savedAdjustment > 0 ? '+' : '') + formatNumber(savedAdjustment)}
             </div>
           </div>
           <button
@@ -230,10 +231,9 @@ export function StreetReport(props: Props) {
               <div className="text-base font-semibold text-white mt-0.5">
                 <span>{feeling === 'good' ? t("喜歡") : feeling === 'bad' ? t("不喜歡") : t("拍照紀錄")}</span>
               </div>
-              <div className="text-sm text-slate-300 mt-0.5">
-                {saved?.walkMoment?.accuracyMeters != null ? t("定位精度 ±") + saved.walkMoment.accuracyMeters + ' m · ' : ''}
-                {saved ? new Date(saved.timestamp).toLocaleString(dateLocale()) : ''}
-              </div>
+              {saved?.walkMoment?.accuracyMeters != null && <div className="text-sm text-slate-300 mt-0.5">
+                {t("定位精度 ±")}{saved.walkMoment.accuracyMeters} m
+              </div>}
             </div>
           </div>
         )}

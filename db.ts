@@ -76,6 +76,18 @@ export async function ensureDataCacheSchema(): Promise<void> {
       active BOOLEAN NOT NULL DEFAULT TRUE
     );
 
+    CREATE TABLE IF NOT EXISTS street_baselines (
+      id BIGSERIAL PRIMARY KEY,
+      street_identity TEXT NOT NULL,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      revision TEXT,
+      payload JSONB,
+      computed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_street_baselines_identity
+      ON street_baselines(street_identity, latitude, longitude);
+
     CREATE TABLE IF NOT EXISTS external_data_snapshots (
       id BIGSERIAL PRIMARY KEY,
       source_key TEXT NOT NULL,

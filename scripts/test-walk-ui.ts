@@ -171,6 +171,12 @@ try {
       assert.ok(dock.x < search.x && entry.x < search.x, 'desktop dock remains on the left');
     }
     assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and location action align');
+    const observationButton = view.getByRole('button', { name: t("環境觀察"), exact: true });
+    const locationButton = view.getByRole('button', { name: t("定位到目前位置"), exact: true });
+    const observationBox = await observationButton.boundingBox();
+    assert.ok(observationBox && tools && (observationBox.x + observationBox.width <= tools.x || tools.x + tools.width <= observationBox.x || observationBox.y + observationBox.height <= tools.y || tools.y + tools.height <= observationBox.y), 'observation and location touch areas do not overlap');
+    await locationButton.click();
+    assert.equal(await view.getByRole('complementary', { name: t("街道評估面板") }).count(), 0, 'GPS does not open the observation panel');
     for (const label of [t("CLS 結果報告"), t("環境觀察"), t("Street Library"), t("實勘"), t("資料狀態")]) {
       const box = await view.getByRole('button', { name: t(label), exact: true }).boundingBox();
       assert.ok(box && box.width >= 44 && box.height >= 44, label + ' needs a touch target');

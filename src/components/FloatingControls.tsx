@@ -9,6 +9,7 @@ import {
   Loader2,
   Check,
   ClipboardList,
+  NotebookPen,
   Library,
   ChevronRight,
   Key,
@@ -247,7 +248,7 @@ export function FloatingControls({
         <div className="dock-divider" />
         <button type="button" onClick={onOpenWalk} aria-label={t("實勘")} title={t("實勘")}><Footprints size={21} /></button>
         <button type="button" onClick={onOpenReport} aria-label={t("CLS 結果報告")} title={t("CLS 結果報告")}><ClipboardList size={21} /></button>
-        <button type="button" onClick={onOpenField} aria-label={t("環境觀察")} title={t("環境觀察")}><Crosshair size={21} /></button>
+        <button type="button" onClick={onOpenField} aria-label={t("環境觀察")} title={t("環境觀察")}><NotebookPen size={21} /></button>
         <div className="dock-spacer" />
         <button type="button" onClick={onOpenSettings} aria-label={t("資料狀態")} title={t("資料狀態")}><Database size={21} /></button>
       </nav>

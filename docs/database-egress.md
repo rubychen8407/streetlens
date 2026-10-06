@@ -15,6 +15,26 @@ to the browser. A database-backed snapshot is not a process-local read cache.
   boxes, distance ordering and row limits are preserved.
 - Nearby snapshot radius filtering occurs in SQL before payloads are returned.
 - Refresh cadence, validator and hash checks use snapshot metadata without payload.
+- Local green and safety snapshots project 800m tree counts and 500m accident
+  count/fatal/injury counts in PostgreSQL before leaving the database. The same
+  candidate snapshots and overlapping-record multiplicity are retained; this
+  optimization does not silently deduplicate records or change the CLS model.
+- Street-light quantity sums, AED/hydrant counts and cooling-point counts are
+  read in a single scalar query with the original radii, bounding boxes and
+  point limits. Invalid street-light quantities still default to one, while an
+  explicit null is zero (matching the existing JS calculation).
+- Other assessment point reads project only the properties required by scoring:
+  YouBike availability/active status and AQI/PM2.5/publication time. Other source
+  properties remain stored, but are not sent for every assessment.
+
+### Accident detail compatibility
+
+The current UI does not consume `c1TrafficAccidents`. Normal assessment responses
+now omit this optional raw-detail field instead of downloading every record.
+Clients needing it can request `/api/assessment?...&includeAccidents=true`.
+The details remain real persisted records, filtered to the same 500m radius;
+the flag changes only detail loading, not the calculated scores. The cache key
+includes this flag. Historical saved snapshots and source data are untouched.
 
 ## Cache and freshness
 
@@ -53,9 +73,29 @@ This does not reset an exhausted Neon quota. Restore database access separately
 and monitor the Network transfer usage trend after deployment. No production
 percentage reduction is claimed without measuring actual traffic.
 
+### Safe transfer observability
+
+Set `STREETLENS_DB_TRANSFER_METRICS=true` in Render to emit one-minute aggregate
+`db_transfer_metrics` events. Blueprint configuration enables it; an existing
+non-Blueprint service needs the environment variable set manually. Disable it
+with `false` if measurements are no longer needed.
+
+Events contain only fixed operation names, query/error counts, returned row
+counts, `estimatedResultBytes` and total duration. No SQL, parameters, locations,
+workspace IDs, record IDs, credentials or row contents are logged. This observes
+the scoring/cache read paths, not every transaction/history/photo query.
+
+`estimatedResultBytes` is the UTF-8 JSON size of result rows, not PostgreSQL wire
+traffic or Neon billing bytes. Use it to identify large/repeated result sets,
+then compare the trend with Neon Network transfer. The flushing timer performs
+no database requests and does not keep a Neon compute awake. Measurement or
+logging failures do not change query results.
+
 ## Verification
 
 `npm run test:egress-budget` executes real PostgreSQL queries in an isolated PGlite
 database and checks projections, aggregates, deduplication, official enrichment,
 missing/null semantics, warm-cache query counts, freshness invalidation and retry
-backoff. It is included in local CI and GitHub CI. Fixture data never reaches production.
+backoff, plus local-radius/count parity, optional accident detail reads, required
+point property projection and privacy-safe metrics. It is included in local CI
+and GitHub CI. Fixture data never reaches production.

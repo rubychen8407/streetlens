@@ -4,6 +4,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { ReadCache, referenceReadCache, assessmentReadCache, invalidateSourceReads } from '../readCache';
 import { ReadRetry } from '../src/utils/readRetry';
 import { readReferenceSnapshots } from '../referenceSnapshots';
+import { QueryTransferMetrics } from '../queryTransferMetrics';
 
 let now = 0, loads = 0;
 const cache = new ReadCache(100, 2, () => now);
@@ -30,6 +31,26 @@ for (const delay of [30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000
   now++; assert.equal(retry.due('location'), true);
 }
 retry.reset('location'); assert.equal(retry.due('location'), true);
+
+const events: any[] = [];
+const metrics = new QueryTransferMetrics(event => events.push(event), () => now);
+const sensitive = [{ workspaceId: 'DO-NOT-LOG', latitude: 25, photo: 'private-photo' }];
+assert.equal((await metrics.query('snapshot.exact', async () => ({ rows: sensitive }))).rows, sensitive);
+await assert.rejects(metrics.query('snapshot.exact', async () => { throw Error('private SQL error'); }));
+metrics.flush();
+assert.equal(events[0].operations['snapshot.exact'].queries, 2);
+assert.equal(events[0].operations['snapshot.exact'].errors, 1);
+assert.equal(events[0].operations['snapshot.exact'].estimatedResultBytes, Buffer.byteLength(JSON.stringify(sensitive)));
+assert.equal(/DO-NOT-LOG|private-photo|latitude|private SQL/.test(JSON.stringify(events)), false, 'metrics log counters only');
+const badEmitter = new QueryTransferMetrics(() => { throw Error('logger unavailable'); });
+await badEmitter.query('test', async () => ({ rows: [{ n: 1n }] }));
+badEmitter.flush(); // logging/measurement failures must not break a read
+let releaseQuery!: (value: { rows: any[] }) => void;
+const delayed = metrics.query('delayed', () => new Promise<{ rows: any[] }>(resolve => { releaseQuery = resolve; }));
+metrics.flush();
+releaseQuery({ rows: [{ value: 1 }] }); await delayed;
+metrics.flush();
+assert.equal(events.at(-1).operations.delayed.rows, 1, 'flush during an in-flight query must not lose byte/row counters');
 
 // Execute the actual queries against PostgreSQL (PGlite), with isolated fixtures.
 process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
@@ -98,6 +119,73 @@ assert.deepEqual(await db.getSpatialPointPropertySumReference('taipei_street_lig
 const reads = statements.length;
 await Promise.all([db.getPoiDensityReference(), db.getDistanceAndAirQualityReferences(), db.getGreenDensityReference()]);
 assert.equal(statements.length, reads, 'warm reference reads perform no database query');
+
+// Local evaluation parity: aggregate inside PostgreSQL with the same radii,
+// candidate snapshots and duplicate-count behavior as the existing JS pipeline.
+const distance = (p: any) => {
+  const dLat = (Number(p.lat) - 25) * Math.PI / 180;
+  const dLng = (Number(p.lng) - 121) * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(25 * Math.PI / 180)
+    * Math.cos(Number(p.lat) * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+const filter = (points: any[], radius: number) => points.filter(p => Number.isFinite(Number(p.lat))
+  && Number.isFinite(Number(p.lng)) && distance(p) <= radius);
+const treePoints = [
+  { lat: 25, lng: 121, raw: 'x'.repeat(100_000) },
+  { lat: '25.001', lng: '121' },
+  { lat: 25 + 799.9 / 6371000 * 180 / Math.PI, lng: 121 },
+  { lat: 25 + 800.1 / 6371000 * 180 / Math.PI, lng: 121 },
+  { lat: 'bad', lng: 121 }, {}, { lat: null, lng: null },
+];
+const accidentPoints = [
+  { id: 'fatal', lat: 25, lng: 121, type: 'A1 死亡', raw: 'x'.repeat(100_000) },
+  { id: 'injury', lat: 25.001, lng: 121, type: '2類受傷' },
+  { id: 'both', lat: '25', lng: '121', type: 'A1 A2' },
+  { lat: 26, lng: 121, type: 'A1' }, { lat: 'bad', lng: 121, type: 'A2' },
+];
+await sqlDb.query(`UPDATE external_data_snapshots SET payload=$1 WHERE source_key='taipei_green' AND scope_key=$2`,
+  [JSON.stringify({ streetTrees: treePoints, parkTrees: treePoints, source: 'real fixture provenance', status: 'available' }), a]);
+await sqlDb.query(`UPDATE external_data_snapshots SET payload=$1 WHERE source_key='taipei_safety' AND scope_key=$2`,
+  [JSON.stringify({ accidents: accidentPoints, source: 'fixture', status: 'available' }), a]);
+transferred = 0;
+const localRead = { lat: 25, lng: 121 };
+const localGreen = await db.getCachedSnapshot('taipei_green', a, localRead);
+assert.equal(localGreen?.payload.streetTreeCount800m, filter(treePoints, 800).length);
+assert.equal(Object.hasOwn(localGreen!.payload, 'streetTrees'), false);
+const localSafety = await db.getCachedSnapshot('taipei_safety', a, localRead);
+const expectedAccidents = filter(accidentPoints, 500);
+assert.equal(localSafety?.payload.accidentCount500m, expectedAccidents.length);
+assert.equal(localSafety?.payload.fatalAccidentCount500m, expectedAccidents.filter(p => /1類|A1|死亡/.test(String(p.type || ''))).length);
+assert.equal(localSafety?.payload.injuryAccidentCount500m, expectedAccidents.filter(p => /2類|A2|受傷/.test(String(p.type || ''))).length);
+assert.equal(Object.hasOwn(localSafety!.payload, 'accidents'), false);
+assert.ok(transferred < 2500, 'local scoring reads no tree/accident raw details');
+const detailed = await db.getCachedSnapshot('taipei_safety', a, { ...localRead, includeAccidents: true });
+assert.deepEqual(detailed?.payload.accidents, expectedAccidents, 'explicit detail reads preserve original records');
+const nearbyGreen = await db.getNearbyCachedSnapshots('taipei_green', 25, 121, 1000, 3, localRead);
+assert.equal(nearbyGreen.find(row => row.scopeKey === a)?.payload.streetTreeCount800m, filter(treePoints, 800).length);
+assert.equal(nearbyGreen.every(row => !Object.hasOwn(row.payload, 'streetTrees')), true);
+await sqlDb.query(`INSERT INTO external_spatial_points(source_key,feature_id,name,latitude,longitude,properties)
+  VALUES ('taipei_street_lights','missing','missing',25,121,'{}'),
+    ('taipei_street_lights','null','null',25,121,'{"quantity":null}'),
+    ('taipei_street_lights','invalid','invalid',25,121,'{"quantity":"bad"}'),
+    ('taipei_street_lights','boolean','boolean',25,121,'{"quantity":true}')`);
+const fullLights = await db.getNearbyExternalSpatialPoints('taipei_street_lights', 25, 121, 300, 5000);
+const expectedLightSum = fullLights.reduce((sum, point) => {
+  const quantity = Number(point.properties.quantity); return sum + (Number.isFinite(quantity) ? quantity : 1);
+}, 0);
+const localFacilities = await db.getLocalFacilityMetrics(25, 121);
+assert.equal(localFacilities.taipei_street_lights.quantitySum, expectedLightSum);
+assert.equal(localFacilities.taipei_street_lights.count, fullLights.length);
+for (const [source, radius, limit] of [['taipei_aed', 500, 500], ['taipei_fire_hydrants', 500, 1000], ['taipei_cooling_points', 1200, 300]] as const) {
+  assert.equal(localFacilities[source].count, (await db.getNearbyExternalSpatialPoints(source, 25, 121, radius, limit)).length);
+}
+await sqlDb.query(`UPDATE external_spatial_points SET properties='{"active":false,"availableRentBikes":0,"availableReturnBikes":null,"raw":"unused"}'
+  WHERE source_key='taipei_youbike'`);
+const projectedBikes = await db.getAssessmentSpatialPoints('taipei_youbike', 25, 121, 1500, 500);
+assert.deepEqual(projectedBikes[0].properties, { active: false, availableRentBikes: 0, availableReturnBikes: null });
+assert.deepEqual((await db.getAssessmentSpatialPoints('taipei_medical', 25, 121, 1500, 500))[0].properties, {});
+
 await db.getNearbyCachedSnapshots('taipei_green', 25, 121, 10, 6);
 assert.equal(statements.at(-1)?.includes(')) <= $5'), true, 'radius filtering happens in SQL before transfer');
 assert.deepEqual((await db.getNearbyCachedSnapshots('taipei_green', 25, 121, 10, 6)).map(row => row.scopeKey), [a]);

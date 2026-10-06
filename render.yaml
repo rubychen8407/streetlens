@@ -7,6 +7,8 @@ services:
     startCommand: npm start
     healthCheckPath: /api/live
     envVars:
+      - key: STREETLENS_DB_TRANSFER_METRICS
+        value: "true"
       - key: STREETLENS_ENABLE_CACHE_PRUNE
         value: "false"
       - key: DATABASE_URL

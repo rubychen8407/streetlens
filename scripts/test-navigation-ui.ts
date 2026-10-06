@@ -45,12 +45,11 @@ export async function testNavigationUI(browser: Browser, prepare: (context: Brow
           const subtitle = root.querySelector('header .text-slate-300')!;
           const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
           const ctx = canvas.getContext('2d')!;
-          function luminance(color: string) {
+          const [a, b] = [getComputedStyle(subtitle).color, getComputedStyle(root).backgroundColor].map(color => {
             ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1);
             const rgb = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(v => { const c = v / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; });
             return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
-          }
-          const a = luminance(getComputedStyle(subtitle).color), b = luminance(getComputedStyle(root).backgroundColor);
+          });
           return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
         });
         assert.ok(contrast >= 4.5, `${label}/${theme} subtitle contrast ${contrast} meets 4.5:1`);

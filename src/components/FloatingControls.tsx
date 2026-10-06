@@ -25,7 +25,6 @@ import {
   Layers,
   Sun,
   Moon,
-  BarChart3,
   Star,
   Settings,
   Store,
@@ -39,7 +38,7 @@ import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
 import { CARTO_STORAGE_KEY, getActiveCartoKey } from './ScoutMap';
 
 interface FloatingControlsProps {
-  activeDock: 'walk' | 'report' | 'field' | 'settings' | null;
+  activeDock: 'walk' | 'field' | 'settings' | null;
   currentStreetName: string;
   district: string;
   city: string;
@@ -50,7 +49,6 @@ interface FloatingControlsProps {
   isLocatingGPS: boolean;
   onLocateMe: () => void;
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
-  onOpenReport: () => void;
   onOpenField: () => void;
   onOpenWalk: () => void;
   isSheetOpen: boolean;
@@ -101,7 +99,6 @@ export function FloatingControls({
   isLocatingGPS,
   onLocateMe,
   onSelectCoordinate,
-  onOpenReport,
   onOpenField, onOpenWalk,
   isSheetOpen,
   currentLocation,
@@ -300,14 +297,6 @@ export function FloatingControls({
           onClick={onOpenWalk}
         >
           <Footprints size={21} />
-        </DockButton>
-
-        <DockButton
-          label={t('CLS 結果報告')}
-          active={!profileOpen && activeDock === 'report'}
-          onClick={onOpenReport}
-        >
-          <BarChart3 size={21} />
         </DockButton>
 
         <div className="dock-divider" />

@@ -947,6 +947,7 @@ export default function App() {
         currentLocation={currentLocation}
         targetLocation={isWalkOpen && walkLocation ? walkLocation : targetLocation}
         onSelectLocation={(coord, customName) => {
+          navigation.go('assessment');
           setTargetLocation(coord);
           setActiveSavedAssessmentId(null);
           setAiExplanation(null);
@@ -1000,7 +1001,7 @@ export default function App() {
 
       {/* 2. Floating Tactical Left Dock & Search Bar */}
       <FloatingControls
-        activeDock={isWalkOpen ? 'walk' : !isSheetOpen ? null : workspaceView === 'assessment' || workspaceView === 'report' ? 'report' : workspaceView === 'field' || workspaceView === 'settings' ? workspaceView : null}
+        activeDock={isWalkOpen ? 'walk' : !isSheetOpen ? null : workspaceView === 'field' || workspaceView === 'settings' ? workspaceView : null}
         onOpenWalk={() => { navigation.go('walk'); }}
         isLoadingScore={isLoadingBaseline}
         scoreStatus={baselineSummary}
@@ -1012,6 +1013,7 @@ export default function App() {
         isLocatingGPS={isLocatingGPS}
         onLocateMe={handleLocateMe}
         onSelectCoordinate={(coord, name, dist, c) => {
+          navigation.go('assessment');
           setTargetLocation(coord);
           setActiveSavedAssessmentId(null);
           setAiExplanation(null);
@@ -1024,7 +1026,6 @@ export default function App() {
           fetchLocationData(coord, newDist, newCity, name, true);
         }}
         onOpenField={() => { navigation.go('field'); }}
-        onOpenReport={() => { navigation.go('assessment'); }}
         onOpenSaved={() => { navigation.go('saved'); }}
         onOpenSettings={() => { navigation.go('settings'); }}
         isSheetOpen={isSheetOpen}

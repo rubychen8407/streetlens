@@ -10,7 +10,8 @@ export async function testProfileUI(browser: Browser, prepare: (context: Browser
     await page.goto(baseURL);
     const dock = page.getByRole('navigation');
     await dock.waitFor();
-    for (const label of ['個人設定', '實勘', 'CLS 結果報告', '環境觀察', '資料狀態']) {
+    assert.equal(await dock.getByRole('button', { name: 'CLS 結果報告', exact: true }).count(), 0);
+    for (const label of ['個人設定', '實勘', '環境觀察', '資料狀態']) {
       const button = dock.getByRole('button', { name: label, exact: true });
       await button.hover();
       const tooltip = button.getByRole('tooltip');

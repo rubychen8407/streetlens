@@ -24,6 +24,7 @@ import {
   Activity,
   TrendingUp,
   TrendingDown,
+  GitCompareArrows,
 } from 'lucide-react';
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
@@ -260,7 +261,7 @@ export function AssessmentWorkspace({
   const unavailableCategoryCount = categoryScores.filter((category) => category.score === null).length;
 
   return (
-    <aside ref={panelRef} tabIndex={-1} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
+    <aside ref={panelRef} tabIndex={-1} data-panel-view={view} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
         <div className={`flex items-center justify-between ${view === 'assessment' ? 'mb-4' : ''}`}>
           <div className="flex items-center gap-2">
@@ -834,7 +835,7 @@ export function AssessmentWorkspace({
         {view === 'report' && <StreetReport saved={currentReport} streetName={streetName} district={district} city={city} score={clsScore} grade={grade} assessment={assessment} fieldNotes={fieldNotes} ratings={observationRatings} adjustment={fieldAdjustment} evidence={selectedSavedEvidence} evidenceUrls={savedEvidenceUrls} aiExplanation={aiExplanation} aiExplanationError={aiExplanationError} isGeneratingAiExplanation={isGeneratingAiExplanation} canExplain={Boolean(activeSavedAssessmentId)} onExplain={onGenerateAiExplanation} isFavorite={isFavorite} onToggleFavorite={onToggleFavorite} />}
 
         {view === 'saved' && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="flex gap-1.5 mb-3">
               {([['all',t("All")],['favorites',t("Favorites")]] as const).map(([value, label]) => (
                 <button key={value} onClick={() => setSavedFilter(value)} className={`px-3 py-1.5 rounded-lg text-sm font-bold border ${savedFilter === value ? 'bg-amber-400/15 border-amber-300/30 text-amber-200' : 'bg-white/[0.03] border-white/5 text-slate-300'}`}>{t(label)}</button>
@@ -883,33 +884,37 @@ export function AssessmentWorkspace({
             )}
             {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-300">{savedFilter === 'favorites' ? t("No favorite streets yet.") : t("No saved assessments yet.")}</div>}
             {savedList.map(saved => (
-              <div key={saved.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
-                <div className="space-y-3">
+              <div key={saved.id} data-testid="saved-library-card" className="relative rounded-2xl border border-white/[0.08] bg-white/[0.04] p-3">
+                <div>
                   <button onClick={() => onSelectSaved(saved)} className="block w-full text-left min-w-0">
-                    <div className="font-bold truncate">{saved.name}</div>
-                    <div className="text-sm text-slate-300 mt-1">{saved.district} · {saved.city}</div>
-                    {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? t(t(' · 最愛')) : ''}</div>}
-                    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="saved-record-meta">
+                    <div className="pr-24" data-testid="saved-record-heading">
+                      <div className="font-bold truncate" title={saved.name}>{saved.name}</div>
+                      <div className="text-sm text-slate-300 mt-1 truncate" title={`${saved.district} · ${saved.city}`}>{saved.district} · {saved.city}</div>
+                    </div>
+                    {saved.walkMoment && <div className={`text-sm mt-1 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? t(t(' · 最愛')) : ''}</div>}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="saved-record-meta">
                       <span className={`shrink-0 rounded border px-1 text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${formatNumber(saved.clsScore)}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
                       <time dateTime={new Date(saved.timestamp).toISOString()} title={new Date(saved.timestamp).toLocaleString(dateLocale())} className="whitespace-nowrap text-sm text-slate-300">{new Date(saved.timestamp).toLocaleString(dateLocale(), { year: '2-digit', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
                     </div>
                     {saved.clsScore == null && <div className="mt-2 text-sm text-slate-300">{t("開啟網站時每 30 秒重試；有來源資料後自動補上")}</div>}
                     {saved.syncStatus === 'local' && <div className="mt-1 text-sm text-slate-300">{t("已存於此裝置，等待同步")}</div>}
                   </button>
-                  <div className="flex items-center justify-end gap-1">
+                  <div className="absolute top-3 right-3 flex items-center gap-1" data-testid="saved-library-actions">
                     <button
                       type="button"
+                      aria-label={t("Compare")}
+                      aria-pressed={compareIds.includes(saved.id)}
                       onClick={() => setCompareIds(prev => prev.includes(saved.id) ? prev.filter(id => id !== saved.id) : prev.length < 2 ? [...prev, saved.id] : prev)}
-                      className={`px-2 py-1.5 rounded-lg text-sm border ${compareIds.includes(saved.id) ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/[0.03] border-white/5 text-slate-300'}`}
+                      className={`w-11 h-11 flex items-center justify-center rounded-lg border ${compareIds.includes(saved.id) ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/[0.03] border-white/5 text-slate-300'}`}
                       title={compareIds.length >= 2 && !compareIds.includes(saved.id) ? t("Compare up to two assessments") : t("Compare")}
                     >
-                      {compareIds.includes(saved.id) ? t("Selected") : t("Compare")}
+                      {compareIds.includes(saved.id) ? <Check className="w-4 h-4" /> : <GitCompareArrows className="w-4 h-4" />}
                     </button>
-                    <button onClick={() => onDeleteSaved(saved.id)} className="w-8 h-8 rounded-lg text-slate-300 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center" title={t("Delete assessment")}><Trash2 className="w-4 h-4" /></button>
+                    <button onClick={() => onDeleteSaved(saved.id)} className="w-11 h-11 rounded-lg text-slate-300 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center" title={t("Delete assessment")} aria-label={t("Delete assessment")}><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
-                {(locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length || 0) > 1 && <details className="mt-3 border-t border-white/10 pt-3">
-                  <summary className="text-sm text-slate-300 cursor-pointer">{t("查看此地全部紀錄（照片、筆記與感受保留）")}</summary>
+                {(locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length || 0) > 1 && <details className="mt-2 border-t border-white/10 pt-2">
+                  <summary className="text-sm text-slate-300 cursor-pointer">{t("歷次紀錄")} · {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length}</summary>
                   {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.map(visit => <button key={visit.id} type="button" onClick={() => onSelectSaved(visit)} className="block w-full text-left text-sm text-slate-300 py-3">
                     {new Date(visit.timestamp).toLocaleString(dateLocale())} · CLS {visit.clsScore ?? t("待補")} · {visit.walkMoment?.feeling === 'good' ? t("喜歡") : visit.walkMoment?.feeling === 'bad' ? t("不喜歡") : t("環境觀察")}  {t("· 照片")} {(visit.evidence || []).filter(item => item.type === 'photo').length}
                   </button>)}

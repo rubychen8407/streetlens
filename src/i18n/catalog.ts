@@ -11,6 +11,7 @@ const pairs = `
 1–4 級環境評分、筆記與佐證|1–4 environment ratings, notes and evidence
 喜歡、不喜歡與拍照；不影響 CLS 分數。|Like, dislike and capture photos; does not affect CLS scores.
 查看此地全部紀錄（照片、筆記與感受保留）|View all records here (photos, notes and impressions preserved)
+歷次紀錄|Visit history
 CLS 以已儲存的外部資料計算；環境觀察另記為觀察調整。|CLS uses persisted external data; environment observations are recorded separately as observation adjustments.
 觀察筆記|Observation notes
 街道紀錄照片|Street record photo

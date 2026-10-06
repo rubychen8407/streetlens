@@ -47,8 +47,7 @@ input, textarea { user-select: text; }
 .assessment-panel h3 { font-size: 16px; }
 .assessment-panel button[aria-current="step"] { background: rgba(212,249,113,.1); color: #d4f971; border-color: rgba(212,249,113,.2); }
 .assessment-panel > header button { min-width: 44px; min-height: 44px; }
-.assessment-panel > header { padding: 16px 20px; }
-.assessment-panel > header > div:first-child { margin-bottom: 12px; }
+.assessment-panel > header { padding: 12px 20px; }
 .assessment-footer { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .apple-map-dark-tiles { filter: invert(100%) hue-rotate(180deg) brightness(73%) contrast(88%) saturate(25%); }
 .user-pulse-outer { background: rgba(212,249,113,.12); }
@@ -88,6 +87,7 @@ input, textarea { user-select: text; }
   .layer-popover { position: absolute; left: calc(100% + 12px); top: 0; transform: none; margin-top: 0; width: 15rem; }
 
   .assessment-panel { top: 88px; right: 20px; bottom: 20px; width: min(780px, calc(100vw - 120px)); max-width: 780px; }
+  .assessment-panel[data-panel-view="saved"] { bottom: auto; height: auto; max-height: min(780px, calc(100dvh - 108px)); }
   .leaflet-control-attribution { margin-bottom: 6px !important; }
 }
 @media (max-width: 1023px) {
@@ -95,6 +95,7 @@ input, textarea { user-select: text; }
   .search-toolbar { left: 12px; right: 12px; }
   .cls-read-status { left: 12px; right: 12px; }
   .assessment-panel { left: 8px; right: 8px; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); width: auto; height: min(78dvh, 780px); max-height: calc(100dvh - 88px - env(safe-area-inset-bottom) - env(safe-area-inset-top)); border-radius: 20px; }
+  .assessment-panel[data-panel-view="saved"] { height: auto; max-height: min(78dvh, 780px, calc(100dvh - 88px - env(safe-area-inset-bottom) - env(safe-area-inset-top))); }
   .assessment-panel > header { padding: 14px 16px; }
   .assessment-panel > div { padding-inline: 16px; }
   .tactical-controls[data-panel-open="true"] .search-toolbar { visibility: hidden; }

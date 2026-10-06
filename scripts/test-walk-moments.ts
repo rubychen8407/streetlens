@@ -5,9 +5,22 @@ import { backfillSavedScore } from '../savedScoreBackfill';
 import { createSavedStreet, favoriteKey, fillSavedScore, mergeSavedRecords, migrateFavoriteKeys, groupSavedStreets } from '../src/utils/savedLocations';
 import { normalizeWalkMoment } from '../src/utils/walkMoments';
 import { resolveSavedScore } from '../src/utils/savedScoreApi';
+import { frameCrop } from '../src/utils/cameraFrame';
 import type { StreetAssessmentResponse } from '../src/types';
 
 const now = 1_800_000_000_000;
+test('camera captures the visible cover crop in portrait and landscape, bounded to 1280', () => {
+  const portrait = frameCrop(1920, 1080, 390, 844);
+  assert.equal(portrait.y, 0);
+  assert.ok(portrait.x > 0);
+  assert.ok(Math.abs(portrait.width / portrait.height - 390 / 844) < 0.00001);
+  const landscape = frameCrop(1080, 1920, 844, 390);
+  assert.equal(landscape.x, 0);
+  assert.ok(landscape.y > 0);
+  assert.ok(Math.abs(landscape.width / landscape.height - 844 / 390) < 0.00001);
+  assert.equal(Math.max(frameCrop(4000, 3000, 800, 600).outputWidth, frameCrop(4000, 3000, 800, 600).outputHeight), 1280);
+  assert.throws(() => frameCrop(0, 1080, 390, 844));
+});
 const fix = { lat: 25.03, lng: 121.53, accuracy: 12, timestamp: now };
 const address = { streetName: '永康街', district: '大安區', city: '臺北市' };
 const saved = () => createSavedStreet({ ...address, coords: { lat: fix.lat, lng: fix.lng } });

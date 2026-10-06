@@ -47,7 +47,7 @@ try {
     if (attempt >= 100) throw new Error('Preview timed out: ' + serverOutput);
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   await mkdir('artifacts/walk-ui', { recursive: true });
   // Removed quick recording must not be reachable through old shortcut URLs.
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -77,16 +77,70 @@ try {
   const walkPage = await walkContext.newPage();
   await walkPage.goto(baseURL);
   await walkPage.getByRole('button', { name: '實勘', exact: true }).click();
-  const confirm = walkPage.getByRole('button', { name: '位置正確，開始', exact: true });
-  await confirm.click();
+  assert.equal(await walkPage.getByRole('button', { name: '位置正確，開始', exact: true }).count(), 0);
+  const livePanel = walkPage.getByRole('region', { name: '步行感受' });
+  const liveBox = await livePanel.boundingBox();
+  assert.ok(liveBox && liveBox.x === 0 && liveBox.y === 0 && liveBox.width === 390 && liveBox.height === 844);
   await walkPage.getByRole('button', { name: '喜歡這裡', exact: true }).click();
   assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
   assert.equal((await saved(walkPage))[0].baselineClsScore, null);
+  await walkPage.getByRole('button', { name: '拍下畫面', exact: true }).click();
+  await walkPage.getByText('目前畫面與位置已儲存。', { exact: true }).waitFor();
+  const frameRecord = (await saved(walkPage))[0];
+  assert.equal(frameRecord.walkMoment.feeling, 'photo');
+  assert.ok(frameRecord.evidence[0].width > 0 && frameRecord.evidence[0].height > 0);
+  assert.equal(frameRecord.coords.lat, 25.0326);
+  const storedBytes = await walkPage.evaluate(async key => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('streetlens-evidence');
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      const request = db.transaction('photos').objectStore('photos').get(key);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    db.close(); return { bytes: blob.size, type: blob.type };
+  }, frameRecord.evidence[0].storageKey);
+  assert.ok(storedBytes.bytes > 0 && storedBytes.bytes <= 2 * 1024 * 1024);
+  assert.equal(storedBytes.type, 'image/jpeg');
+  await walkPage.evaluate(() => { (window as any).__failStorage = true; });
+  await walkPage.getByRole('button', { name: '拍下畫面', exact: true }).click();
+  await walkPage.getByText('儲存空間不足，尚未儲存；請釋出空間後重試。', { exact: true }).waitFor();
+  assert.equal((await saved(walkPage)).length, 2, 'failed capture cannot overwrite earlier visits');
+  await walkPage.evaluate(() => { (window as any).__failStorage = false; });
+  await walkPage.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  assert.equal(await walkPage.evaluate(() => (window as any).__cameraTracks.every((track: MediaStreamTrack) => track.readyState === 'ended')), true);
+  await walkPage.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await walkPage.waitForFunction(() => {
+    const video = document.querySelector('video');
+    return video && !video.paused && video.readyState >= 2;
+  });
+  assert.equal(await walkPage.locator('input[type=file]:visible').count(), 0);
+  await walkPage.evaluate(() => (window as any).__emitFix(25.0326, 121.5298, 30000, 12));
+  assert.equal(await walkPage.getByRole('button', { name: '喜歡這裡', exact: true }).isDisabled(), true);
+  assert.equal(await walkPage.getByRole('button', { name: '拍下畫面', exact: true }).isDisabled(), true);
   await walkPage.getByRole('button', { name: '結束步行' }).click();
+  assert.equal(await walkPage.evaluate(() => (window as any).__cameraTracks.every((track: MediaStreamTrack) => track.readyState === 'ended')), true);
   await walkPage.reload();
   await walkPage.getByRole('button', { name: '實勘', exact: true }).waitFor();
-  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'good');
+  assert.equal((await saved(walkPage))[0].walkMoment.feeling, 'photo');
   await walkContext.close();
+  const deniedCameraContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await prepare(deniedCameraContext);
+  await deniedCameraContext.addInitScript(() => { (window as any).__denyCamera = true; });
+  const deniedCameraPage = await deniedCameraContext.newPage();
+  await deniedCameraPage.goto(baseURL);
+  await deniedCameraPage.getByRole('button', { name: '實勘', exact: true }).click();
+  await deniedCameraPage.getByText('請允許相機存取，才能顯示實勘畫面。', { exact: true }).waitFor();
+  assert.equal(await deniedCameraPage.getByRole('button', { name: '拍下畫面', exact: true }).isDisabled(), true);
+  assert.equal((await saved(deniedCameraPage)).length, 0);
+  await deniedCameraContext.close();
   readyScore = true;
 
   for (const [width, height] of [[320, 740], [390, 844], [768, 1024], [844, 390], [1024, 768], [1440, 900]]) {
@@ -119,6 +173,12 @@ try {
     assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).count(), 0);
     await view.getByRole('button', { name: '實勘', exact: true }).click();
     await view.getByRole('region', { name: '步行感受' }).waitFor();
+    const immersive = await view.getByRole('region', { name: '步行感受' }).boundingBox();
+    assert.ok(immersive && immersive.x === 0 && immersive.y === 0 && immersive.width === width && immersive.height === height);
+    for (const label of ['喜歡這裡', '不喜歡', '拍下畫面']) {
+      const action = await view.getByRole('button', { name: label, exact: true }).boundingBox();
+      assert.ok(action && action.width >= 44 && action.height >= 44 && action.y + action.height <= height);
+    }
     await view.getByRole('button', { name: '結束步行' }).click();
     await view.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
     const panel = view.getByRole('complementary', { name: '街道評估面板' });
@@ -154,6 +214,11 @@ try {
   // Denied GPS still allows observations for a manually selected map point.
   const denied = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(denied, true);
   const deniedPage = await denied.newPage(); await deniedPage.goto(baseURL + '/?mode=walk');
+  await deniedPage.getByRole('button', { name: '實勘', exact: true }).click();
+  await deniedPage.getByText('請允許位置存取，再重試定位。', { exact: true }).waitFor();
+  assert.equal(await deniedPage.getByRole('button', { name: '喜歡這裡', exact: true }).isDisabled(), true);
+  assert.equal(await deniedPage.getByRole('button', { name: '拍下畫面', exact: true }).isDisabled(), true);
+  await deniedPage.getByRole('button', { name: '結束步行' }).click();
   await deniedPage.getByRole('button', { name: '環境觀察', exact: true }).click();
   await deniedPage.getByText('Your observation', { exact: true }).waitFor();
   assert.equal((await saved(deniedPage)).length, 0);

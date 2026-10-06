@@ -4,7 +4,7 @@
 
 Open **環境觀察** beside the account menu, or **開始實勘** from the CLS panel. Both open the structured field-observation view for the selected map location, separate from the CLS read view. Rate conditions actually observed, continue to review, optionally add notes or evidence photos, and explicitly save the assessment.
 
-The dock 實勘 button opens the GPS-confirmed feeling/photo panel. New photos stay in IndexedDB and only metadata syncs. Old `?mode=walk` URLs open the normal map and never record a visit. Existing saved visits, feeling metadata, favorites and photos are preserved; no data cleanup or migration deletes them. Evidence photos in the assessment save flow remain available.
+The dock 實勘 button opens a full-screen rear-camera preview and automatically starts GPS. Fresh, accurate GPS is accepted without a confirmation button. Bottom controls save liking, disliking or a frame from the live camera. Capture uses the visible centre crop at the moment of the tap, stores JPEG (maximum dimension 1280, at most 2 MB) in IndexedDB, and synchronizes only metadata. It does not open the device camera/file picker or upload the video stream. Camera permission failure allows retry; missing or stale GPS disables recording. Leaving the mode or hiding the page stops camera tracks; returning to the page reopens the preview. Old `?mode=walk` URLs open the normal map and never record a visit. Existing visits and photos remain unchanged.
 
 ## CLS loading recovery
 

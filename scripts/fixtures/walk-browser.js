@@ -19,6 +19,16 @@ window.__emitFix = (lat, lng, age, accuracy) => {
   for (const watcher of watchers.values()) watcher.ok(position(lat, lng, age, accuracy));
 };
 window.__watchCount = () => watchers.size;
+// Chromium supplies a fake camera only in this test harness.
+window.__cameraTracks = [];
+const getMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+navigator.mediaDevices.getUserMedia = async constraints => {
+  if (window.__denyCamera) throw new DOMException('Denied', 'NotAllowedError');
+  const stream = await getMedia(constraints);
+  window.__cameraTracks.push(...stream.getTracks());
+  window.__cameraConstraints = constraints;
+  return stream;
+};
 const original = Storage.prototype.setItem;
 Storage.prototype.setItem = function(key, value) {
   if (window.__failStorage && key === 'cls_saved_locations') throw new DOMException('Full', 'QuotaExceededError');

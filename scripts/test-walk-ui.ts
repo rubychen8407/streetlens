@@ -2,6 +2,7 @@ import { t } from '../src/i18n';
 import { testLanguageUI } from './test-language-ui';
 import { testProfileUI } from './test-profile-ui';
 import { testNavigationUI } from './test-navigation-ui';
+import { testPanelInformationUI } from './test-panel-information-ui';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -189,7 +190,7 @@ try {
     assert.ok(libraryBox && Math.abs(libraryBox.y - tools.y) <= 1 && libraryBox.height === tools.height);
     await view.getByRole('button', { name: t("資料狀態"), exact: true }).click();
     const dataStatus = view.getByRole('complementary', { name: t("資料狀態") });
-    await dataStatus.getByRole('heading', { name: t("目前地點資料"), exact: true }).waitFor();
+    await dataStatus.getByRole('heading', { name: t("資料狀態"), exact: true }).waitFor();
     assert.equal(await dataStatus.getByText('Settings', { exact: true }).count(), 0);
     await view.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
     assert.equal(await view.getByRole('complementary').count(), 0, 'direct data status returns to map');
@@ -360,6 +361,7 @@ try {
   await deletionContext.close();
   await testLanguageUI(browser, prepare, baseURL);
   await testNavigationUI(browser, prepare, baseURL);
+  await testPanelInformationUI(browser, prepare, baseURL);
   await testProfileUI(browser, prepare, baseURL);
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log('Field UI checks passed: restored explicit field recording, inert background shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');

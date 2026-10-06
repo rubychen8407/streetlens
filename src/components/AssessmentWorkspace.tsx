@@ -262,15 +262,19 @@ export function AssessmentWorkspace({
   return (
     <aside ref={panelRef} tabIndex={-1} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
-        <div className="flex items-center justify-between mb-4">
+        <div className={`flex items-center justify-between ${view === 'assessment' ? 'mb-4' : ''}`}>
           <div className="flex items-center gap-2">
             {backLabel && <button onClick={onBack} className="w-11 h-11 shrink-0 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={backLabel} aria-label={backLabel}><ArrowLeft className="w-5 h-5" /></button>}
-            <div><div className="text-sm font-bold">{view === 'field' ? t("環境觀察") : view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("CLS 街道報告")}</div><div className="text-sm text-slate-300">{view === 'field' ? t("1–4 級環境評分、筆記與佐證") : view === 'report' || view === 'settings' ? displayPlace(streetName) + ' · ' + district + ' ' + city : view === 'saved' ? t("收藏、街道與歷次評估") : t('CLS · 資料來源 · 歷史比較')}</div></div>
+            <div>
+              <h2 className="text-base font-bold text-slate-300">{view === 'field' ? t("環境觀察") : view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("CLS 街道報告")}</h2>
+              {view === 'field' && <div className="text-sm text-slate-300">{t("1–4 級環境評分、筆記與佐證")}</div>}
+              {view === 'settings' && <div className="text-sm text-slate-300">{displayPlace(streetName)} · {district} {city}</div>}
+            </div>
           </div>
-          {(view === 'assessment' || view === 'report') && <button onClick={onToggleFavorite} title={isFavorite ? t("取消最愛") : t("加入最愛")} aria-label={isFavorite ? t("取消最愛") : t("加入最愛")} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-300'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}
+          {view === 'assessment' && <button onClick={onToggleFavorite} title={isFavorite ? t("取消最愛") : t("加入最愛")} aria-label={isFavorite ? t("取消最愛") : t("加入最愛")} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-300'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}
         </div>
 
-        {(view === 'assessment' || view === 'report') && (
+        {view === 'assessment' && (
           <>
             <div className="flex items-start justify-between">
               <div className="min-w-0">
@@ -830,10 +834,6 @@ export function AssessmentWorkspace({
 
         {view === 'saved' && (
           <div className="space-y-3">
-            <div className="mb-4">
-              <h2 className="text-xl font-bold">{t("Street library")}</h2>
-              <p className="text-sm text-slate-300 mt-1">{t("最愛可追蹤街道；地點紀錄保留實勘感受、照片與環境觀察。")}</p>
-            </div>
             <div className="flex gap-1.5 mb-3">
               {([['all',t("All")],['favorites',t("Favorites")]] as const).map(([value, label]) => (
                 <button key={value} onClick={() => setSavedFilter(value)} className={`px-3 py-1.5 rounded-lg text-sm font-bold border ${savedFilter === value ? 'bg-amber-400/15 border-amber-300/30 text-amber-200' : 'bg-white/[0.03] border-white/5 text-slate-300'}`}>{t(label)}</button>
@@ -883,19 +883,19 @@ export function AssessmentWorkspace({
             {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-300">{savedFilter === 'favorites' ? t("No favorite streets yet.") : t("No saved assessments yet.")}</div>}
             {savedList.map(saved => (
               <div key={saved.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <button onClick={() => onSelectSaved(saved)} className="text-left min-w-0 flex-1">
+                <div className="space-y-3">
+                  <button onClick={() => onSelectSaved(saved)} className="block w-full text-left min-w-0">
                     <div className="font-bold truncate">{saved.name}</div>
                     <div className="text-sm text-slate-300 mt-1">{saved.district} · {saved.city}</div>
                     {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? t(t(' · 最愛')) : ''}</div>}
-                    <div className="mt-3 flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-lg border text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${formatNumber(saved.clsScore)}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
-                      <span className="text-sm text-slate-300">{new Date(saved.timestamp).toLocaleString(dateLocale())}</span>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="saved-record-meta">
+                      <span className={`shrink-0 rounded border px-1 text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${formatNumber(saved.clsScore)}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
+                      <time dateTime={new Date(saved.timestamp).toISOString()} title={new Date(saved.timestamp).toLocaleString(dateLocale())} className="whitespace-nowrap text-sm text-slate-300">{new Date(saved.timestamp).toLocaleString(dateLocale(), { year: '2-digit', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
                     </div>
                     {saved.clsScore == null && <div className="mt-2 text-sm text-slate-300">{t("開啟網站時每 30 秒重試；有來源資料後自動補上")}</div>}
                     {saved.syncStatus === 'local' && <div className="mt-1 text-sm text-slate-300">{t("已存於此裝置，等待同步")}</div>}
                   </button>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-end gap-1">
                     <button
                       type="button"
                       onClick={() => setCompareIds(prev => prev.includes(saved.id) ? prev.filter(id => id !== saved.id) : prev.length < 2 ? [...prev, saved.id] : prev)}
@@ -920,16 +920,11 @@ export function AssessmentWorkspace({
 
         {view === 'settings' && (
           <div className="space-y-4">
-            <div>
-              <h2 className="text-xl font-bold">{t("目前地點資料")}</h2>
-              <p className="text-sm text-slate-300 mt-1">{t("查看此地點的資料來源、可用性與更新時間。")}</p>
-            </div>
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
               <div className="flex items-center gap-3">
                 <Database className="w-5 h-5 text-slate-300" />
                 <div>
                   <div className="text-sm font-semibold">{t("資料來源與可用性")}</div>
-                  <div className="text-sm text-slate-300 mt-1">{t("目前地點已載入的評估資料。")}</div>
                 </div>
               </div>
               <div className="mt-3 space-y-2">

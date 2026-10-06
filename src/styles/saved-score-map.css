@@ -1,0 +1,25 @@
+.saved-score-marker { background: none; border: 0; }
+.saved-score-badge {
+  box-sizing: border-box;
+  width: 64px;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a212b;
+  color: #f1f5f9;
+  border: 1px solid #64748b;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px #0006;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.saved-score-badge span { font-size: 14px; color: #cbd5e1; }
+.saved-score-badge strong { font-size: 16px; font-weight: 700; }
+.saved-score-marker:focus-visible { outline: 2px solid #d4f971; border-radius: 14px; outline-offset: 3px; }
+.saved-score-marker:hover .saved-score-badge { border-color: #d4f971; }
+[data-map-theme='light'] .saved-score-badge { background: #fff; color: #0e131a; border-color: #64748b; }
+[data-map-theme='light'] .saved-score-badge span { color: #475569; }
+.saved-score-tooltip { white-space: pre-line; font-size: 14px; }

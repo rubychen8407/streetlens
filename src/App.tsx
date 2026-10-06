@@ -959,6 +959,11 @@ export default function App() {
           }
         }}
         streetSegments={streetSegments}
+        savedLocations={savedLocations}
+        onSelectSaved={(saved) => {
+          handleSelectSavedLocation(saved);
+          navigation.go('report');
+        }}
         poiMarkers={activePoiMarkers}
         activeLayers={activeLayers}
         mapTheme={mapTheme}

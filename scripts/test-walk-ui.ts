@@ -2,6 +2,7 @@ import { t } from '../src/i18n';
 import { testLanguageUI } from './test-language-ui';
 import { testProfileUI } from './test-profile-ui';
 import { testNavigationUI } from './test-navigation-ui';
+import { testSavedMapUI } from './test-saved-map-ui';
 import { testPanelInformationUI } from './test-panel-information-ui';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -405,6 +406,7 @@ try {
   await testNavigationUI(browser, prepare, baseURL);
   await testPanelInformationUI(browser, prepare, baseURL);
   await testProfileUI(browser, prepare, baseURL);
+  await testSavedMapUI(browser, prepare, baseURL);
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log('Field UI checks passed: restored explicit field recording, inert background shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');
 } catch (error) {

@@ -53,7 +53,7 @@ export async function testLanguageUI(browser: Browser, prepare: (context: Browse
   await page.getByRole('button', { name: '拍下畫面', exact: true }).waitFor();
   await page.getByRole('button', { name: '結束步行', exact: true }).click();
   await page.getByRole('button', { name: '街道資料庫', exact: true }).click();
-  await page.getByRole('button', { name: /My saved street/ }).click();
+  await page.getByRole('complementary', { name: '街道資料庫' }).getByRole('button', { name: /My saved street/ }).click();
   let report = page.getByRole('complementary', { name: '街道結果報告' });
   await report.getByRole('button', { name: '產生 AI 解說' }).click();
   await report.getByText('繁體中文解說測試。', { exact: true }).waitFor();

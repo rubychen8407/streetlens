@@ -7,6 +7,7 @@ import { normalizeWalkMoment } from '../src/utils/walkMoments';
 import { resolveSavedScore } from '../src/utils/savedScoreApi';
 import { frameCrop } from '../src/utils/cameraFrame';
 import { mergeFieldRecord, upsertFieldRecord } from '../src/utils/fieldRecordMerge';
+import { savedScoreLocations, visibleSavedScores } from '../src/utils/savedScoreMap';
 import type { StreetAssessmentResponse } from '../src/types';
 
 const now = 1_800_000_000_000;
@@ -25,6 +26,24 @@ test('camera captures the visible cover crop in portrait and landscape, bounded 
 const fix = { lat: 25.03, lng: 121.53, accuracy: 12, timestamp: now };
 const address = { streetName: '永康街', district: '大安區', city: '臺北市' };
 const saved = () => createSavedStreet({ ...address, coords: { lat: fix.lat, lng: fix.lng } });
+test('saved map badges use the latest valid completed score without mutating history', () => {
+  const visit = (id: string, timestamp: number, clsScore: number | null) => ({...saved(),id,timestamp,clsScore});
+  const older = visit('older',1,73.456), latest = visit('latest',2,0), pending = visit('pending',3,null);
+  const records = [pending,older,latest,visit('bad',4,NaN),visit('too-high',5,101),visit('negative',6,-1),
+    {...visit('bad-coord',7,80),coords:{lat:NaN,lng:121}},
+    {...visit('out-of-range',7,80),coords:{lat:91,lng:121}}];
+  const before = structuredClone(records);
+  assert.deepEqual(savedScoreLocations(records),[latest],'zero is a real score; pending/invalid newer visits are excluded');
+  assert.deepEqual(records,before,'map grouping never rewrites personal history');
+  assert.deepEqual(savedScoreLocations([pending,older]),[older],'a pending visit does not hide an older real score');
+  assert.deepEqual(savedScoreLocations([pending]),[],'pending scores never fabricate a badge');
+  assert.equal(savedScoreLocations([visit('a',10,81),visit('b',10,82)])[0].id,'b','timestamp ties are deterministic');
+  const points = Array.from({length:300},(_,i)=>({...visit('point-'+i,i,80),coords:{lat:25+i/10000,lng:121}}));
+  const selected = savedScoreLocations(points);
+  assert.equal(visibleSavedScores(selected,{south:24,north:26,west:120,east:122}).length,200,'rendered badge count is bounded');
+  assert.equal(visibleSavedScores(selected,{south:20,north:21,west:120,east:122}).length,0,'offscreen records render no DOM');
+  assert.equal(visibleSavedScores(selected,{south:25,north:25.001,west:121,east:121}).length,11,'viewport edges remain included');
+});
 test('field actions merge into one ID; newer feelings win, evidence and CLS survive', () => {
   const photo = { ...saved(), id: 'one', timestamp: 100, evidence: [{ id: 'photo', storageKey: 'local-photo',
     type: 'photo' as const, capturedAt: 100, location: fix }], walkMoment: {

@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict';
+import { calculateAssessment } from '../scoring';
 import type { Browser, BrowserContext } from 'playwright';
 
 export async function testPanelInformationUI(browser: Browser, prepare: (context: BrowserContext) => Promise<void>, baseURL: string) {
   const record = { id: 'panel-information-fixture', name: '永康街', streetName: '永康街', district: '大安區', city: '臺北市',
-    coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 73.25, grade: 'B', scores: {}, timestamp: 1700000000000,
+    coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 73.25, baselineClsScore: 70.25, fieldAdjustment: 3, grade: 'B', scores: {}, timestamp: 1700000000000,
     syncStatus: 'synced', fieldNotes: '保留筆記', observationRatings: {}, evidence: [],
     walkMoment: { feeling: 'good', accuracyMeters: 12, positionTimestamp: 1700000000000, confirmedAt: 1700000000000, source: 'walk' } };
   for (const width of [320, 390, 1440]) {
     for (const language of ['zh-TW', 'en']) {
       const context = await browser.newContext({ viewport: { width, height: 900 } });
       await prepare(context);
+      // Keep the layout fixture score stable while exercising the current
+      // saved-report baseline read; score rebasing has its own integration test.
+      await context.route(url => url.pathname === '/api/assessment', route => route.fulfill({
+        status: 200, contentType: 'application/json', body: JSON.stringify({
+          location: { ...record.coords, streetName: record.streetName, district: record.district, city: record.city },
+          scores: { ...calculateAssessment({}, {}), overall: record.baselineClsScore },
+          factors: [], poiCount: 0, dataSources: ['layout-test-only'], generatedAt: '2026-10-06T00:00:00Z',
+        }),
+      }));
       await context.addInitScript(({ record, language }) => {
         localStorage.setItem('cls_saved_locations', JSON.stringify([record]));
         localStorage.setItem('streetlens-language', language);

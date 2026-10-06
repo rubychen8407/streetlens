@@ -320,7 +320,7 @@ try {
   await historyPage.getByRole('button', { name: t("Street Library"), exact: true }).click();
   await historyPage.getByRole('complementary', { name: t("Street Library") }).getByRole('button', { name: t("Favorites"), exact: true }).click();
   assert.equal(await historyPage.getByTitle(t("Delete assessment")).count(), 1, 'one library card per location');
-  await historyPage.getByText(t("查看此地全部紀錄（照片、筆記與感受保留）"), { exact: true }).click();
+  await historyPage.getByText(`${t("歷次紀錄")} · 3`, { exact: true }).click();
   await historyPage.getByRole('button', { name: /CLS 73 · 不喜歡/ }).click();
   const report = historyPage.getByRole('complementary', { name: t("街道結果報告") });
   await report.getByText(t("不喜歡"), { exact: true }).waitFor();

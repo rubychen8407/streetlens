@@ -32,6 +32,26 @@ export async function testPanelInformationUI(browser: Browser, prepare: (context
       await page.getByRole('button', { name: english ? 'Street Library' : '街道資料庫', exact: true }).click();
       const library = page.getByRole('complementary');
       assert.equal(await library.getByRole('heading').count(), 1, 'library has a single heading');
+      const header = await library.locator('header').boundingBox();
+      assert.ok(header && header.height <= 56, 'library header does not reserve space for removed descriptions');
+      const panelBounds = await library.boundingBox();
+      assert.ok(panelBounds && panelBounds.height <= 280, 'few records do not leave a screen-sized empty panel');
+      const card = library.getByTestId('saved-library-card');
+      const cardBounds = await card.boundingBox(), actions = await card.getByTestId('saved-library-actions').boundingBox();
+      const heading = await card.getByTestId('saved-record-heading').locator('div').first().boundingBox();
+      assert.ok(cardBounds && cardBounds.height <= 128, 'a completed record with feeling fits in a compact card');
+      assert.ok(actions && heading && Math.abs(actions.y - heading.y) < 2 && heading.x + heading.width <= actions.x, 'actions share the title row without covering text');
+      for (const button of await card.getByTestId('saved-library-actions').getByRole('button').all()) {
+        const box = await button.boundingBox();
+        assert.ok(box && box.width >= 44 && box.height >= 44, 'compact actions retain 44px touch targets');
+      }
+      const compare = card.getByRole('button', { name: english ? 'Compare' : '比較', exact: true });
+      await compare.click();
+      assert.equal(await compare.getAttribute('aria-pressed'), 'true', 'compare selects the record without opening its report');
+      await library.getByText(english ? 'Compare assessments' : '比較評估', { exact: true }).waitFor();
+      await compare.focus();
+      await page.keyboard.press('Space');
+      assert.equal(await compare.getAttribute('aria-pressed'), 'false', 'keyboard can deselect compare');
       const meta = library.getByTestId('saved-record-meta');
       const score = await meta.locator('span').boundingBox(), time = await meta.locator('time').boundingBox();
       assert.ok(score && time && Math.abs(score.y + score.height / 2 - time.y - time.height / 2) < 2, 'CLS and timestamp share a line');
@@ -59,5 +79,27 @@ export async function testPanelInformationUI(browser: Browser, prepare: (context
       await context.close();
     }
   }
-  console.log('Panel information passed: single headings and report summary, inline date/CLS at 320/390/1440px in both languages, preserved notes, accuracy and saved records.');
+  const longContext = await browser.newContext({ viewport: { width: 320, height: 900 } });
+  await prepare(longContext);
+  await longContext.addInitScript(record => {
+    localStorage.setItem('cls_saved_locations', JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ ...record,
+      id: `layout-scroll-${i}`, name: `Layout street ${i}`, streetName: `Layout street ${i}`,
+      coords: { lat: record.coords.lat + i * .002, lng: record.coords.lng } }))));
+  }, record);
+  const longPage = await longContext.newPage();
+  await longPage.goto(baseURL);
+  await longPage.getByRole('button', { name: '街道資料庫', exact: true }).click();
+  const longLibrary = longPage.getByRole('complementary');
+  assert.equal(await longLibrary.getByTestId('saved-library-card').count(), 20);
+  const headerBefore = await longLibrary.locator('header').boundingBox();
+  const overflow = await longLibrary.locator(':scope > div').evaluate(body => body.scrollHeight > body.clientHeight);
+  assert.ok(overflow, 'many records use the bounded scroll area');
+  await longLibrary.getByTestId('saved-library-card').last().scrollIntoViewIfNeeded();
+  const headerAfter = await longLibrary.locator('header').boundingBox();
+  assert.equal(headerAfter?.y, headerBefore?.y, 'scrolling records keeps the header in place');
+  const longBounds = await longLibrary.boundingBox(), dock = await longPage.getByRole('navigation').boundingBox();
+  assert.ok(longBounds && dock && longBounds.height <= 702 && longBounds.y + longBounds.height <= dock.y, 'long lists stay above the mobile dock');
+  await longPage.screenshot({ path: 'artifacts/walk-ui/library-information-long-list.png' });
+  await longContext.close();
+  console.log('Panel information passed: compact headers/cards, fit-content and bounded scrolling, 44px actions and keyboard compare, inline date/CLS at 320/390/1440px in both languages, preserved notes, accuracy and saved records.');
 }

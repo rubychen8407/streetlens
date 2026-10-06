@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
-import { favoriteKey, groupSavedStreets } from '../utils/savedLocations';
+import { groupSavedStreets } from '../utils/savedLocations';
+import { favoriteKeysForStreet } from '../utils/streetIdentity';
 import { StreetReport } from './StreetReport';
 
 type View = 'assessment' | 'report' | 'field' | 'saved' | 'settings';
@@ -228,10 +229,8 @@ export function AssessmentWorkspace({
 
   const savedList = useMemo(() => {
     const gradeRank: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
-    const favoriteKeyFor = (saved: SavedLocation) =>
-      saved.coords.lat.toFixed(5) + ':' + saved.coords.lng.toFixed(5) + ':' + saved.streetName.trim().toLowerCase();
     const filtered = locationGroups
-      .filter(visits => savedFilter !== 'favorites' || visits.some(saved => favoriteLocationKeys.includes(favoriteKeyFor(saved))))
+      .filter(visits => savedFilter !== 'favorites' || favoriteKeysForStreet(visits[0],favoriteLocationKeys,visits).length>0)
       .map(visits => visits.find(saved => saved.clsScore != null) || visits[0]);
     return [...filtered].sort((a, b) => {
       if (savedSort === 'score') return (b.clsScore ?? -1) - (a.clsScore ?? -1);
@@ -887,7 +886,7 @@ export function AssessmentWorkspace({
                   <button onClick={() => onSelectSaved(saved)} className="text-left min-w-0 flex-1">
                     <div className="font-bold truncate">{saved.name}</div>
                     <div className="text-sm text-slate-300 mt-1">{saved.district} · {saved.city}</div>
-                    {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? t(t(' · 最愛')) : ''}</div>}
+                    {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteKeysForStreet(saved,favoriteLocationKeys,savedLocations).length ? t(' · 最愛') : ''}</div>}
                     <div className="mt-3 flex items-center gap-2">
                       <span className={`px-2 py-1 rounded-lg border text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${formatNumber(saved.clsScore)}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
                       <span className="text-sm text-slate-300">{new Date(saved.timestamp).toLocaleString(dateLocale())}</span>

@@ -1,5 +1,6 @@
 import type { FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { mergeFieldRecord } from './fieldRecordMerge';
+import { groupStreetRecords, matchesFavoriteKey } from './streetIdentity';
 
 export const SAVED_LOCATIONS_KEY = 'cls_saved_locations';
 export const FAVORITES_KEY = 'cls_favorite_locations';
@@ -83,7 +84,7 @@ export function migrateFavoriteKeys(saved: SavedLocation[], keys: string[]): Sav
   const known = new Set(saved.map(item => favoriteKey(item.coords, item.streetName)));
   const missing: SavedLocation[] = [];
   for (const key of keys) {
-    if (known.has(key)) continue;
+    if (known.has(key) || [...saved,...missing].some(record=>matchesFavoriteKey(record,key))) continue;
     const [latText, lngText, ...nameParts] = key.split(':');
     const lat = Number(latText), lng = Number(lngText), streetName = nameParts.join(':');
     if (!latText || !lngText || !Number.isFinite(lat) || !Number.isFinite(lng)
@@ -95,14 +96,8 @@ export function migrateFavoriteKeys(saved: SavedLocation[], keys: string[]): Sav
 }
 
 
-/** Same coordinate to ~1 m; names can differ after reverse geocoding.
- * Group for display only: every visit and its evidence keep their original IDs.
- */
+/** Group administrative aliases of a street for display only. Every visit,
+ * location, historical score and evidence keeps its original identity. */
 export function groupSavedStreets(saved: SavedLocation[]): SavedLocation[][] {
-  const groups = new Map<string, SavedLocation[]>();
-  for (const record of saved) {
-    const key = `${record.coords.lat.toFixed(5)}:${record.coords.lng.toFixed(5)}`;
-    groups.set(key, [...(groups.get(key) || []), record]);
-  }
-  return [...groups.values()].map(visits => visits.sort((a, b) => b.timestamp - a.timestamp));
+  return groupStreetRecords(saved);
 }

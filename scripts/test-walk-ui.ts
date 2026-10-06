@@ -2,6 +2,7 @@ import { t } from '../src/i18n';
 import { testLanguageUI } from './test-language-ui';
 import { testProfileUI } from './test-profile-ui';
 import { testNavigationUI } from './test-navigation-ui';
+import { testStreetGroupUI } from './test-street-group-ui';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -300,8 +301,8 @@ try {
     if (localStorage.getItem('cls_saved_locations')) return;
     const timestamp = Date.now();
     const history = ['good', 'bad', 'photo'].map((feeling, i) => ({
-      id: 'old-visit-' + i, name: 'Old visit ' + feeling, streetName: '永康街', district: '大安區', city: '臺北市',
-      coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 73, grade: 'B', scores: {}, timestamp, syncStatus: 'synced',
+      id: 'old-visit-' + i, name: 'Old visit ' + feeling, streetName: i === 1 ? '大安區永康街' : i === 2 ? '台北市 大安區 永康街' : '永康街', district: '大安區', city: '臺北市',
+      coords: { lat: 25.0326 + i * 0.0001, lng: 121.5298 }, clsScore: 73, grade: 'B', scores: {}, timestamp, syncStatus: 'synced',
       walkMoment: { feeling, accuracyMeters: 12, positionTimestamp: timestamp, confirmedAt: timestamp, source: 'walk' },
       fieldNotes: feeling === 'photo' || feeling === 'bad' ? 'Street was shaded.' : '',
       evidence: feeling === 'photo' || feeling === 'bad' ? [{ id: 'old-photo-' + feeling, type: 'photo', note: 'Tree shade along sidewalk', storageKey: 'kept-photo-' + feeling, capturedAt: timestamp, location: { lat: 25.0326, lng: 121.5298 } }] : [],
@@ -361,6 +362,7 @@ try {
   await testLanguageUI(browser, prepare, baseURL);
   await testNavigationUI(browser, prepare, baseURL);
   await testProfileUI(browser, prepare, baseURL);
+  await testStreetGroupUI(browser, prepare, baseURL);
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log('Field UI checks passed: restored explicit field recording, inert background shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');
 } catch (error) {

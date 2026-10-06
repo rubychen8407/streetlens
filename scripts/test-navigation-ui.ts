@@ -35,6 +35,10 @@ export async function testNavigationUI(browser: Browser, prepare: (context: Brow
       for (const label of ['CLS 結果報告', '環境觀察', '資料狀態']) {
         await page.getByRole('button', { name: label, exact: true }).click();
         const panel = page.getByRole('complementary');
+        if (width < 1024) {
+          const bounds = await panel.boundingBox(), dock = await page.getByRole('navigation').boundingBox();
+          assert.ok(bounds && dock && bounds.y + bounds.height <= dock.y, 'mobile panels leave the dock unobstructed');
+        }
         const small = await panel.evaluate(root => [...root.querySelectorAll<HTMLElement>('*')].filter(el => el instanceof HTMLElement && el.getClientRects().length && [...el.childNodes].some(n => n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) && parseFloat(getComputedStyle(el).fontSize) < 14).map(el => el.textContent));
         assert.deepEqual(small, [], `${label}: all visible panel text is at least 14px`);
         const contrast = await panel.evaluate(root => {

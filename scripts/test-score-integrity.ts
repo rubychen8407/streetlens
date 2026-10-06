@@ -50,6 +50,12 @@ const positiveObservation = applyFieldObservationAdjustment(80, {
 assert.equal(positiveObservation.adjustedCls, 82);
 assert.equal(positiveObservation.adjustment, 2);
 assert.equal(positiveObservation.categoryAdjustments.C3, 8);
+const clippedPositive = applyFieldObservationAdjustment(99, { c3_sidewalk_quality: 4 });
+assert.equal(clippedPositive.adjustedCls, 100);
+assert.equal(clippedPositive.adjustment, 2, 'record full observation points, independently of baseline clamping');
+const clippedNegative = applyFieldObservationAdjustment(1, { c3_sidewalk_blocked: 4 });
+assert.equal(clippedNegative.adjustedCls, 0);
+assert.equal(clippedNegative.adjustment, -2);
 
 const negativeObservation = applyFieldObservationAdjustment(80, {
   c3_sidewalk_blocked: 4,

@@ -4,6 +4,7 @@ import { dataDb } from './db';
 import { getAssessmentSession } from './assessmentDb';
 import { applyFieldObservationAdjustment } from './scoring';
 import { fillSavedScore } from './src/utils/savedLocations';
+import { rebaseSavedStreet } from './src/utils/streetBaseline';
 import type { SavedLocation, StreetAssessmentResponse } from './src/types';
 
 export interface AssessmentReadResult { status: number; body: any }
@@ -21,7 +22,8 @@ export async function backfillSavedScore(
     const original = rows.rows[0]?.payload as SavedLocation | undefined;
     if (!original) { await client.query('COMMIT'); return null; }
     const adjustment = applyFieldObservationAdjustment(snapshot.scores.overall, original.observationRatings || {});
-    const updated = fillSavedScore(original, snapshot, adjustment);
+    const rebased = rebaseSavedStreet(original, snapshot);
+    const updated = rebased !== original ? rebased : fillSavedScore(original, snapshot, adjustment);
     if (updated !== original) {
       // Never call saveAssessmentSession here: it replaces evidence rows/photos.
       await client.query(
@@ -47,7 +49,6 @@ export function registerSavedScoreRoutes(app: Express, loadAssessment: Assessmen
       await schemaReady;
       const saved = await getAssessmentSession(workspaceId, req.params.id);
       if (!saved) return res.status(404).json({ error: 'Saved street not found' });
-      if (saved.clsScore != null) return res.json(saved);
       // Use the persisted coordinates and ratings; accept no client-supplied score.
       const result = await loadAssessment({ ...saved.coords, streetName: saved.streetName, district: saved.district, city: saved.city });
       if (result.status !== 200) return res.status(result.status).json(result.body);

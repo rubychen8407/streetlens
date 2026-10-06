@@ -36,6 +36,7 @@ import { FloatingControls } from './components/FloatingControls';
 import { AssessmentWorkspace } from './components/AssessmentWorkspace';
 import { useSavedStreets } from './hooks/useSavedStreets';
 import { createSavedStreet, favoriteKey, FAVORITES_KEY } from './utils/savedLocations';
+import { favoriteKeysForStreet, matchesFavoriteKey } from './utils/streetIdentity';
 import {
   generateSurroundingStreetSegments,
 } from './utils/scoreCalculator';
@@ -89,9 +90,9 @@ export default function App() {
   const [favoriteLocations, setFavoriteLocations] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]'); } catch { return []; }
   });
-  const isFavorite = favoriteLocations.includes(favoriteKey(targetLocation, streetName));
   const [workspaceId] = useState(() => getWorkspaceId());
   const { savedLocations, setSavedLocations, retrySavedScores, savedStorageError } = useSavedStreets(workspaceId);
+  const isFavorite = favoriteKeysForStreet({coords:targetLocation,streetName,city,district},favoriteLocations,savedLocations).length>0;
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeSavedAssessmentId, setActiveSavedAssessmentId] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<AssessmentExplanation | null>(null);
@@ -852,7 +853,7 @@ export default function App() {
         const previousRecord = entry.walkMoment ? current.find(item => sameFieldPlace(item, entry)) : undefined;
         const changed = merged.find(item => item.id === (previousRecord?.id ?? entry.id)) ?? entry;
         const key = favoriteKey(changed.coords, changed.streetName);
-        nextKeys = favorite && !keys.includes(key) ? [...keys, key] : keys;
+        nextKeys = favorite && !favoriteKeysForStreet(changed,keys,merged).length ? [...keys, key] : keys;
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextKeys));
         return merged;
       });
@@ -867,8 +868,10 @@ export default function App() {
     const key = favoriteKey(targetLocation, streetName);
     try {
       const keys: string[] = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
-      const next = keys.includes(key) ? keys.filter(item => item !== key) : [...keys, key];
-      if (!keys.includes(key) && !savedLocations.some(item => favoriteKey(item.coords, item.streetName) === key)) {
+      const place={coords:targetLocation,streetName,city,district};
+      const aliases=new Set(favoriteKeysForStreet(place,keys,savedLocations));
+      const next = aliases.size ? keys.filter(item=>!aliases.has(item)) : [...keys,key];
+      if (!aliases.size && !savedLocations.some(item => matchesFavoriteKey(item,key))) {
         handleSaveFavorite(createSavedStreet({ coords: targetLocation, streetName, district, city }, assessment));
       } else {
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); setFavoriteLocations(next);
@@ -882,8 +885,10 @@ export default function App() {
     try { setSavedLocations(current => current.filter(item => item.id !== id)); }
     catch { setSaveError('無法刪除，請重試。'); return; }
     // Remove an orphaned favorite key so legacy migration cannot recreate it.
-    if (saved && !savedLocations.some(item => item.id !== id && favoriteKey(item.coords, item.streetName) === favoriteKey(saved.coords, saved.streetName))) {
-      const next = favoriteLocations.filter(key => key !== favoriteKey(saved.coords, saved.streetName));
+    if (saved) {
+      const remaining=savedLocations.filter(item=>item.id!==id);
+      const orphaned=new Set(favoriteLocations.filter(key=>matchesFavoriteKey(saved,key) && !remaining.some(item=>matchesFavoriteKey(item,key))));
+      const next = favoriteLocations.filter(key => !orphaned.has(key));
       try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); setFavoriteLocations(next); } catch {}
     }
     const photoKeys = (saved?.evidence || []).flatMap(item => item.storageKey ? [item.storageKey] : []);

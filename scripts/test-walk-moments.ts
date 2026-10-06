@@ -7,6 +7,7 @@ import { normalizeWalkMoment } from '../src/utils/walkMoments';
 import { resolveSavedScore } from '../src/utils/savedScoreApi';
 import { frameCrop } from '../src/utils/cameraFrame';
 import { mergeFieldRecord, upsertFieldRecord } from '../src/utils/fieldRecordMerge';
+import { streetIdentity, favoriteKeysForStreet } from '../src/utils/streetIdentity';
 import type { StreetAssessmentResponse } from '../src/types';
 
 const now = 1_800_000_000_000;
@@ -59,10 +60,10 @@ const snapshot = (score = 50): StreetAssessmentResponse => ({
   factors: [], poiCount: 0, dataSources: ['test fixture'], generatedAt: '2026-09-25T00:00:00Z',
 });
 
-test('library groups coordinates, not names, without deleting or changing visits', () => {
+test('library keeps coordinate aliases together and different streets separate without changing visits', () => {
   const first = { ...saved(), id: 'first', timestamp: 1, clsScore: 0 };
   const second = { ...saved(), id: 'second', timestamp: 2, streetName: 'different geocoded name' };
-  const other = { ...saved(), id: 'other', coords: { lat: 25.04, lng: 121.53 } };
+  const other = { ...saved(), id: 'other', streetName:'和平東路', coords: { lat: 25.04, lng: 121.53 } };
   const input = [first, second, other];
   const before = JSON.stringify(input);
   const grouped = groupSavedStreets(input);
@@ -70,6 +71,30 @@ test('library groups coordinates, not names, without deleting or changing visits
   assert.deepEqual(grouped[0].map(item => item.id), ['second', 'first']);
   assert.equal(grouped[0][1].clsScore, 0);
   assert.equal(JSON.stringify(input), before);
+});
+
+test('district-decorated street names share a card and favorite while all visits survive', () => {
+  const record=(id:string,streetName:string,lat:number,city='臺北市',district='大安區') => ({...saved(),id,streetName,
+    city,district,coords:{lat,lng:121.53},timestamp:Number(id)||1,clsScore:73.456,evidence:[{id:'photo-'+id,
+      type:'photo' as const,capturedAt:1,location:fix,storageKey:'local-'+id}],fieldNotes:'Keep '+id});
+  const records=[record('1','永康街',25.03),record('2','大安區永康街',25.0301),
+    record('3','台北市 大安區 永康街',25.035),record('4','永康街（大安區）',25.04),
+    record('5','永康街',24,'臺中市'),record('6','永康街1巷',25.03),record('7','永康街',23,'','')];
+  const before=JSON.stringify(records), groups=groupSavedStreets(records);
+  assert.equal(groups.length,4);
+  assert.deepEqual(groups[0].map(record=>record.id),['4','3','2','1']);
+  assert.equal(JSON.stringify(records),before,'grouping preserves exact scores, coordinates, notes, evidence and IDs');
+  assert.equal(groups.flat().length,records.length);
+  const key=favoriteKey(records[0].coords,'大安區永康街');
+  assert.deepEqual(favoriteKeysForStreet(records[3],[key],records),[key],'a grouped street retains its existing favorite');
+  assert.deepEqual(favoriteKeysForStreet(records[4],[key],records),[],'another city cannot inherit a favorite');
+  assert.equal(migrateFavoriteKeys(records,[key,key]).length,records.length,'legacy aliases create no extra pending visit or sync write');
+  assert.equal(streetIdentity(record('8','新北市新市區中山路',25,'新北市','新市區')).name,'中山路');
+  assert.equal(streetIdentity(record('9','市民大道二段',25)).name,'市民大道二段','road characters are not stripped as an administration');
+  const crossing=[record('10','永康街',25.03),record('11','和平東路',25.03),record('12','和平東路',25.04)];
+  assert.equal(groupSavedStreets(crossing).length,2,'an intersection cannot transitively merge two different roads');
+  const unknown=[record('13','永康街',25.03,'',''),record('14','大安區永康街',25.0301,'',''),record('15','永康街',25.05,'','')];
+  assert.equal(groupSavedStreets(unknown).length,2,'missing city metadata requires local proximity');
 });
 
 test('legacy walk metadata survives validation without creating new records', () => {

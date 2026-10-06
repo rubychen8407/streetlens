@@ -1,3 +1,5 @@
+import { t, bilingual, displayPlace, errorText } from '../i18n';
+import { LanguageSwitch } from './LanguageSwitch';
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Heart, Loader2, LocateFixed, ThumbsDown, X } from 'lucide-react';
 import { usePanelFocus } from '../hooks/usePanelFocus';
@@ -166,30 +168,30 @@ export function QuickWalk({ onOpenDetailed, source, onPreview, onSave, onClose }
     return () => document.removeEventListener('keydown', shortcut);
   });
 
-  return <section ref={panelRef} data-ready={ready} aria-label="步行感受" className="walk-panel fixed inset-0 z-[650] bg-[#0E131A] text-white overflow-hidden">
-    <video ref={videoRef} aria-label="後鏡頭即時畫面" autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover"
+  return <section ref={panelRef} data-ready={ready} aria-label={t("步行感受")} className="walk-panel fixed inset-0 z-[650] bg-[#0E131A] text-white overflow-hidden">
+    <video ref={videoRef} aria-label={t("後鏡頭即時畫面")} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover"
       onPlaying={() => setCameraReady(true)} onWaiting={() => setCameraReady(false)} />
     {!cameraReady && <div className="absolute inset-0 flex items-center justify-center px-8 pb-32">
-      <div className="text-center max-w-sm">{cameraError ? <><Camera className="mx-auto mb-3 w-8 h-8 text-slate-400" /><p role="alert" className="text-sm leading-relaxed">{cameraError}</p><button type="button" onClick={() => setCameraAttempt(value => value + 1)} className="mt-4 min-h-11 px-5 rounded-xl border border-white/15 bg-white/10">重新開啟相機</button></> : <><Loader2 className="mx-auto mb-3 animate-spin" /><p className="text-sm">正在開啟後鏡頭…</p></>}</div>
+      <div className="text-center max-w-sm">{cameraError ? <><Camera className="mx-auto mb-3 w-8 h-8 text-slate-400" /><p role="alert" className="text-sm leading-relaxed">{t(cameraError)}</p><button type="button" onClick={() => setCameraAttempt(value => value + 1)} className="mt-4 min-h-11 px-5 rounded-xl border border-white/15 bg-white/10">{t("重新開啟相機")}</button></> : <><Loader2 className="mx-auto mb-3 animate-spin" /><p className="text-sm">{t("正在開啟後鏡頭…")}</p></>}</div>
     </div>}
     <header className="absolute top-0 left-0 right-0 p-4 pt-[max(16px,env(safe-area-inset-top))] bg-gradient-to-b from-black/60 to-transparent flex items-start justify-between gap-3">
       <div className="min-w-0 rounded-2xl border border-white/10 bg-[#141A23]/40 backdrop-blur-md p-3">
-        <h1 className="text-xs text-slate-300">實勘模式</h1><p className="text-sm font-semibold mt-1 truncate">{address.streetName || '正在定位…'}</p>
-        <p className="text-[11px] text-slate-300 mt-1">{gpsError || (fix ? `定位誤差 ±${Math.round(fix.accuracy)} m${ready ? '' : ' · 等待有效定位'}` : '正在取得 GPS 位置…')}</p>
-        {!ready && <button type="button" onClick={() => { setFix(null); setLocateAttempt(value => value + 1); }} className="min-h-11 mt-1 flex items-center gap-2 text-xs"><LocateFixed size={16} />重新定位</button>}
+        <h1 className="text-xs text-slate-300">{t("實勘模式")}</h1><p className="text-sm font-semibold mt-1 truncate">{displayPlace(address.streetName) || t("正在定位…")}</p>
+        <p className="text-[11px] text-slate-300 mt-1">{gpsError ? t(gpsError) : (fix ? `${bilingual('定位誤差', 'GPS accuracy')} ±${Math.round(fix.accuracy)} m${ready ? '' : t(" · 等待有效定位")}` : t("正在取得 GPS 位置…"))}</p>
+        {!ready && <button type="button" onClick={() => { setFix(null); setLocateAttempt(value => value + 1); }} className="min-h-11 mt-1 flex items-center gap-2 text-xs"><LocateFixed size={16} />{t("重新定位")}</button>}
       </div>
-      <button type="button" onClick={onClose} disabled={busy} title="結束步行" aria-label="結束步行" className="w-11 h-11 shrink-0 rounded-full border border-white/10 bg-[#141A23]/50 backdrop-blur-md grid place-items-center disabled:opacity-40"><X size={22} /></button>
+      <div className="flex items-center gap-2"><LanguageSwitch /><button type="button" onClick={onClose} disabled={busy} title={t("結束步行")} aria-label={t("結束步行")} className="w-11 h-11 shrink-0 rounded-full border border-white/10 bg-[#141A23]/50 backdrop-blur-md grid place-items-center disabled:opacity-40"><X size={22} /></button></div>
     </header>
     <footer className="absolute bottom-0 left-0 right-0 px-3 pt-10 pb-[max(12px,env(safe-area-inset-bottom))] bg-gradient-to-t from-black/70 to-transparent">
       <div className="max-w-lg mx-auto">
-        {notice && <p role="status" className="mb-3 rounded-xl border border-white/10 bg-[#141A23]/60 backdrop-blur-md p-3 text-center text-sm">{notice}</p>}
-        {error && <p role="alert" className="mb-3 rounded-xl bg-rose-950/80 backdrop-blur-md p-3 text-sm">{error}</p>}
+        {notice && <p role="status" className="mb-3 rounded-xl border border-white/10 bg-[#141A23]/60 backdrop-blur-md p-3 text-center text-sm">{t(notice)}</p>}
+        {error && <p role="alert" className="mb-3 rounded-xl bg-rose-950/80 backdrop-blur-md p-3 text-sm">{errorText(error, '尚未儲存，請重試。')}</p>}
         <div className="grid grid-cols-3 gap-2 rounded-[20px] border border-white/15 bg-[#141A23]/45 backdrop-blur-xl p-2 shadow-2xl">
-          <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('good')} aria-keyshortcuts="1" title="喜歡並自動儲存（1）" className="min-h-16 rounded-2xl flex flex-col items-center justify-center gap-1 text-sm disabled:opacity-35 hover:bg-white/10"><Heart size={23} />喜歡這裡</button>
-          <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('bad')} aria-keyshortcuts="2" title="不喜歡並自動儲存（2）" className="min-h-16 rounded-2xl flex flex-col items-center justify-center gap-1 text-sm disabled:opacity-35 hover:bg-white/10"><ThumbsDown size={23} />不喜歡</button>
-          <button type="button" disabled={!ready || !cameraReady || !!cameraError || busy} onClick={() => void saveFrame()} aria-keyshortcuts="C" title="擷取目前畫面並自動儲存（C）" className="min-h-16 rounded-2xl hud-primary flex flex-col items-center justify-center gap-1 text-sm font-semibold disabled:opacity-35">{busy ? <Loader2 size={23} className="animate-spin" /> : <Camera size={23} />}{busy ? '儲存中…' : '拍下畫面'}</button>
+          <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('good')} aria-keyshortcuts="1" title={t("喜歡並自動儲存（1）")} className="min-h-16 rounded-2xl flex flex-col items-center justify-center gap-1 text-sm disabled:opacity-35 hover:bg-white/10"><Heart size={23} />{t("喜歡這裡")}</button>
+          <button type="button" disabled={!ready || busy} onClick={() => saveFeeling('bad')} aria-keyshortcuts="2" title={t("不喜歡並自動儲存（2）")} className="min-h-16 rounded-2xl flex flex-col items-center justify-center gap-1 text-sm disabled:opacity-35 hover:bg-white/10"><ThumbsDown size={23} />{t("不喜歡")}</button>
+          <button type="button" disabled={!ready || !cameraReady || !!cameraError || busy} onClick={() => void saveFrame()} aria-keyshortcuts="C" title={t("擷取目前畫面並自動儲存（C）")} className="min-h-16 rounded-2xl hud-primary flex flex-col items-center justify-center gap-1 text-sm font-semibold disabled:opacity-35">{busy ? <Loader2 size={23} className="animate-spin" /> : <Camera size={23} />}{busy ? t("儲存中…") : t("拍下畫面")}</button>
         </div>
-        <button type="button" disabled={!ready || busy} onClick={() => { if (ready && fix) onOpenDetailed(fix); }} className="block min-h-11 mx-auto text-xs text-white/70 disabled:opacity-35">詳細環境觀察</button>
+        <button type="button" disabled={!ready || busy} onClick={() => { if (ready && fix) onOpenDetailed(fix); }} className="block min-h-11 mx-auto text-xs text-white/70 disabled:opacity-35">{t("詳細環境觀察")}</button>
       </div>
     </footer>
   </section>;

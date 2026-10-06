@@ -219,6 +219,7 @@ export interface AssessmentEvidence {
 
 export interface AssessmentExplanation {
   source: 'gemini_ai';
+  language?: 'zh-TW' | 'en';
   generatedAt: string;
   summary: string;
   strengths: string[];

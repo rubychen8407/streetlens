@@ -1,3 +1,4 @@
+import { t, bilingual, useLanguage, errorText } from './i18n';
 import { QuickWalk } from './components/QuickWalk';
 import { sameFieldPlace, upsertFieldRecord } from './utils/fieldRecordMerge';
 /**
@@ -50,6 +51,7 @@ import {
 } from './utils/assessmentApi';
 
 export default function App() {
+  const language = useLanguage();
   // Default coordinates: Taipei Daan Yongkang Area
   const defaultLocation: LocationCoord = { lat: 25.0326, lng: 121.5298 };
   const [currentLocation, setCurrentLocation] = useState<LocationCoord>(defaultLocation);
@@ -60,6 +62,7 @@ export default function App() {
   const [heading, setHeading] = useState<number | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsSuccessMsg, setGpsSuccessMsg] = useState<string | null>(null);
+  useEffect(() => { setGpsSuccessMsg(null); }, [language]);
   const watchIdRef = useRef<number | null>(null);
 
   // Address
@@ -91,6 +94,18 @@ export default function App() {
   const [aiExplanation, setAiExplanation] = useState<AssessmentExplanation | null>(null);
   const [isGeneratingAiExplanation, setIsGeneratingAiExplanation] = useState(false);
   const [aiExplanationError, setAiExplanationError] = useState<string | null>(null);
+  const explanationContext = `${language}:${activeSavedAssessmentId ?? ''}`;
+  const explanationContextRef = useRef(explanationContext);
+  explanationContextRef.current = explanationContext;
+  const explanationRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    explanationRequest.current?.abort();
+    explanationRequest.current = null;
+    setAiExplanation(null);
+    setAiExplanationError(null);
+    setIsGeneratingAiExplanation(false);
+    return () => { explanationRequest.current?.abort(); };
+  }, [explanationContext]);
 
   // Weights
   const [weights, setWeights] = useState<CLSWeights>(DEFAULT_CLS_WEIGHTS);
@@ -522,7 +537,7 @@ export default function App() {
         : null,
     );
     fetchWeather(saved.coords);
-    setGpsSuccessMsg('已切換至已存地點【' + (saved.name || saved.streetName) + '】(CLS: ' + (saved.clsScore ?? '—') + '分)');
+    setGpsSuccessMsg(bilingual('已切換至已存地點', 'Opened saved location') + ' · ' + (saved.name || saved.streetName) + ' · CLS ' + (saved.clsScore ?? '—'));
     setTimeout(() => setGpsSuccessMsg(null), 4000);
   };
 
@@ -554,7 +569,7 @@ export default function App() {
         }
         setIsLocatingGPS(false);
         setHasLocated(true);
-        setGpsSuccessMsg(`已精確定位到所在位置（誤差約 ±${Math.round(pos.coords.accuracy || 15)}公尺）`);
+        setGpsSuccessMsg(bilingual('已定位，誤差約', 'Located, accuracy about') + ` ±${Math.round(pos.coords.accuracy || 15)} m`);
         setTimeout(() => setGpsSuccessMsg(null), 4000);
         fetchAddressFromCoords(newCoord);
       },
@@ -574,7 +589,7 @@ export default function App() {
             setAccuracyRadius(secondPos.coords.accuracy || 40);
             setIsLocatingGPS(false);
             setHasLocated(true);
-            setGpsSuccessMsg(`已定位到所在位置（基地台輔助定位，誤差約 ±${Math.round(secondPos.coords.accuracy || 40)}公尺）`);
+            setGpsSuccessMsg(bilingual('已定位（基地台輔助），誤差約', 'Located (cell-assisted), accuracy about') + ` ±${Math.round(secondPos.coords.accuracy || 40)} m`);
             setTimeout(() => setGpsSuccessMsg(null), 4000);
             fetchAddressFromCoords(newCoord);
           },
@@ -807,17 +822,22 @@ export default function App() {
 
     setIsGeneratingAiExplanation(true);
     setAiExplanationError(null);
+    explanationRequest.current?.abort();
+    const controller = new AbortController();
+    explanationRequest.current = controller;
+    const isCurrent = () => !controller.signal.aborted && explanationContextRef.current === explanationContext && explanationRequest.current === controller;
     try {
-      const result = await generatePersistedAssessmentExplanation(workspaceId, activeSavedAssessmentId);
-      setAiExplanation(result);
+      const result = await generatePersistedAssessmentExplanation(workspaceId, activeSavedAssessmentId, language, controller.signal);
+      if (isCurrent()) setAiExplanation(result);
     } catch (error) {
+      if (!isCurrent()) return;
       console.warn('Gemini assessment explanation error:', error);
       setAiExplanation(null);
-      setAiExplanationError(error instanceof Error ? error.message : 'Gemini 解釋服務暫時不可用。');
+      setAiExplanationError(errorText(error instanceof Error ? error.message : '', 'Gemini 解釋服務暫時不可用。'));
     } finally {
-      setIsGeneratingAiExplanation(false);
+      if (isCurrent()) setIsGeneratingAiExplanation(false);
     }
-  }, [activeSavedAssessmentId, workspaceId]);
+  }, [activeSavedAssessmentId, workspaceId, language, explanationContext]);
 
   const handleSaveFavorite = useCallback((entry: SavedLocation, favorite = true) => {
     const previous = localStorage.getItem(FAVORITES_KEY) || '[]';
@@ -930,7 +950,7 @@ export default function App() {
 
       {gpsError && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-rose-500/90 backdrop-blur-md text-white text-xs font-medium rounded-full shadow-xl border border-rose-400/40 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-          <span>{gpsError}</span>
+          <span>{t(gpsError)}</span>
           <button
             type="button"
             onClick={() => setGpsError(null)}
@@ -977,7 +997,7 @@ export default function App() {
         accuracyRadius={accuracyRadius}
       />
 
-      {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{saveError || savedStorageError}</div>}
+      {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{t(saveError || savedStorageError || '')}</div>}
 
       {isWalkOpen && <QuickWalk source="walk" onPreview={setWalkLocation} onSave={handleSaveFavorite} onClose={() => setIsWalkOpen(false)} onOpenDetailed={coord => { setTargetLocation(coord); void fetchAddressFromCoords(coord); setIsWalkOpen(false); setWorkspaceView('field'); setIsSheetOpen(true); }} />}
       <AssessmentWorkspace
@@ -1017,7 +1037,7 @@ export default function App() {
         savedEvidenceUrls={savedEvidenceUrls}
         evidenceError={evidenceError}
         activeSavedAssessmentId={activeSavedAssessmentId}
-        aiExplanation={aiExplanation}
+        aiExplanation={aiExplanation?.language === language ? aiExplanation : null}
         isGeneratingAiExplanation={isGeneratingAiExplanation}
         aiExplanationError={aiExplanationError}
         onGenerateAiExplanation={handleGenerateAiExplanation}

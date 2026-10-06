@@ -1,4 +1,5 @@
 import { backfillPendingPage } from './scheduledScoreBackfill';
+import { parseExplanationLanguage, explanationLanguageInstruction, explanationMatchesLanguage } from './src/utils/explanationLanguage';
 import { ensureStorageBudget } from './storageBudget';
 import { registerSavedScoreRoutes, type AssessmentReadResult } from "./savedScoreBackfill";
 import express, { Request, Response } from "express";
@@ -2268,6 +2269,8 @@ function normalizeGeminiExplanation(value: any) {
 }
 
 app.post("/api/assessments/:id/explanation", async (req: Request, res: Response) => {
+  const language = parseExplanationLanguage(req.query.language);
+  if (!language) return res.status(400).json({ error: 'Unsupported explanation language' });
   try {
     await waitForPersistenceSchema();
 
@@ -2330,6 +2333,8 @@ app.post("/api/assessments/:id/explanation", async (req: Request, res: Response)
 
 Use ONLY the persisted assessment data provided below.
 
+${explanationLanguageInstruction(language)}
+
 Hard rules:
 1. Do not calculate, recalculate, normalize, or invent any score.
 2. Do not create a new estimate. Only describe an estimate when the persisted assessment explicitly marks its category or factor as mode "estimated" or method "estimated" with estimationMethod.
@@ -2364,9 +2369,15 @@ Return JSON only with this exact shape:
       .replace(/\s*\`\`\`\s*$/i, "")
       .trim();
     const parsed = normalizeGeminiExplanation(JSON.parse(cleaned));
+    const properNames = [record.streetName, record.district, record.city, 'StreetLens',
+      ...factors.map((factor: any) => typeof factor.source === 'string' ? factor.source : '')];
+    if (!explanationMatchesLanguage(parsed, language, properNames)) {
+      return res.status(502).json({ error: 'Explanation did not match the requested language' });
+    }
 
     return res.json({
       source: "gemini_ai",
+      language,
       generatedAt: new Date().toISOString(),
       ...parsed,
     });

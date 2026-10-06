@@ -1,4 +1,5 @@
 import type { AssessmentExplanation, EvidencePhotoDraft, SavedLocation, AssessmentEvidence } from "../types";
+import type { ExplanationLanguage } from './explanationLanguage';
 
 export interface PersistAssessmentResult {
   ok: boolean;
@@ -79,16 +80,19 @@ export async function deletePersistedAssessment(workspaceId: string, id: string,
 export async function generatePersistedAssessmentExplanation(
   workspaceId: string,
   assessmentId: string,
+  language: ExplanationLanguage = 'zh-TW',
+  signal?: AbortSignal,
 ): Promise<AssessmentExplanation> {
   const response = await fetch(
     "/api/assessments/" + encodeURIComponent(assessmentId)
-      + "/explanation?workspaceId=" + encodeURIComponent(workspaceId),
-    { method: "POST" },
+      + "/explanation?workspaceId=" + encodeURIComponent(workspaceId) + "&language=" + encodeURIComponent(language),
+    { method: "POST", signal },
   );
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body?.error || "Gemini explanation failed: " + response.status);
+    throw new Error(language === 'en' ? 'AI explanation is temporarily unavailable. Please retry.' : 'AI 解說暫時不可用，請重試。');
   }
+  if (body.language !== language) throw new Error(language === 'en' ? 'Explanation language did not match. Please regenerate.' : '解說語言不符，請重新產生。');
   return body as AssessmentExplanation;
 }
 

@@ -44,6 +44,9 @@ jobs:
       - name: Walk and saved CLS regression tests
         run: npm run test:walk-moments
 
+      - name: Language and AI explanation tests
+        run: npm run test:language
+
       - name: Install browser for interaction tests
         run: npx playwright install --with-deps chromium --only-shell
 

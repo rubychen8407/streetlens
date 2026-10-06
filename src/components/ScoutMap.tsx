@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t, bilingual, useLanguage } from '../i18n';
 import L from 'leaflet';
 import { LocationCoord, POIMarker, StreetSegmentScore } from '../types';
 
@@ -75,6 +76,7 @@ export function ScoutMap({
   accuracyRadius,
   heading,
 }: ScoutMapProps) {
+  const language = useLanguage();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const selectionHandler = useRef(onSelectLocation);
   selectionHandler.current = onSelectLocation;
@@ -290,7 +292,7 @@ export function ScoutMap({
           <!-- Ground Shadow -->
           <div style="width: 10px; height: 3px; background: rgba(0, 0, 0, 0.4); border-radius: 9999px; filter: blur(0.5px); margin-top: 1px;"></div>
           <!-- Target Badge Label -->
-          <div class="target-badge-label">🎯 實勘點</div>
+          <div class="target-badge-label">${t('🎯 實勘點')}</div>
         </div>
       `,
       iconSize: [36, 50],
@@ -323,6 +325,13 @@ export function ScoutMap({
       duration: 0.8,
     });
   }, [mapInstance, targetLocation.lat, targetLocation.lng]);
+
+  // Leaflet owns this marker DOM. Update its label without moving the map
+  // when the user switches languages.
+  useEffect(() => {
+    const label = targetMarkerRef.current?.getElement()?.querySelector('.target-badge-label');
+    if (label) label.textContent = t('🎯 實勘點');
+  }, [mapInstance, targetLocation.lat, targetLocation.lng, language]);
 
   // Update Walking Radius Circles (300m / 500m)
   useEffect(() => {
@@ -385,14 +394,14 @@ export function ScoutMap({
         });
 
         poly.bindTooltip(
-          `<div class="text-xs font-bold px-1.5 py-0.5 bg-slate-900 text-white rounded">${segment.name} · ${segment.clsScore == null ? "N/A" : `${segment.clsScore}分`}</div>`,
+          `<div class="text-xs font-bold px-1.5 py-0.5 bg-slate-900 text-white rounded">${segment.name} · ${segment.clsScore == null ? t('待補') : `${segment.clsScore} ${t('score')}`}</div>`,
           { permanent: false, sticky: true, className: 'street-custom-tooltip' }
         );
 
         streetLayersRef.current?.addLayer(poly);
       });
     }
-  }, [mapInstance, streetSegments, activeLayers.streetScores]);
+  }, [mapInstance, streetSegments, activeLayers.streetScores, language]);
 
   // Update POI Markers (Apple Maps style icons)
   useEffect(() => {
@@ -443,14 +452,14 @@ export function ScoutMap({
       marker.bindTooltip(
         `<div class="text-xs font-semibold px-2 py-1 bg-black/85 backdrop-blur-md text-white rounded-lg shadow-lg border border-white/10">
           <div class="font-bold text-slate-100">${poi.name}</div>
-          <div class="text-[10px] text-slate-300">約 ${poi.distanceMeters}m · ${poi.note || ''}</div>
+          <div class="text-[10px] text-slate-300">${bilingual('約', 'About')} ${poi.distanceMeters}m · ${t(poi.note || '')}</div>
         </div>`,
         { direction: 'top', offset: [0, -10] }
       );
 
       poiLayersRef.current?.addLayer(marker);
     });
-  }, [mapInstance, poiMarkers, activeLayers]);
+  }, [mapInstance, poiMarkers, activeLayers, language]);
 
   return (
     <div

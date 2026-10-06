@@ -256,6 +256,8 @@ export interface EvidencePhotoDraft {
 }
 
 export interface SavedLocation {
+  /** A history list projection, never a complete writable assessment. */
+  historySummary?: boolean;
   id: string;
   name: string;
   streetName: string;

@@ -1,5 +1,7 @@
 
 import { dataDb } from "./db";
+import { readHistoryPage } from './assessmentHistory';
+import { measuredQuery } from './queryTransferMetrics';
 import { mergeFieldRecord, sameFieldPlace } from './src/utils/fieldRecordMerge';
 import { applyFieldObservationAdjustment } from "./scoring";
 import { normalizeWalkMoment } from "./src/utils/walkMoments";
@@ -207,6 +209,7 @@ export async function saveAssessmentSession(input: PersistedAssessmentInput): Pr
 
   const workspaceId = validateWorkspaceId(input.workspaceId);
   const assessment = input.assessment || {};
+  if (assessment.historySummary) throw new Error('Load the full saved assessment before persisting it');
   const id = validateAssessmentId(assessment.id);
   const coords = validateLocation(assessment.coords);
   const baselineClsScore = normalizeBaseline(assessment.baselineClsScore);
@@ -359,9 +362,23 @@ export async function listAssessmentSessions(workspaceIdInput: unknown, limitInp
   );
 
   if (sessions.rows.length === 0) return [];
+  return attachSessionEvidence(sessions.rows);
+}
 
-  const ids = sessions.rows.map((row: any) => row.id);
-  const evidenceResult = await dataDb.query(
+export async function listAssessmentSummaryPage(workspaceIdInput: unknown, limitInput?: unknown, cursorInput?: unknown) {
+  if (!dataDb) throw new Error('DATABASE_URL is required for PostgreSQL persistence');
+  const workspaceId = validateWorkspaceId(workspaceIdInput);
+  const page = await readHistoryPage((sql, values) => measuredQuery('history.summary', () => dataDb!.query(sql, values)),
+    workspaceId, limitInput, cursorInput);
+  const records = await attachSessionEvidence(page.rows);
+  return { records: records.map(record => ({ ...record, historySummary: true })), nextCursor: page.nextCursor };
+}
+
+async function attachSessionEvidence(rows: any[]): Promise<PersistedAssessmentRecord[]> {
+  if (!rows.length) return [];
+
+  const ids = rows.map((row: any) => row.id);
+  const evidenceResult = await dataDb!.query(
     `SELECT assessment_id AS "assessmentId", evidence_id AS "evidenceId", type,
             captured_at AS "capturedAt", latitude, longitude, note,
             mime_type AS "mimeType", width, height, photo_data IS NOT NULL AS "hasPhoto"
@@ -387,7 +404,7 @@ export async function listAssessmentSessions(workspaceIdInput: unknown, limitInp
     evidenceByAssessment.set(row.assessmentId, list);
   }
 
-  return sessions.rows.map((row: any) => {
+  return rows.map((row: any) => {
     const payload = row.payload as PersistedAssessmentRecord;
     return {
       ...payload,
@@ -399,19 +416,20 @@ export async function listAssessmentSessions(workspaceIdInput: unknown, limitInp
 export async function getAssessmentSession(
   workspaceIdInput: unknown,
   idInput: unknown,
+  includeEvidence = false,
 ): Promise<PersistedAssessmentRecord | null> {
   if (!dataDb) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
   const workspaceId = validateWorkspaceId(workspaceIdInput);
   const id = validateAssessmentId(idInput);
   const result = await dataDb.query(
-    `SELECT payload
+    `SELECT id, payload
      FROM assessment_sessions
      WHERE id = $1 AND workspace_id = $2
      LIMIT 1`,
     [id, workspaceId],
   );
   if (result.rows.length === 0) return null;
-  return result.rows[0].payload as PersistedAssessmentRecord;
+  return includeEvidence ? (await attachSessionEvidence(result.rows))[0] : result.rows[0].payload;
 }
 
 export async function deleteAssessmentSession(workspaceIdInput: unknown, idInput: unknown): Promise<boolean> {

@@ -91,6 +91,32 @@ then compare the trend with Neon Network transfer. The flushing timer performs
 no database requests and does not keep a Neon compute awake. Measurement or
 logging failures do not change query results.
 
+## Line statistics and history reads
+
+Bicycle lane assessments now return only count and whole-line length. Reference
+statistics for all active targets use one lateral aggregate query, shared by the
+existing five-minute invalidated reference cache. The original geography radius,
+nearest-line limits (2,000 local / 5,000 reference), source selection and full
+line length remain unchanged; lines are not clipped to the search circle.
+PostGIS-unavailable fallback still returns no official line data.
+
+The history UI requests `GET /api/assessments?view=summary&limit=20`, which omits
+only `assessmentSnapshot` in SQL and retains notes, scores and evidence metadata.
+It loads further pages only when requested. An opaque keyset cursor uses timestamp
+and ID to handle timestamp ties without offset pagination. Previously cached local
+visits remain visible regardless of which server pages have loaded.
+
+Opening an uncached historical report calls `GET /api/assessments/:id` within the
+same workspace, restoring its original snapshot and evidence metadata. The old
+array history endpoint remains compatible. Summary records cannot be persisted
+as complete reports; pending-score synchronization loads detail first. Local
+photos/keys and pending local edits survive summary merges, and a late response
+cannot switch the currently selected report. No history or photos are deleted.
+
+History summary reads are measured as `history.summary`; bicycle aggregate
+reads use `lines.local.metrics` and `references.lines`. Measurements remain
+estimates, not Neon billing counters.
+
 ## Verification
 
 `npm run test:egress-budget` executes real PostgreSQL queries in an isolated PGlite
@@ -99,3 +125,12 @@ missing/null semantics, warm-cache query counts, freshness invalidation and retr
 backoff, plus local-radius/count parity, optional accident detail reads, required
 point property projection and privacy-safe metrics. It is included in local CI
 and GitHub CI. Fixture data never reaches production.
+
+History tests cover tied timestamps, workspace isolation, concurrent newer
+inserts, summary byte budgets, complete detail reads and photo-key preservation.
+Browser CI exercises explicit pagination, lazy details, stale-selection races
+and offline detail retries. PGlite has no PostGIS extension: line aggregation SQL
+is compared with the legacy reader using explicitly test-only planar function
+stand-ins, not a validation of PostGIS geodesic calculations. Production retains
+the original PostGIS functions; real PostGIS execution still needs an integration
+environment.

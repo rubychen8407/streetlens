@@ -7,6 +7,7 @@ import { readSpatialPointMetrics } from './referenceSpatialMetrics';
 import { localSnapshotPayload, type LocalSnapshotRead } from './localSnapshotProjection';
 import { measuredQuery } from './queryTransferMetrics';
 import { readLocalFacilityMetrics } from './localFacilityMetrics';
+import { readLineMetrics, readReferenceLineMetrics } from './spatialLineMetrics';
 
 export function getLocalFacilityMetrics(lat: number, lng: number) {
   return dataDb ? readLocalFacilityMetrics((sql, values) => dataDb.query(sql, values), lat, lng)
@@ -1242,6 +1243,17 @@ export async function replaceExternalSpatialLines(
   }
 }
 
+export async function getNearbySpatialLineMetrics(source: string, lat: number, lng: number, radius = 500, limit = 2000) {
+  if (!dataDb || !postgisAvailable) return { count: 0, lengthMeters: 0 };
+  const rows = await readLineMetrics((sql, values) => scoringQuery(sql, values, 'lines.local.metrics'), source, radius, limit, { lat, lng });
+  return rows[0] || { count: 0, lengthMeters: 0 };
+}
+
+async function getReferenceLineMetrics(source: string, radius: number, limit: number) {
+  if (!dataDb || !postgisAvailable) return [];
+  return readReferenceLineMetrics((sql, values) => scoringQuery(sql, values, 'references.lines'), source, radius, limit);
+}
+
 export async function getNearbyExternalSpatialLines(
   sourceKey: string,
   lat: number,
@@ -1312,24 +1324,8 @@ async function loadSpatialLineLengthReference(
   excludeScopeKey?: string,
 ): Promise<number[]> {
   if (!dataDb || !postgisAvailable) return [];
-  const targets = await listActiveAssessmentTargets();
-  const values: number[] = [];
-
-  for (const target of targets) {
-    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const lines = await getNearbyExternalSpatialLines(
-      sourceKey,
-      target.latitude,
-      target.longitude,
-      maxDistanceMeters,
-      5000,
-    );
-    const total = lines.reduce((sum, line) =>
-      sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0);
-    values.push(total);
-  }
-
-  return values;
+  const rows = await getReferenceLineMetrics(sourceKey, maxDistanceMeters, 5000);
+  return rows.filter(row => !excludeScopeKey || row.scopeKey !== excludeScopeKey).map(row => row.lengthMeters);
 }
 
 export async function getNearbyExternalSpatialPoints(
@@ -1654,6 +1650,8 @@ async function loadDistanceAndAirQualityReferences(excludeScopeKey?: string): Pr
   const metrics = new Map(await Promise.all(metricSources.map(async ([source, radius, limit]) =>
     [source, new Map((await readSpatialPointMetrics((sql, values) => measuredQuery('references.spatial', () => dataDb!.query(sql, values)), source, radius, limit))
       .map(row => [row.scopeKey, row]))] as const)));
+  const bikeLaneMetrics = new Map((await getReferenceLineMetrics('taipei_bike_lanes', 500, 5000))
+    .map(row => [row.scopeKey, row]));
   const targets = await listActiveAssessmentTargets();
   for (const target of targets) {
     if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
@@ -1680,11 +1678,11 @@ async function loadDistanceAndAirQualityReferences(excludeScopeKey?: string): Pr
     const bikes = metrics.get('taipei_youbike')?.get(target.scopeKey);
     if (bikes?.count || 0) c3YouBikeByScope.set(target.scopeKey, bikes!.nearestDistance!);
 
-    const bikeLanes = await getNearbyExternalSpatialLines("taipei_bike_lanes", target.latitude, target.longitude, 500, 5000);
-    if (bikeLanes.length) {
+    const bikeLanes = bikeLaneMetrics.get(target.scopeKey);
+    if (bikeLanes?.count) {
       c3BikeLaneByScope.set(
         target.scopeKey,
-        bikeLanes.reduce((sum, line) => sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0),
+        bikeLanes.lengthMeters,
       );
     }
 

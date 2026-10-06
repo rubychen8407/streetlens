@@ -149,6 +149,10 @@ interface AssessmentWorkspaceProps {
   onSave: (name: string, notes: string) => Promise<boolean>;
   onSelectSaved: (saved: SavedLocation) => void;
   savedLocations: SavedLocation[];
+  hasMoreSaved?: boolean;
+  historyLoading?: boolean;
+  historyError?: boolean;
+  onLoadMoreSaved?: () => void;
   onDeleteSaved: (id: string) => void;
   onOpenDataLogs: () => void;
   isFavorite: boolean;
@@ -194,6 +198,7 @@ export function AssessmentWorkspace({
   onOpenField, view, onBack, backLabel, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
+  hasMoreSaved, historyLoading, historyError, onLoadMoreSaved,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
   activeSavedAssessmentId, aiExplanation, isGeneratingAiExplanation, aiExplanationError, onGenerateAiExplanation,
   pendingAssessmentSources, baselineSummary,
@@ -828,6 +833,13 @@ export function AssessmentWorkspace({
 
         {view === 'report' && <StreetReport saved={currentReport} streetName={streetName} district={district} city={city} score={clsScore} grade={grade} assessment={assessment} fieldNotes={fieldNotes} ratings={observationRatings} adjustment={fieldAdjustment} evidence={selectedSavedEvidence} evidenceUrls={savedEvidenceUrls} aiExplanation={aiExplanation} aiExplanationError={aiExplanationError} isGeneratingAiExplanation={isGeneratingAiExplanation} canExplain={Boolean(activeSavedAssessmentId)} onExplain={onGenerateAiExplanation} isFavorite={isFavorite} onToggleFavorite={onToggleFavorite} />}
 
+        {view === 'report' && currentReport?.historySummary && <div className="rounded-xl border border-white/10 p-3 text-sm text-slate-300">
+          {bilingual('完整歷史報告尚未載入；已儲存的評分與紀錄不會被改寫。', 'Full history report has not loaded; saved scores and records remain unchanged.')}
+          <button type="button" onClick={() => onSelectSaved(currentReport)} className="block mt-2 underline">
+            {bilingual('重試載入完整報告', 'Retry full report')}
+          </button>
+        </div>}
+
         {view === 'saved' && (
           <div className="space-y-3">
             <div className="mb-4">
@@ -917,6 +929,12 @@ export function AssessmentWorkspace({
             ))}
           </div>
         )}
+
+        {view === 'saved' && (hasMoreSaved || historyError || historyLoading) && <button type="button"
+          disabled={historyLoading} onClick={onLoadMoreSaved} className="w-full rounded-xl border border-white/10 p-3 text-sm text-slate-300 disabled:opacity-50">
+          {historyLoading ? bilingual('正在載入紀錄…', 'Loading history…') : historyError
+            ? bilingual('重試載入歷史紀錄', 'Retry loading history') : bilingual('載入更多歷史紀錄', 'Load more history')}
+        </button>}
 
         {view === 'settings' && (
           <div className="space-y-4">

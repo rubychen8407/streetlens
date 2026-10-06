@@ -4,6 +4,8 @@ import { parseExplanationLanguage, explanationLanguageInstruction, explanationMa
 import { ensureStorageBudget } from './storageBudget';
 import { registerSavedScoreRoutes, type AssessmentReadResult } from "./savedScoreBackfill";
 import express, { Request, Response } from "express";
+import { getNearbySpatialLineMetrics } from './db';
+import { listAssessmentSummaryPage } from './assessmentDb';
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -103,11 +105,25 @@ app.get("/api/assessments", async (req: Request, res: Response) => {
     await waitForPersistenceSchema();
     const workspaceId = req.query.workspaceId;
     if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+    if (req.query.view === 'summary') {
+      return res.json(await listAssessmentSummaryPage(workspaceId, req.query.limit, req.query.cursor));
+    }
     const records = await listAssessmentSessions(workspaceId, req.query.limit);
     return res.json(records);
   } catch (error: any) {
     console.error("Assessment history error:", error);
+    if (error?.message === 'Invalid history cursor') return res.status(400).json({ error: error.message });
     return res.status(503).json({ error: error?.message || "Assessment history unavailable" });
+  }
+});
+
+app.get('/api/assessments/:id', async (req: Request, res: Response) => {
+  try {
+    await waitForPersistenceSchema();
+    const record = await getAssessmentSession(req.query.workspaceId, req.params.id, true);
+    return record ? res.json(record) : res.status(404).json({ error: 'Assessment not found' });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Assessment detail unavailable' });
   }
 });
 
@@ -1706,7 +1722,7 @@ async function calculateStreetAssessment({ lat, lng, district, city, streetName,
       librarySnapshot ? getAssessmentSpatialPoints("taipei_libraries", lat, lng, 1000, 500) : Promise.resolve([]),
       publicToiletSnapshot ? getAssessmentSpatialPoints("taipei_public_toilets", lat, lng, 800, 500) : Promise.resolve([]),
       parkSnapshot ? getAssessmentSpatialPoints("taipei_parks", lat, lng, 1500, 500) : Promise.resolve([]),
-      bikeLaneSnapshot ? getNearbyExternalSpatialLines("taipei_bike_lanes", lat, lng, 500, 2000) : Promise.resolve([]),
+      bikeLaneSnapshot ? getNearbySpatialLineMetrics("taipei_bike_lanes", lat, lng, 500, 2000) : Promise.resolve({ count: 0, lengthMeters: 0 }),
       sidewalkSnapshot
         ? getNearbyExternalSpatialAreaCoverage("taipei_sidewalk_areas", lat, lng, 500)
         : Promise.resolve(null),
@@ -1888,11 +1904,8 @@ async function calculateStreetAssessment({ lat, lng, district, city, streetName,
       ? Number(nearestYouBike.properties?.availableReturnBikes)
       : undefined;
     const youBikeDistance = nearestYouBike?.distanceMeters;
-    const bikeLaneLength500m = nearbyBikeLanes.reduce(
-      (sum, line) => sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0),
-      0,
-    );
-    const bikeLaneSource = nearbyBikeLanes.length
+    const bikeLaneLength500m = nearbyBikeLanes.lengthMeters;
+    const bikeLaneSource = nearbyBikeLanes.count
       ? (bikeLaneSnapshot?.payload?.source || "Taipei City official urban bicycle lane GIS data")
       : undefined;
     const sidewalkSource = sidewalkCoverage?.featureCount

@@ -1,3 +1,4 @@
+import { formatNumber, visibleFactors } from '../utils/formatNumber';
 import { t, bilingual, dateLocale, displayPlace } from '../i18n';
 import { usePanelFocus } from '../hooks/usePanelFocus';
 import { useMemo, useRef, useState } from 'react';
@@ -354,7 +355,7 @@ export function AssessmentWorkspace({
                                       {t("推估")}
                                     </span>
                                   )}
-                                  <span className="text-sm font-mono font-bold text-white">{val ?? '—'}</span>
+                                  <span className="text-sm font-mono font-bold text-white">{formatNumber(val)}</span>
                                 </div>
                               </div>
                               <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -406,16 +407,16 @@ export function AssessmentWorkspace({
                               {assessment?.scores[categoryKey]?.mode === 'estimated' && (
                                 <span className="text-sm font-semibold text-amber-300">{t("推估")}</span>
                               )}
-                              <span className="text-sm font-mono font-bold text-white">{score ?? '—'}</span>
+                              <span className="text-sm font-mono font-bold text-white">{formatNumber(score)}</span>
                             </div>
                           </div>
                           <div className="mt-2 space-y-1.5">
-                            {factors.slice(0, 4).map(item => (
+                            {visibleFactors(factors).map(item => (
                               <div key={t(item.indicator)} className="rounded-lg bg-black/20 px-3 py-2 text-sm">
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="truncate text-slate-200 font-medium">{t(item.indicator)}</span>
                                   <span className={item.status === 'available' ? 'text-white font-mono' : 'text-slate-300 font-mono'}>
-                                    {item.value ?? 'N/A'}{item.unit ? ' ' + t(item.unit) : ''}
+                                    {formatNumber(item.value, 'N/A')}{item.unit ? ' ' + t(item.unit) : ''}
                                   </span>
                                 </div>
                                 <div className="mt-1 flex items-center justify-between gap-2 text-sm text-slate-300">
@@ -459,7 +460,7 @@ export function AssessmentWorkspace({
                       <div className="text-sm text-slate-300 font-medium">{t(label)} · {category}</div>
                       <div className="text-base font-bold text-white">
                         {item?.value != null
-                          ? item.value + ' ' + t(item.unit)
+                          ? formatNumber(item.value) + ' ' + t(item.unit)
                           : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
                             ? t("No mapped inundation")
                             : 'N/A'}
@@ -495,17 +496,16 @@ export function AssessmentWorkspace({
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
                       {[
-                        ['YouBike', assessment.officialServiceMetrics.youBikeNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.youBikeNearestDistance) + ' m'],
-                        [t("YouBike bikes"), assessment.officialServiceMetrics.youBikeAvailableBikes == null ? '—' : String(assessment.officialServiceMetrics.youBikeAvailableBikes)],
-                        [t("Bike lane · 500m"), Math.round(assessment.officialServiceMetrics.bikeLaneLength500m) + ' m'],
-                        [t("Sidewalk coverage · 500m"), assessment.officialServiceMetrics.sidewalkCoverage500mPct == null ? '—' : assessment.officialServiceMetrics.sidewalkCoverage500mPct.toFixed(1) + '%'],
-                        [t("Medical"), assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
-                        [t("Bus stop"), assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
-                        [t("MRT station"), assessment.officialServiceMetrics.mrtStationNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.mrtStationNearestDistance) + ' m'],
-                        [t("Libraries · 800m"), String(assessment.officialServiceMetrics.libraryCount800m)],
-                        [t("Public toilets · 800m"), String(assessment.officialServiceMetrics.publicToiletCount800m)],
-                        [t("Street lights · 300m"), assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : String(assessment.officialServiceMetrics.streetLightCount300m)],
-                        [t("Parks · 800m"), String(assessment.officialServiceMetrics.officialParkCount800m)],
+                        ['YouBike', assessment.officialServiceMetrics.youBikeNearestDistance == null ? '—' : formatNumber(assessment.officialServiceMetrics.youBikeNearestDistance) + ' m'],
+                        [t("Bike lane · 500m"), formatNumber(assessment.officialServiceMetrics.bikeLaneLength500m) + ' m'],
+                        [t("Sidewalk coverage · 500m"), assessment.officialServiceMetrics.sidewalkCoverage500mPct == null ? '—' : formatNumber(assessment.officialServiceMetrics.sidewalkCoverage500mPct) + '%'],
+                        [t("Medical"), assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : formatNumber(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
+                        [t("Bus stop"), assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : formatNumber(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
+                        [t("MRT station"), assessment.officialServiceMetrics.mrtStationNearestDistance == null ? '—' : formatNumber(assessment.officialServiceMetrics.mrtStationNearestDistance) + ' m'],
+                        [t("Libraries · 800m"), formatNumber(assessment.officialServiceMetrics.libraryCount800m)],
+                        [t("Public toilets · 800m"), formatNumber(assessment.officialServiceMetrics.publicToiletCount800m)],
+                        [t("Street lights · 300m"), assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : formatNumber(assessment.officialServiceMetrics.streetLightCount300m)],
+                        [t("Parks · 800m"), formatNumber(assessment.officialServiceMetrics.officialParkCount800m)],
                       ].map(([label, value]) => (
                         <div key={t(label)} className="rounded-xl bg-white/[0.035] border border-white/5 p-2.5">
                           <div className="text-sm text-slate-300">{t(label)}</div>
@@ -533,7 +533,7 @@ export function AssessmentWorkspace({
                             <div className="flex items-center justify-between gap-2 text-sm">
                               <span className="font-semibold text-slate-200">{event.eventDate || t("Date unavailable")}</span>
                               <span className="shrink-0 text-amber-300 font-mono">
-                                {event.depthCm != null ? event.depthCm + ' cm' : t("Depth unavailable")}
+                                {event.depthCm != null ? formatNumber(event.depthCm) + ' cm' : t("Depth unavailable")}
                               </span>
                             </div>
                             <div className="mt-1 text-sm text-slate-300">
@@ -889,7 +889,7 @@ export function AssessmentWorkspace({
                     <div className="text-sm text-slate-300 mt-1">{saved.district} · {saved.city}</div>
                     {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? t(t(' · 最愛')) : ''}</div>}
                     <div className="mt-3 flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-lg border text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${saved.clsScore}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${formatNumber(saved.clsScore)}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
                       <span className="text-sm text-slate-300">{new Date(saved.timestamp).toLocaleString(dateLocale())}</span>
                     </div>
                     {saved.clsScore == null && <div className="mt-2 text-sm text-slate-300">{t("開啟網站時每 30 秒重試；有來源資料後自動補上")}</div>}
@@ -936,8 +936,8 @@ export function AssessmentWorkspace({
                 {(assessment?.sourceStatus || []).map(source => (
                   <div key={t(source.source)} className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-slate-300 truncate">{t(source.source)}</span>
-                    <span className={source.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}>
-                      {t(source.status)} · {formatFreshness(source.retrievedAt || undefined)}
+                    <span className={!source.stale && source.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}>
+                      {t(source.stale ? "Data expired" : source.status)} · {formatFreshness(source.sourceUpdatedAt || source.retrievedAt || undefined)}
                     </span>
                   </div>
                 ))}

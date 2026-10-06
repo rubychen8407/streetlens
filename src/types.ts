@@ -341,6 +341,8 @@ export interface StreetAssessmentScores {
 }
 
 export interface AssessmentSourceStatus {
+  stale?: boolean;
+  sourceUpdatedAt?: string | null;
   source: string;
   status: string;
   retrievedAt: string | null;

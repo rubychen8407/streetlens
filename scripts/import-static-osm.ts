@@ -1,0 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import { validateStaticImport } from '../staticOsm';
+const base = process.env.STREETLENS_BASE_URL || process.env.STREETLENS_REFRESH_URL;
+const token = process.env.STREETLENS_REFRESH_TOKEN;
+if (!base || !token) throw new Error('Refresh URL and token are required');
+const body = await readFile(process.argv[2], 'utf8');
+if (Buffer.byteLength(body) > 8 * 1024 * 1024) throw new Error('Extract exceeds upload budget');
+validateStaticImport(JSON.parse(body));
+const url = base.replace(/\/api\/internal\/refresh-data\/?$/, '').replace(/\/$/, '') + '/api/internal/import-static-osm';
+const response = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(120000) });
+if (!response.ok) throw new Error('Static import HTTP ' + response.status);
+console.log(await response.json());

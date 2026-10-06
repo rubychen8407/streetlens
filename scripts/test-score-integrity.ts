@@ -80,3 +80,16 @@ assert.equal(unavailableBaseline.adjustedCls, null);
 assert.equal(unavailableBaseline.adjustment, 0);
 
 console.log("Score integrity checks passed.");
+
+const distanceOnlyBike = calculateAssessment({}, {}, undefined, undefined, undefined, {
+  youBikeNearestDist: 123.456789, youBikeAvailableBikes: 4, youBikeAvailableDocks: 6,
+  source: 'Persisted official stations', status: 'available', method: 'calculated', confidence: 'high',
+});
+assert.equal(distanceOnlyBike.c3.factors.find(f => f.indicator === 'youBikeNearestDist')?.value, 123.456789);
+assert.equal(distanceOnlyBike.c3.factors.some(f => ['youBikeAvailableBikes', 'youBikeAvailableDocks'].includes(f.indicator)), false);
+const { formatNumber, visibleFactors } = await import('../src/utils/formatNumber');
+assert.equal(formatNumber(123.456789), '123.46');
+assert.equal(formatNumber(0), '0');
+assert.equal(formatNumber(null), '—');
+assert.equal(formatNumber(Number.NaN), '—');
+assert.deepEqual(visibleFactors([{ indicator: 'youBikeAvailableBikes' }, { indicator: 'youBikeAvailableDocks' }, { indicator: 'youBikeNearestDist' }]), [{ indicator: 'youBikeNearestDist' }]);

@@ -1,3 +1,4 @@
+import { fetchMoenvAirQuality } from '../sourceFallbacks';
 import { fetchTaipeiGreenData, GREEN_RESOURCE_URLS } from "../green";
 import { fetchTaiwanTransitData } from "../transit";
 import { fetchTaipeiSafetyData, SAFETY_RESOURCE_URLS } from "../safety";
@@ -83,6 +84,13 @@ async function checkHttpResource(url: string): Promise<HttpResourceResult> {
 }
 
 async function main() {
+  if (process.env.MOENV_API_KEY) {
+    const nationalAqi = await fetchMoenvAirQuality();
+    console.log(JSON.stringify({ source: 'MOENV AQX_P_432', status: nationalAqi.status, points: nationalAqi.points.length, error: nationalAqi.error || null }));
+    assert(nationalAqi.status === 'available', nationalAqi.error || 'MOENV AQI unavailable');
+  } else {
+    console.warn('SKIPPED MOENV AQX_P_432 live check: MOENV_API_KEY is not configured (not a pass)');
+  }
   console.log(`External data health check at ${TEST_LAT},${TEST_LNG}`);
 
   const resourceResults = await Promise.all([

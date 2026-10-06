@@ -627,7 +627,7 @@ export function AssessmentWorkspace({
           <div className="space-y-3">
             <div className="mb-4">
               <h2 className="text-xl font-bold">{t("Street library")}</h2>
-              <p className="text-sm text-slate-300 mt-1">{t("Favorites help you track streets; saved assessments preserve individual field sessions.")}</p>
+              <p className="text-sm text-slate-300 mt-1">{t("最愛可追蹤街道；地點紀錄保留實勘感受、照片與環境觀察。")}</p>
             </div>
             <div className="flex gap-1.5 mb-3">
               {([['all',t("All")],['favorites',t("Favorites")]] as const).map(([value, label]) => (

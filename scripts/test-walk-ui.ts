@@ -323,7 +323,7 @@ try {
   await report.getByText(t("不喜歡"), { exact: true }).waitFor();
   await report.getByText('Tree shade along sidewalk').waitFor();
   await report.getByText('Street was shaded.', { exact: true }).waitFor();
-  await report.getByRole('button', { name: t('資料狀態'), exact: true }).click();
+  await historyPage.getByRole('navigation').getByRole('button', { name: t('資料狀態'), exact: true }).click();
   await historyPage.getByRole('button', { name: t('返回評估'), exact: true }).click();
   await report.waitFor();
   await historyPage.getByRole('button', { name: t("返回 Street Library") }).click();

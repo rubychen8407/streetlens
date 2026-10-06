@@ -14,6 +14,14 @@ The dark map uses slate canvas (`#0E131A`), translucent raised surfaces (`#1A212
 
 The former SL mark is now a Profile Settings button. It opens a keyboard-accessible modal with language and dark/light appearance choices. Theme is remembered separately in `streetlens-theme`; the light palette applies to the map, reports and controls, while live camera overlays retain dark contrast. Desktop dock height fits its contents and Data Status sits directly below observations. Every dock action has a hover/focus tooltip and the currently open view is highlighted; closing a view clears its selection.
 
-The search toolbar, assessment panel and full-screen field walk include a language switch. The interface defaults to Traditional Chinese and remembers `zh-TW` or `en` in the separate `streetlens-language` preference. UI labels, accessibility text, field definitions, system notices and dates follow the selection. Proper place names and user-authored notes retain their original text; saved assessments and evidence are not migrated or rewritten.
+Profile Settings is the only language-selection entry point; the duplicate toolbar, assessment and camera switches are removed. The interface defaults to Traditional Chinese and remembers `zh-TW` or `en` in the separate `streetlens-language` preference. UI labels, accessibility text, field definitions, system notices and dates follow the selection. Proper place names and user-authored notes retain their original text; saved assessments and evidence are not migrated or rewritten.
+
+## Navigation and outdoor readability
+
+Navigation records actual map, walk and workspace routes. Back pops the recorded origin: a report opened directly from the map returns to the map; Library → report → Data Status unwinds one step at a time. Re-selecting the current route does not add history. Escape explicitly dismisses the workspace and clears its navigation history.
+
+Reports, structured observations and floating controls use at least 14px text, with 16px section headings and brighter secondary text. Browser regression tests cover both themes, a 4.5:1 subtitle contrast minimum and small/desktop viewports.
+
+“實勘 / Field walk” means the live-camera flow for likes, dislikes and photos; these personal impressions do not change CLS. “環境觀察 / Environment observations” means structured 1–4 ratings, notes and evidence with bounded observation adjustments. Shared map selections use “評估地點 / Assessment location” and shared history uses “地點紀錄 / Place records”.
 
 AI explanation requests include `language=zh-TW` or `language=en`. The server validates the value and instructs Gemini to use it for the summary and every list item. An output guard rejects obvious language mismatches. Changing language or saved assessment clears the prior explanation and cancels its request; late replies cannot replace an explanation in the new language. Generate again to get the selected language. CI covers translation completeness, request language, mobile layout, preference persistence, stale responses and unchanged saved records. Real Gemini generation requires the deployment's credentials and is not exercised by deterministic fixtures.

@@ -294,7 +294,7 @@ export function ScoutMap({
           <!-- Ground Shadow -->
           <div style="width: 10px; height: 3px; background: rgba(0, 0, 0, 0.4); border-radius: 9999px; filter: blur(0.5px); margin-top: 1px;"></div>
           <!-- Target Badge Label -->
-          <div class="target-badge-label">${t('🎯 實勘點')}</div>
+          <div class="target-badge-label">${t('🎯 評估地點')}</div>
         </div>
       `,
       iconSize: [36, 50],
@@ -332,7 +332,7 @@ export function ScoutMap({
   // when the user switches languages.
   useEffect(() => {
     const label = targetMarkerRef.current?.getElement()?.querySelector('.target-badge-label');
-    if (label) label.textContent = t('🎯 實勘點');
+    if (label) label.textContent = t('🎯 評估地點');
   }, [mapInstance, targetLocation.lat, targetLocation.lng, language]);
 
   // Update Walking Radius Circles (300m / 500m)

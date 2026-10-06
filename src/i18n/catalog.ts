@@ -1,5 +1,7 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+🎯 評估地點|🎯 Assessment location
+最愛可追蹤街道；地點紀錄保留實勘感受、照片與環境觀察。|Favorites track streets; place records preserve walk impressions, photos and environment observations.
 返回地圖|Back to map
 返回實勘|Back to field walk
 返回環境觀察|Back to environment observations

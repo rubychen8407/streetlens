@@ -3,6 +3,7 @@ import { useTheme } from './utils/theme';
 import { backLabels, useNavigation } from './hooks/useNavigation';
 import { QuickWalk } from './components/QuickWalk';
 import { sameFieldPlace, upsertFieldRecord } from './utils/fieldRecordMerge';
+import { adjustedFromPoints, savedAdjustmentPoints, rebaseSavedStreet } from './utils/streetBaseline';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -154,9 +155,13 @@ export default function App() {
   });
 
   // Never calculate scores in the browser. The backend is the single source of truth.
-  const selectedSavedCls = savedLocations.find(item => item.id === activeSavedAssessmentId)?.clsScore ?? null;
-  const clsScore = fieldAdjustment?.adjustedCls ?? assessment?.scores.overall ?? selectedSavedCls;
-  const baselineClsScore = fieldAdjustment !== null ? fieldAdjustment.baselineCls : assessment?.scores.overall ?? null;
+  const selectedSaved = savedLocations.find(item => item.id === activeSavedAssessmentId);
+  const baselineClsScore = assessment?.scores.overall ?? null;
+  const savedRatingsUnchanged = Boolean(selectedSaved) && JSON.stringify(Object.entries(selectedSaved?.observationRatings || {}).sort())
+    === JSON.stringify(Object.entries(observationRatings).sort());
+  const clsScore = selectedSaved && savedRatingsUnchanged
+    ? adjustedFromPoints(baselineClsScore, savedAdjustmentPoints(selectedSaved))
+    : fieldAdjustment?.baselineCls === baselineClsScore ? fieldAdjustment?.adjustedCls ?? baselineClsScore : baselineClsScore;
   const clsGrade = clsScore == null ? null : clsScore >= 90 ? 'S' : clsScore >= 80 ? 'A' : clsScore >= 70 ? 'B' : clsScore >= 60 ? 'C' : 'D';
 
 
@@ -356,7 +361,7 @@ export default function App() {
 
       // Secondary live panels load independently so the source-backed assessment
       // appears as soon as the persisted snapshot query finishes.
-      void Promise.all([
+      if (resetDraft) void Promise.all([
         fetchWeather(coord),
         fetchNearbyPois(coord, targetDist, targetCity, targetStreet),
         fetchStreetNetwork(coord, targetStreet),
@@ -372,9 +377,9 @@ export default function App() {
 
   // Retry only persisted reads; never trigger source acquisition from browsing.
   const retryAssessmentRef = useRef(handleAutoFetchBaseline);
-  retryAssessmentRef.current = handleAutoFetchBaseline;
+  retryAssessmentRef.current = () => fetchLocationData(targetLocation, district, city, streetName, !activeSavedAssessmentId);
   useEffect(() => {
-    if (activeSavedAssessmentId || !['pending', 'error'].includes(assessmentReadState)) return;
+    if (!['pending', 'error'].includes(assessmentReadState)) return;
     const retry = () => { if (!document.hidden && navigator.onLine) retryAssessmentRef.current(); };
     const timer = window.setInterval(retry, 30000);
     window.addEventListener('online', retry); window.addEventListener('focus', retry);
@@ -389,6 +394,16 @@ export default function App() {
     const requestId = ++fieldAdjustmentRequestRef.current;
     if (baselineClsScore == null) {
       setFieldAdjustment(null);
+      setIsPreviewingFieldAdjustment(false);
+      return;
+    }
+
+    if (selectedSaved && savedRatingsUnchanged) {
+      const points = savedAdjustmentPoints(selectedSaved);
+      setFieldAdjustment({ baselineCls: baselineClsScore, adjustedCls: adjustedFromPoints(baselineClsScore, points),
+        adjustment: points, categoryAdjustments: selectedSaved.fieldAdjustmentDetails?.categoryAdjustments ?? { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0 },
+        itemAdjustments: selectedSaved.fieldAdjustmentDetails?.itemAdjustments ?? {},
+        ratedItemCount: selectedSaved.fieldAdjustmentDetails?.ratedItemCount ?? 0 });
       setIsPreviewingFieldAdjustment(false);
       return;
     }
@@ -411,7 +426,15 @@ export default function App() {
     }).finally(() => {
       if (requestId === fieldAdjustmentRequestRef.current) setIsPreviewingFieldAdjustment(false);
     });
-  }, [baselineClsScore, observationRatings]);
+  }, [baselineClsScore, observationRatings, selectedSaved, savedRatingsUnchanged]);
+
+  // Reuse the already-returned shared baseline for all matching visits. This
+  // updates library/compare/local cache without polling or per-visit requests.
+  useEffect(() => {
+    if (!assessment?.baseline) return;
+    if (!savedLocations.some(record => rebaseSavedStreet(record, assessment) !== record)) return;
+    setSavedLocations(current => current.map(record => rebaseSavedStreet(record, assessment)));
+  }, [assessment, savedLocations, setSavedLocations]);
   // Reverse Geocoding with automatic data refresh
   const fetchAddressFromCoords = async (coord: LocationCoord) => {
     const requestId = ++addressRequestRef.current;
@@ -525,8 +548,8 @@ export default function App() {
 
     setIsLoadingBaseline(false);
     setAssessmentReadState(saved.clsScore == null ? 'pending' : 'ready');
-    setBaselineSummary(saved.clsScore == null ? '已儲存地點的 CLS 待補，取得資料後會自動更新。' : '顯示已儲存的歷史 CLS。');
-    setAssessment(saved.assessmentSnapshot || null);
+    setBaselineSummary('讀取最新共用外部 CLS，保留此筆實勘加減分。');
+    setAssessment(saved.assessmentSnapshot?.baseline ? saved.assessmentSnapshot : null);
     setFieldAdjustment(
       saved.baselineClsScore != null || saved.fieldAdjustmentDetails
         ? {
@@ -540,6 +563,7 @@ export default function App() {
         : null,
     );
     fetchWeather(saved.coords);
+    void fetchLocationData(saved.coords, saved.district, saved.city, saved.streetName, false);
     setGpsSuccessMsg(bilingual('已切換至已存地點', 'Opened saved location') + ' · ' + (saved.name || saved.streetName) + ' · CLS ' + (saved.clsScore ?? '—'));
     setTimeout(() => setGpsSuccessMsg(null), 4000);
   };
@@ -896,7 +920,7 @@ export default function App() {
   useEffect(() => {
     if (!activeSavedAssessmentId) return;
     const updated = savedLocations.find(item => item.id === activeSavedAssessmentId);
-    if (!updated?.assessmentSnapshot || updated.clsScore == null || assessment?.scores.overall != null) return;
+    if (!updated?.assessmentSnapshot?.baseline || updated.clsScore == null || assessment?.scores.overall != null) return;
     setAssessment(updated.assessmentSnapshot);
     setFieldAdjustment(null);
   }, [savedLocations, activeSavedAssessmentId, assessment]);

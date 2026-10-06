@@ -20,13 +20,14 @@
     "test:language": "node --import tsx scripts/test-language.ts",
     "test:postgis-optional": "node --import tsx scripts/test-postgis-optional.ts",
     "db:storage": "node --import tsx scripts/db-storage-report.ts",
-    "ci": "npm run lint && npm run build && npm run test:static-import-api && npm run test:source-fallbacks && npm run test:score-integrity && npm run test:assessment-policy && npm run test:photo-storage && npm run test:safe-writes && npm run test:storage-budget && npm run test:scheduled-backfill && npm run test:snapshot-preservation && npm run test:walk-moments && npm run test:postgis-optional && npm run test:language && npm run test:walk-ui",
+    "ci": "npm run lint && npm run build && npm run test:unified-baseline && npm run test:static-import-api && npm run test:source-fallbacks && npm run test:score-integrity && npm run test:assessment-policy && npm run test:photo-storage && npm run test:safe-writes && npm run test:storage-budget && npm run test:scheduled-backfill && npm run test:snapshot-preservation && npm run test:walk-moments && npm run test:postgis-optional && npm run test:language && npm run test:walk-ui",
     "test:scheduled-backfill": "node --import tsx scripts/test-scheduled-backfill.ts",
     "test:safe-writes": "node --import tsx scripts/test-safe-writes.ts",
     "test:storage-budget": "node --import tsx scripts/test-storage-budget.ts",
     "backfill:scores": "node --import tsx scripts/backfill-saved-scores.ts",
     "test:source-fallbacks": "node --import tsx scripts/test-source-fallbacks.ts && node --import tsx scripts/test-static-import.ts",
-    "test:static-import-api": "node --import tsx scripts/test-static-import-api.ts"
+    "test:static-import-api": "node --import tsx scripts/test-static-import-api.ts",
+    "test:unified-baseline": "node --import tsx scripts/test-unified-baseline.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

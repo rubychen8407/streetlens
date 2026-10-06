@@ -16,6 +16,8 @@ import { fetchTaipeiSafetyData, fetchTaipeiSafetyDataForTargets, fetchTaipeiFloo
 import { fetchTaipeiYouBikeData, fetchTaipeiMedicalFacilities, fetchTaipeiStreetLights, fetchTaipeiBusStops, fetchTaipeiMrtStations, fetchTaipeiLibraries, fetchTaipeiPublicToilets, fetchTaipeiParks, fetchTaipeiBikeLanes, fetchTaipeiSidewalkAreas, fetchTaipeiMarkets, fetchTaipeiCoolingPoints, fetchTaipeiAed, fetchTaipeiFireHydrants, fetchTaipeiOfficialAirQuality, fetchTaipeiFireStations, OFFICIAL_SOURCE_URLS } from "./official";
 import { dataDb, ensureDataCacheSchema, getCachedSnapshot, getNearbyCachedSnapshots, getC5CommunityReference, getDistanceAndAirQualityReferences, getGreenDensityReference, getNearestCommunityDistanceReference, getNearestParkDistanceReference, getNearestCommunityCulturalDistanceReference, getPoiDensityReference, getSafetyReference, getFloodHazardsAtPoint, getHistoricalFloodEventsAtPoint, hasFloodHazardPolygons, listActiveAssessmentTargets, markSnapshotChecked, registerAssessmentTarget, replaceFloodHazardPolygons, replaceHistoricalFloodEvents, saveSnapshot, replaceExternalSpatialPoints, getNearbyExternalSpatialPoints, getSpatialPointCountReference, getSpatialPointPropertySumReference, replaceExternalSpatialLines, getNearbyExternalSpatialLines, getSpatialLineLengthReference, replaceExternalSpatialAreas, getNearbyExternalSpatialAreaCoverage, getSpatialAreaCoverageReference, pruneExpiredAssessmentCache } from "./db";
 import { ensureAssessmentSchema, getAssessmentPhoto, getAssessmentSession, deleteAssessmentSession, listAssessmentSessions, saveAssessmentPhoto, saveAssessmentSession } from "./assessmentDb";
+import { loadUnifiedBaseline, overlaySavedBaselines } from './streetBaselineStore';
+import type { SavedLocation } from './src/types';
 
 dotenv.config();
 
@@ -111,7 +113,7 @@ app.get("/api/assessments", async (req: Request, res: Response) => {
     const workspaceId = req.query.workspaceId;
     if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
     const records = await listAssessmentSessions(workspaceId, req.query.limit);
-    return res.json(records);
+    return res.json(dataDb ? await overlaySavedBaselines(dataDb, records as unknown as SavedLocation[]) : records);
   } catch (error: any) {
     console.error("Assessment history error:", error);
     return res.status(503).json({ error: error?.message || "Assessment history unavailable" });
@@ -126,7 +128,8 @@ app.post("/api/assessments", async (req: Request, res: Response) => {
       assessment: req.body?.assessment,
       evidence: req.body?.evidence,
     });
-    return res.status(201).json(record);
+    const current = dataDb ? (await overlaySavedBaselines(dataDb, [record as unknown as SavedLocation]))[0] : record;
+    return res.status(201).json(current);
   } catch (error: any) {
     const message = error?.message || "Unable to persist assessment";
     console.error("Assessment persistence error:", error);
@@ -1596,6 +1599,27 @@ export function getAssessmentSnapshotStatus(
 async function loadStreetAssessment({ lat, lng, district, city, streetName }: {
   lat: number; lng: number; district: string; city: string; streetName: string;
 }): Promise<AssessmentReadResult> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return { status: 400, body: { error: 'Valid lat/lng are required' } };
+  }
+  try {
+    await schemaReady;
+    if (!dataDb) return { status: 503, body: { dataStatus: 'database_required' } };
+    const result = await loadUnifiedBaseline(dataDb, { lat, lng, district, city, streetName }, computeStreetAssessment);
+    // Warm baseline reads still keep the real anchor active for batch refresh.
+    if (result.body?.baseline?.anchor) {
+      await registerAssessmentTarget(result.body.baseline.anchor.lat, result.body.baseline.anchor.lng);
+    }
+    return result;
+  } catch (error) {
+    console.error('Unified baseline read failed:', error);
+    return { status: 503, body: { error: 'Unable to read shared street baseline' } };
+  }
+}
+
+async function computeStreetAssessment({ lat, lng, district, city, streetName }: {
+  lat: number; lng: number; district: string; city: string; streetName: string;
+}): Promise<AssessmentReadResult> {
   try {
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
       return { status: 400, body: { error: "Valid lat/lng are required" } };
@@ -2314,10 +2338,11 @@ app.post("/api/assessments/:id/explanation", async (req: Request, res: Response)
     await waitForPersistenceSchema();
 
     const workspaceId = req.query.workspaceId;
-    const record = await getAssessmentSession(workspaceId, req.params.id);
-    if (!record) {
+    const persistedRecord = await getAssessmentSession(workspaceId, req.params.id);
+    if (!persistedRecord) {
       return res.status(404).json({ error: "Saved assessment not found" });
     }
+    const record = dataDb ? (await overlaySavedBaselines(dataDb, [persistedRecord as unknown as SavedLocation]))[0] : persistedRecord;
 
     const ai = getGeminiClient();
     if (!ai) {

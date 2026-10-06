@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { applyFieldObservationAdjustment, calculateAssessment } from '../scoring';
+import { streetIdentity } from '../src/utils/streetBaseline';
 
 const baseURL = 'http://127.0.0.1:4173';
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], { stdio: 'pipe' });
@@ -333,7 +334,7 @@ try {
   assert.equal(await historyPage.getByRole('complementary').count(), 0, 'library report data-status chain unwinds to map');
   await historyContext.close();
 
-  // Legacy saved history may have only a persisted total; it still renders in CLS.
+  // Legacy totals are no longer authoritative: use current external baseline.
   const legacyContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(legacyContext);
   await legacyContext.addInitScript(() => localStorage.setItem('cls_saved_locations', JSON.stringify([{
     id: 'legacy-score', name: '舊紀錄', streetName: '舊街道', district: '大安區', city: '臺北市',
@@ -342,8 +343,49 @@ try {
   const legacyPage = await legacyContext.newPage(); await legacyPage.goto(baseURL);
   await legacyPage.getByRole('button', { name: t("Street Library"), exact: true }).click();
   await legacyPage.getByText('舊紀錄', { exact: true }).click();
-  await legacyPage.getByRole('complementary', { name: t("街道結果報告") }).getByText('73', { exact: true }).first().waitFor();
+  await legacyPage.getByRole('complementary', { name: t("街道結果報告") }).getByText('80', { exact: true }).first().waitFor();
   await legacyContext.close();
+
+  // One shared external baseline updates all visits; opening does not re-run
+  // questionnaires and must retain different recorded observation points.
+  const deltaContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await prepare(deltaContext);
+  let adjustmentRequests = 0;
+  await deltaContext.route('**/api/assessment**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== '/api/assessment') {
+      if (url.pathname === '/api/assessment/field-adjustment') adjustmentRequests++;
+      return route.fallback();
+    }
+    const location = { lat: Number(url.searchParams.get('lat')), lng: Number(url.searchParams.get('lng')),
+      streetName: url.searchParams.get('streetName') || '', district: '大安區', city: '臺北市' };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ location,
+      scores: { ...calculateAssessment({}, {}), overall: 80 }, factors: [], poiCount: 0, dataSources: ['test-only'], generatedAt: '2026-10-06T00:00:00Z',
+      baseline: { streetIdentity: streetIdentity(location.city, location.district, location.streetName), segmentId: 'test-segment',
+        anchor: { lat: 25.0326, lng: 121.5298 }, version: 'test-v1', scoringVersion: 'test-only' } }) });
+  });
+  await deltaContext.addInitScript(() => {
+    if (localStorage.getItem('cls_saved_locations')) return;
+    localStorage.setItem('cls_saved_locations', JSON.stringify([3, 5].map((points, i) => ({
+      id: 'delta-' + i, name: 'Delta visit ' + points, streetName: '舊街道', district: '大安區', city: '臺北市',
+      coords: { lat: 25.0326 + i * 0.0001, lng: 121.5298 }, clsScore: 70 + points, baselineClsScore: 70,
+      fieldAdjustment: points, grade: 'B', scores: {}, timestamp: Date.now() - i, syncStatus: 'synced',
+      observationRatings: { c3_sidewalk_quality: 4 }, fieldNotes: '保留原始筆記', evidence: [],
+    }))));
+  });
+  const deltaPage = await deltaContext.newPage(); await deltaPage.goto(baseURL);
+  await deltaPage.getByRole('button', { name: t('Street Library'), exact: true }).click();
+  await deltaPage.getByText('Delta visit 3', { exact: true }).waitFor();
+  const beforeOpenAdjustments = adjustmentRequests;
+  await deltaPage.getByText('Delta visit 3', { exact: true }).click();
+  await deltaPage.getByRole('complementary', { name: t('街道結果報告') }).getByText('83', { exact: true }).first().waitFor();
+  const currentVisits = await saved(deltaPage);
+  assert.deepEqual(currentVisits.map((item: any) => item.baselineClsScore), [80, 80]);
+  assert.deepEqual(currentVisits.map((item: any) => item.clsScore), [83, 85]);
+  assert.deepEqual(currentVisits.map((item: any) => item.fieldAdjustment), [3, 5]);
+  assert.ok(currentVisits.every((item: any) => item.fieldNotes === '保留原始筆記' && item.observationRatings.c3_sidewalk_quality === 4));
+  assert.equal(adjustmentRequests, beforeOpenAdjustments, 'opening a saved visit keeps recorded points, no questionnaire request');
+  await deltaContext.close();
 
   const deletionContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(deletionContext);
   const remoteVisit = { id: 'offline-delete', name: 'Remote visit', streetName: '永康街', district: '大安區', city: '臺北市', coords: { lat: 25.0326, lng: 121.5298 }, clsScore: 80, grade: 'A', scores: {}, timestamp: Date.now(), syncStatus: 'synced' };

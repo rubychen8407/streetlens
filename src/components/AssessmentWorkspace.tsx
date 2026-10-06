@@ -442,6 +442,7 @@ export function AssessmentWorkspace({
                   </div>
                 )}
 
+                {assessment?.baseline && <div className="text-sm leading-relaxed text-slate-300 mb-3">{t('外部 CLS 以路段共用取樣點計算；總分另加此筆實勘調整。')}</div>}
                 {!assessment && (pendingAssessmentSources.length > 0 || baselineSummary) && (
                   <div className="mb-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-3.5">
                     <div className="text-sm font-bold text-amber-100">{t("External data status")}</div>
@@ -575,7 +576,7 @@ export function AssessmentWorkspace({
                   </div>
                   <div>
                     <div className="text-sm text-slate-300">{t("Field adjustment")}</div>
-                    <div className="text-sm font-black text-slate-300">{isPreviewingFieldAdjustment ? '…' : fieldAdjustment ? (fieldAdjustment.adjustment >= 0 ? '+' : '') + fieldAdjustment.adjustment : '—'}</div>
+                    <div className="text-sm font-black text-slate-300">{isPreviewingFieldAdjustment ? '…' : fieldAdjustment ? (fieldAdjustment.adjustment >= 0 ? '+' : '') + formatNumber(fieldAdjustment.adjustment) : '—'}</div>
                   </div>
                   <div>
                     <div className="text-sm text-slate-300">{t("Adjusted CLS")}</div>

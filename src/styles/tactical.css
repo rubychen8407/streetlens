@@ -44,7 +44,7 @@ input, textarea { user-select: text; }
 .search-toolbar input:focus { border-color: #a1afc0; box-shadow: 0 0 0 1px #a1afc0; }
 .location-selector { margin-inline: auto; }
 .assessment-panel { background: rgba(20,26,35,.97); border-color: var(--hud-border); box-shadow: var(--hud-shadow); }
-.assessment-panel h3 { font-size: 13px; }
+.assessment-panel h3 { font-size: 16px; }
 .assessment-panel button[aria-current="step"] { background: rgba(212,249,113,.1); color: #d4f971; border-color: rgba(212,249,113,.2); }
 .assessment-panel > header button { min-width: 44px; min-height: 44px; }
 .assessment-panel > header { padding: 16px 20px; }

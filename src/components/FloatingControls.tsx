@@ -1,5 +1,4 @@
 import { t, displayPlace } from '../i18n';
-import { LanguageSwitch } from './LanguageSwitch';
 import { DockButton } from './DockButton';
 import { ProfileSettings } from './ProfileSettings';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -257,7 +256,7 @@ export function FloatingControls({
       <div className="search-toolbar pointer-events-auto">
         <div className="location-selector w-full max-w-3xl flex items-center gap-2">
           <div className="relative flex-1 min-w-0" ref={searchContainerRef}>
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
               {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
             </div>
             <input
@@ -266,14 +265,14 @@ export function FloatingControls({
               onChange={event => { setSearchQuery(event.target.value); setIsSearchOpen(true); }}
               onFocus={() => setIsSearchOpen(true)}
               placeholder={t("搜尋地點或輸入座標")}
-              className="w-full h-12 pl-11 pr-10 bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] rounded-2xl text-xs sm:text-sm font-medium text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 shadow-2xl transition-all"
+              className="w-full h-12 pl-11 pr-10 bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] rounded-2xl text-sm sm:text-sm font-medium text-white placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-400 shadow-2xl transition-all"
               aria-label={t("搜尋地點")}
             />
-            {searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white" aria-label={t("清除搜尋")} title={t("清除")}><X className="w-4 h-4" /></button>}
+            {searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSuggestions([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-300 hover:text-white" aria-label={t("清除搜尋")} title={t("清除")}><X className="w-4 h-4" /></button>}
             {isSearchOpen && <div className="search-results absolute top-full left-0 right-0 mt-2 bg-[#1A212B]/98 backdrop-blur-md border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto drawer-scrollbar">
-              {suggestions.length > 0 ? <div className="p-1">{suggestions.map((item, index) => <button key={index} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-xs hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors"><MapPin className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" /><div className="min-w-0"><div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div><div className="text-[11px] text-slate-400 truncate">{item.display_name}</div></div></button>)}</div> : <div className="p-4 text-center text-xs text-slate-500">{t("輸入地址、街道名稱或經緯度")}</div>}
-              {matchedCoord && <button type="button" onClick={() => { onSelectCoordinate(matchedCoord, `${matchedCoord.lat.toFixed(5)}, ${matchedCoord.lng.toFixed(5)}`); setSearchQuery(''); setIsSearchOpen(false); }} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-xs text-slate-300 hover:bg-white/10">{t("使用座標")} {matchedCoord.lat.toFixed(5)}, {matchedCoord.lng.toFixed(5)}</button>}
-              {PRESET_EXPLORATION_LOCATIONS.filter(preset => searchQuery && preset.name.toLowerCase().includes(searchQuery.toLowerCase())).map(preset => <button key={preset.name} type="button" onClick={() => handleSelectPreset(preset)} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-xs text-slate-300 hover:bg-white/10">{preset.name}</button>)}
+              {suggestions.length > 0 ? <div className="p-1">{suggestions.map((item, index) => <button key={index} type="button" onClick={() => handleSelectSuggestion(item)} className="w-full px-3 py-2.5 text-left text-sm hover:bg-white/10 rounded-2xl flex items-start gap-2.5 text-slate-200 transition-colors"><MapPin className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" /><div className="min-w-0"><div className="font-bold text-white truncate">{item.name || item.display_name.split(',')[0]}</div><div className="text-sm text-slate-300 truncate">{item.display_name}</div></div></button>)}</div> : <div className="p-4 text-center text-sm text-slate-300">{t("輸入地址、街道名稱或經緯度")}</div>}
+              {matchedCoord && <button type="button" onClick={() => { onSelectCoordinate(matchedCoord, `${matchedCoord.lat.toFixed(5)}, ${matchedCoord.lng.toFixed(5)}`); setSearchQuery(''); setIsSearchOpen(false); }} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-sm text-slate-300 hover:bg-white/10">{t("使用座標")} {matchedCoord.lat.toFixed(5)}, {matchedCoord.lng.toFixed(5)}</button>}
+              {PRESET_EXPLORATION_LOCATIONS.filter(preset => searchQuery && preset.name.toLowerCase().includes(searchQuery.toLowerCase())).map(preset => <button key={preset.name} type="button" onClick={() => handleSelectPreset(preset)} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-sm text-slate-300 hover:bg-white/10">{preset.name}</button>)}
             </div>}
           </div>
           <button type="button" onClick={onLocateMe} disabled={isLocatingGPS} aria-label={t("定位到目前位置")} title={t("定位到目前位置")} className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center disabled:opacity-50">
@@ -282,7 +281,6 @@ export function FloatingControls({
           <button type="button" onClick={onOpenSaved} aria-label={t("Street Library")} title={t("Street Library")} className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/70 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center">
             <Library className="w-5 h-5" />
           </button>
-          <LanguageSwitch />
         </div>
       {clsScore == null && !isSheetOpen && !statusDismissed && <section className="cls-read-status hud-card" aria-label={t("CLS 載入狀態")}>
         <div role="status"><strong>{isLoadingScore ? t("正在讀取 CLS…") : t("CLS 尚未就緒")}</strong><p>{isLoadingScore ? t("正在查詢此地點的已儲存資料。") : t(scoreStatus)}</p></div>
@@ -303,7 +301,7 @@ export function FloatingControls({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">{t("CARTO Basemaps 金鑰測試與設定")}</h3>
-                  <p className="text-[11px] text-slate-400">{t("即時測試金鑰有效性並無縫切換底圖")}</p>
+                  <p className="text-sm text-slate-300">{t("即時測試金鑰有效性並無縫切換底圖")}</p>
                 </div>
               </div>
               <button
@@ -317,7 +315,7 @@ export function FloatingControls({
 
             {/* Input field */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300">{t("CARTO API Key")}</label>
+              <label className="text-sm font-semibold text-slate-300">{t("CARTO API Key")}</label>
               <input
                 type="text"
                 value={inputKey}
@@ -326,16 +324,16 @@ export function FloatingControls({
                   setTestResult(null);
                 }}
                 placeholder={t("貼上您的 CARTO API Key (例如：default_public 或自訂 Key)...")}
-                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/[0.08] rounded-xl text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-indigo-500"
+                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/[0.08] rounded-xl text-sm font-mono text-white placeholder:text-slate-300 focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-indigo-500"
               />
-              <p className="text-[10px] text-slate-400 leading-relaxed">
+              <p className="text-sm text-slate-300 leading-relaxed">
                  {t("說明：CARTO 官方規定自 2024 年底起請求 basemaps 圖磚時需附加")} <code className="text-slate-300 font-mono">?key=...</code>{t("。 若金鑰無效或權限未開通，本系統具備自動容錯保護，會自動切換至 Apple Maps 高清主題，絕不黑屏。")} </p>
             </div>
 
             {/* Test Result Message */}
             {testResult && (
               <div
-                className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                className={`p-3 rounded-xl border text-sm flex items-start gap-2.5 ${
                   testResult.success
                     ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
                     : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
@@ -356,7 +354,7 @@ export function FloatingControls({
                 type="button"
                 disabled={keyTesting}
                 onClick={() => testAndSaveCartoKey(inputKey)}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
               >
                 {keyTesting ? (
                   <>
@@ -377,7 +375,7 @@ export function FloatingControls({
                   setInputKey('');
                   testAndSaveCartoKey('');
                 }}
-                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-medium text-xs transition-colors"
+                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-medium text-sm transition-colors"
                 title={t("清除並切換回免金鑰高清地圖")}
               >
                  {t("使用免金鑰底圖")} </button>
@@ -398,13 +396,13 @@ export function FloatingControls({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">{t("GPS 經緯度座標與定位工具")}</h3>
-                  <p className="text-[11px] text-slate-400">{t("即時監控所在座標，支援直接輸入經緯度跳轉")}</p>
+                  <p className="text-sm text-slate-300">{t("即時監控所在座標，支援直接輸入經緯度跳轉")}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowCoordModal(false)}
-                className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                className="p-1.5 rounded-full hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -418,20 +416,20 @@ export function FloatingControls({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/10 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white/10"></span>
                   </span>
-                  <span className="text-xs font-bold text-white">{t("目前裝置 GPS 經緯度")}</span>
+                  <span className="text-sm font-bold text-white">{t("目前裝置 GPS 經緯度")}</span>
                 </div>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 font-mono">
+                <span className="text-sm px-2 py-0.5 rounded-full bg-white/10 text-slate-300 font-mono">
                    {t("誤差 ±")}{accuracyRadius ? Math.round(accuracyRadius) : 15}m
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="grid grid-cols-2 gap-2 text-sm font-mono">
                 <div className="p-2 rounded-xl bg-black/40 border border-white/[0.08]">
-                  <div className="text-[10px] text-slate-400 font-sans">{t("緯度 (Latitude)")}</div>
+                  <div className="text-sm text-slate-300 font-sans">{t("緯度 (Latitude)")}</div>
                   <div className="text-sm font-bold text-slate-300">{currentLocation.lat.toFixed(6)}°</div>
                 </div>
                 <div className="p-2 rounded-xl bg-black/40 border border-white/[0.08]">
-                  <div className="text-[10px] text-slate-400 font-sans">{t("經度 (Longitude)")}</div>
+                  <div className="text-sm text-slate-300 font-sans">{t("經度 (Longitude)")}</div>
                   <div className="text-sm font-bold text-slate-300">{currentLocation.lng.toFixed(6)}°</div>
                 </div>
               </div>
@@ -444,7 +442,7 @@ export function FloatingControls({
                     setCopyFeedback(true);
                     setTimeout(() => setCopyFeedback(false), 2500);
                   }}
-                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-sm font-medium flex items-center justify-center gap-1.5 transition-colors"
                 >
                   {copyFeedback ? (
                     <>
@@ -453,7 +451,7 @@ export function FloatingControls({
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <Copy className="w-3.5 h-3.5 text-slate-300" />
                       <span>{t("複製經緯度")}</span>
                     </>
                   )}
@@ -465,7 +463,7 @@ export function FloatingControls({
                     onLocateMe();
                   }}
                   disabled={isLocatingGPS}
-                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                   {isLocatingGPS ? (
                     <>
@@ -486,37 +484,37 @@ export function FloatingControls({
                     onSelectCoordinate(currentLocation, t("我的目前所在位置"));
                     setShowCoordModal(false);
                   }}
-                  className="py-1.5 px-2.5 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-medium transition-colors"
-                  title={t("將實勘點直接設在目前 GPS 位置")}
+                  className="py-1.5 px-2.5 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-sm font-medium transition-colors"
+                  title={t("將評估地點設在目前 GPS 位置")}
                 >
-                   {t("🎯 設為實勘點")} </button>
+                   {t("🎯 設為評估地點")} </button>
               </div>
             </div>
 
             {/* Direct Coordinate Input Jump */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-300">
+              <label className="text-sm font-bold text-slate-300">
                  {t("手動輸入自訂經緯度（坐標精確定位）")} </label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] text-slate-400 block mb-1">{t("緯度 (例如: 25.0339)")}</span>
+                  <span className="text-sm text-slate-300 block mb-1">{t("緯度 (例如: 25.0339)")}</span>
                   <input
                     type="number"
                     step="0.000001"
                     value={customLat}
                     onChange={(e) => setCustomLat(e.target.value)}
-                    className="w-full px-3 py-2 bg-black/40 border border-white/[0.08] rounded-xl text-xs font-mono text-white focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-sky-500"
+                    className="w-full px-3 py-2 bg-black/40 border border-white/[0.08] rounded-xl text-sm font-mono text-white focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-sky-500"
                     placeholder="25.0339"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block mb-1">{t("經度 (例如: 121.5645)")}</span>
+                  <span className="text-sm text-slate-300 block mb-1">{t("經度 (例如: 121.5645)")}</span>
                   <input
                     type="number"
                     step="0.000001"
                     value={customLng}
                     onChange={(e) => setCustomLng(e.target.value)}
-                    className="w-full px-3 py-2 bg-black/40 border border-white/[0.08] rounded-xl text-xs font-mono text-white focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-sky-500"
+                    className="w-full px-3 py-2 bg-black/40 border border-white/[0.08] rounded-xl text-sm font-mono text-white focus:outline-none focus:border-white/[0.08] focus:ring-1 focus:ring-sky-500"
                     placeholder="121.5645"
                   />
                 </div>
@@ -532,7 +530,7 @@ export function FloatingControls({
                     setShowCoordModal(false);
                   }
                 }}
-                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 transition-all"
+                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 transition-all"
               >
                 <Crosshair className="w-3.5 h-3.5" />
                 <span>{t("立即跳轉至此經緯度座標")}</span>
@@ -541,8 +539,8 @@ export function FloatingControls({
 
             {/* Quick Coordinate Presets */}
             <div className="pt-2 border-t border-white/[0.08] space-y-1.5">
-              <div className="text-[11px] text-slate-400 font-semibold">{t("快速選取熱門實勘經緯度：")}</div>
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+              <div className="text-sm text-slate-300 font-semibold">{t("快速選取熱門評估地點：")}</div>
+              <div className="grid grid-cols-3 gap-1.5 text-sm">
                 <button
                   type="button"
                   onClick={() => {
@@ -552,7 +550,7 @@ export function FloatingControls({
                   className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-center"
                 >
                   <div className="font-bold text-white">台北 101</div>
-                  <div className="text-[9px] font-mono text-slate-400">25.03, 121.56</div>
+                  <div className="text-sm font-mono text-slate-300">25.03, 121.56</div>
                 </button>
                 <button
                   type="button"
@@ -563,7 +561,7 @@ export function FloatingControls({
                   className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-center"
                 >
                   <div className="font-bold text-white">台北車站</div>
-                  <div className="text-[9px] font-mono text-slate-400">25.04, 121.51</div>
+                  <div className="text-sm font-mono text-slate-300">25.04, 121.51</div>
                 </button>
                 <button
                   type="button"
@@ -574,7 +572,7 @@ export function FloatingControls({
                   className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-center"
                 >
                   <div className="font-bold text-white">台中七期</div>
-                  <div className="text-[9px] font-mono text-slate-400">24.15, 120.64</div>
+                  <div className="text-sm font-mono text-slate-300">24.15, 120.64</div>
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 .dock-button { position: relative; }
 #app-root .tactical-dock .dock-button[aria-pressed="true"] { background: rgba(212,249,113,.14); border-color: rgba(212,249,113,.45); color: #d4f971; box-shadow: inset 0 0 0 1px rgba(212,249,113,.08); }
-.dock-tooltip { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); white-space: nowrap; pointer-events: none; visibility: hidden; opacity: 0; background: var(--hud-surface); color: var(--hud-text); border: 1px solid var(--hud-border); border-radius: 8px; padding: 7px 10px; font-size: 11px; line-height: 1.4; box-shadow: var(--hud-shadow); z-index: 10; }
+.dock-tooltip { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); white-space: nowrap; pointer-events: none; visibility: hidden; opacity: 0; background: var(--hud-surface); color: var(--hud-text); border: 1px solid var(--hud-border); border-radius: 8px; padding: 7px 10px; font-size: 14px; line-height: 1.4; box-shadow: var(--hud-shadow); z-index: 10; }
 .dock-button:hover .dock-tooltip, .dock-button:focus-visible .dock-tooltip { visibility: visible; opacity: 1; }
 @media (min-width: 1024px) {
   .dock-tooltip { bottom: auto; top: 50%; left: calc(100% + 18px); transform: translateY(-50%); }
@@ -12,9 +12,9 @@
 .profile-settings h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; }
 .profile-settings header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: rgba(127,142,163,.1); }
 .profile-settings fieldset + fieldset { margin-top: 24px; }
-.profile-settings legend { font-size: 12px; color: var(--hud-muted); margin-bottom: 10px; }
+.profile-settings legend { font-size: 14px; color: var(--hud-muted); margin-bottom: 10px; }
 .profile-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.profile-options label { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px; border: 1px solid var(--hud-border); border-radius: 12px; cursor: pointer; font-size: 12px; }
+.profile-options label { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px; border: 1px solid var(--hud-border); border-radius: 12px; cursor: pointer; font-size: 14px; }
 .profile-options label:has(input:checked) { background: rgba(212,249,113,.12); border-color: #96b347; }
 .profile-options input { accent-color: #96b347; }
 .profile-options label:focus-within { outline: 2px solid #96b347; outline-offset: 2px; }

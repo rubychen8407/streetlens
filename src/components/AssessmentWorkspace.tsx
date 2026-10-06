@@ -1,5 +1,4 @@
 import { t, bilingual, dateLocale, displayPlace } from '../i18n';
-import { LanguageSwitch } from './LanguageSwitch';
 import { usePanelFocus } from '../hooks/usePanelFocus';
 import { useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, Sparkles, X } from 'lucide-react';
@@ -13,7 +12,8 @@ type View = 'assessment' | 'report' | 'field' | 'saved' | 'settings';
 interface AssessmentWorkspaceProps {
   view: View;
   onOpenField: () => void;
-  onViewChange: (view: View) => void;
+  onBack: () => void;
+  backLabel: string;
   isOpen: boolean;
   onClose: () => void;
   streetName: string;
@@ -74,7 +74,7 @@ function gradeClass(grade: AssessmentWorkspaceProps['grade']) {
 }
 
 export function AssessmentWorkspace({
-  onOpenField, view, onViewChange, isOpen, onClose, streetName, district, city, targetLocation,
+  onOpenField, view, onBack, backLabel, isOpen, onClose, streetName, district, city, targetLocation,
   clsScore, grade, assessment, observationRatings, onRatingChange, fieldAdjustment, isPreviewingFieldAdjustment, fieldNotes,
   onUpdateNotes, onSave, onSelectSaved, savedLocations, onDeleteSaved, onOpenDataLogs, isFavorite, onToggleFavorite, favoriteLocationKeys, isSaving,
   evidenceDrafts, onAddEvidencePhotos, onRemoveEvidencePhoto, onUpdateEvidenceNote, selectedSavedEvidence, savedEvidenceUrls, evidenceError,
@@ -144,13 +144,12 @@ export function AssessmentWorkspace({
   return (
     <aside ref={panelRef} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
-        <div className="flex justify-end mb-2"><LanguageSwitch /></div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <button onClick={() => view === 'assessment' ? onClose() : view === 'report' ? onViewChange('saved') : view === 'saved' ? onClose() : onViewChange('assessment')} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={view === 'assessment' ? t("Close assessment") : t("Back to assessment")} aria-label={view === 'assessment' ? t("關閉報告") : view === 'report' ? t("返回 Street Library") : view === 'saved' ? t("關閉 Street Library") : t("返回評估")}><ArrowLeft className="w-4 h-4" /></button>
-            <div><div className="text-sm font-bold">{view === 'field' ? t("環境觀察") : view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("CLS 街道報告")}</div><div className="text-[10px] text-slate-500">{view === 'field' ? t("現場觀察與佐證") : view === 'report' || view === 'settings' ? displayPlace(streetName) + ' · ' + district + ' ' + city : view === 'saved' ? t("收藏、街道與歷次評估") : t('CLS · 資料來源 · 歷史比較')}</div></div>
+            <button onClick={onBack} className="w-11 h-11 shrink-0 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={backLabel} aria-label={backLabel}><ArrowLeft className="w-5 h-5" /></button>
+            <div><div className="text-sm font-bold">{view === 'field' ? t("環境觀察") : view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("CLS 街道報告")}</div><div className="text-sm text-slate-300">{view === 'field' ? t("1–4 級環境評分、筆記與佐證") : view === 'report' || view === 'settings' ? displayPlace(streetName) + ' · ' + district + ' ' + city : view === 'saved' ? t("收藏、街道與歷次評估") : t('CLS · 資料來源 · 歷史比較')}</div></div>
           </div>
-          {(view === 'assessment' || view === 'report') && <button onClick={onToggleFavorite} title={isFavorite ? t("取消最愛") : t("加入最愛")} aria-label={isFavorite ? t("取消最愛") : t("加入最愛")} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}
+          {(view === 'assessment' || view === 'report') && <button onClick={onToggleFavorite} title={isFavorite ? t("取消最愛") : t("加入最愛")} aria-label={isFavorite ? t("取消最愛") : t("加入最愛")} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-300'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}
         </div>
 
         {(view === 'assessment' || view === 'report') && (
@@ -158,13 +157,13 @@ export function AssessmentWorkspace({
             <div className="flex items-start justify-between">
               <div className="min-w-0">
                 <div className="text-lg font-bold truncate">{displayPlace(streetName) || t("Selected street")}</div>
-                <div className="text-xs text-slate-400 mt-0.5">{district} · {city}</div>
+                <div className="text-sm text-slate-300 mt-0.5">{district} · {city}</div>
               </div>
               <div className={`shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${gradeClass(grade)}`}>
                 <span className="text-[32px] leading-none font-mono tabular-nums font-bold">{clsScore ?? '—'}</span>
-                <span className="text-xs font-bold">{grade ?? 'N/A'}</span>
+                <span className="text-sm font-bold">{grade ?? 'N/A'}</span>
                 {assessment?.scores.overallMode === 'estimated' && (
-                  <span className="text-[10px] font-semibold text-amber-300">{t("推估")}</span>
+                  <span className="text-sm font-semibold text-amber-300">{t("推估")}</span>
                 )}
               </div>
             </div>
@@ -176,12 +175,12 @@ export function AssessmentWorkspace({
         {(view === 'assessment' || view === 'field') && (
           <div className="space-y-4 pb-4">
             {view === 'field' && <div className="grid grid-cols-2 gap-1.5">
-              {[t("觀察"), t("儲存")].map((label, index) => <button key={t(label)} onClick={() => setStep((index + 2) as 2|3)} aria-current={step === index + 2 ? 'step' : undefined} className="rounded-xl py-2 text-xs border border-white/10">{t(label)}</button>)}
+              {[t("觀察"), t("儲存")].map((label, index) => <button key={t(label)} onClick={() => setStep((index + 2) as 2|3)} aria-current={step === index + 2 ? 'step' : undefined} className="rounded-xl py-2 text-sm border border-white/10">{t(label)}</button>)}
             </div>}
             {view === 'assessment' && <section>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">{t("Objective data")}</h3>
-                <button onClick={onOpenDataLogs} className="text-[11px] text-slate-300 hover:text-slate-300 flex items-center gap-1">{t("Data status")} <ChevronRight className="w-3 h-3" /></button>
+                <h3 className="text-sm uppercase tracking-wider text-slate-300 font-bold">{t("Objective data")}</h3>
+                <button onClick={onOpenDataLogs} className="text-sm text-slate-300 hover:text-slate-300 flex items-center gap-1">{t("Data status")} <ChevronRight className="w-3 h-3" /></button>
               </div>
               <button
                 type="button"
@@ -190,23 +189,23 @@ export function AssessmentWorkspace({
                 aria-expanded={showScoreDetails}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-200">{t("Why this score?")}</span>
-                  <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform ${showScoreDetails ? 'rotate-90' : ''}`} />
+                  <span className="text-sm font-semibold text-slate-200">{t("Why this score?")}</span>
+                  <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform ${showScoreDetails ? 'rotate-90' : ''}`} />
                 </div>
-                <div className="text-[10px] text-slate-500 mt-1">{t("See the source-backed category scores and factor provenance.")}</div>
+                <div className="text-sm text-slate-300 mt-1">{t("See the source-backed category scores and factor provenance.")}</div>
               </button>
               {assessment?.scores && (
                 <div className="mt-2 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-semibold text-slate-300">{t("Data quality")}</span>
-                    <span className="text-[10px] text-slate-500">
+                    <span className="text-sm font-semibold text-slate-300">{t("Data quality")}</span>
+                    <span className="text-sm text-slate-300">
                       {observedCategoryCount}  {t("observed ·")} {estimatedCategoryCount}  {t("estimated ·")} {unavailableCategoryCount}  {t("unavailable")} </span>
                   </div>
                   {assessment.scores.estimatedCategoryCount > 0 ? (
-                    <div className="mt-1 text-[10px] leading-relaxed text-amber-200/80">
+                    <div className="mt-1 text-sm leading-relaxed text-amber-200/80">
                        {t("Estimated categories use persisted real reference observations, not fabricated street-level values.")} </div>
                   ) : (
-                    <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                    <div className="mt-1 text-sm leading-relaxed text-slate-300">
                        {t("All five categories currently use local source-backed observations.")} </div>
                   )}
                 </div>
@@ -220,24 +219,24 @@ export function AssessmentWorkspace({
                     return (
                       <div key={category} className="rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold text-slate-300">{category}</span>
+                          <span className="text-sm font-bold text-slate-300">{category}</span>
                           <div className="flex items-center gap-1.5">
                             {assessment?.scores[categoryKey]?.mode === 'estimated' && (
-                              <span className="text-[10px] font-semibold text-amber-300">{t("推估")}</span>
+                              <span className="text-sm font-semibold text-amber-300">{t("推估")}</span>
                             )}
-                            <span className="text-xs font-mono font-bold text-white">{score ?? '—'}</span>
+                            <span className="text-sm font-mono font-bold text-white">{score ?? '—'}</span>
                           </div>
                         </div>
                         <div className="mt-1.5 space-y-1">
                           {factors.slice(0, 4).map(item => (
-                            <div key={t(item.indicator)} className="rounded-lg bg-black/10 px-2 py-1.5 text-[10px]">
+                            <div key={t(item.indicator)} className="rounded-lg bg-black/10 px-2 py-1.5 text-sm">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="truncate text-slate-400">{t(item.indicator)}</span>
-                                <span className={item.status === 'available' ? 'text-slate-300' : 'text-slate-600'}>
+                                <span className="truncate text-slate-300">{t(item.indicator)}</span>
+                                <span className={item.status === 'available' ? 'text-slate-300' : 'text-slate-300'}>
                                   {item.value ?? 'N/A'}{item.unit ? ' ' + t(item.unit) : ''}
                                 </span>
                               </div>
-                              <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-600">
+                              <div className="mt-0.5 flex items-center justify-between gap-2 text-sm text-slate-300">
                                 <span className="truncate">{t(item.source || 'Source unavailable')}</span>
                                 <span className="shrink-0">
                                   {t(item.method)} · {t(item.confidence || 'low')} · {formatFreshness(item.retrievedAt)}
@@ -245,33 +244,33 @@ export function AssessmentWorkspace({
                               </div>
                             </div>
                           ))}
-                          {factors.length === 0 && <div className="text-[10px] text-slate-600">{t("No factor details available.")}</div>}
+                          {factors.length === 0 && <div className="text-sm text-slate-300">{t("No factor details available.")}</div>}
                         </div>
                       </div>
                     );
                   })}
-                  <div className="text-[10px] leading-relaxed text-slate-600">
+                  <div className="text-sm leading-relaxed text-slate-300">
                      {t("CLS is calculated from the source-backed assessment model. Field observations are recorded separately and are not silently added to the external-data score.")} </div>
                 </div>
               )}
               {!assessment && (pendingAssessmentSources.length > 0 || baselineSummary) && (
                 <div className="mb-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-3">
-                  <div className="text-xs font-bold text-amber-100">{t("External data status")}</div>
-                  <div className="mt-1 text-[10px] leading-relaxed text-slate-500">{t(baselineSummary)}</div>
+                  <div className="text-sm font-bold text-amber-100">{t("External data status")}</div>
+                  <div className="mt-1 text-sm leading-relaxed text-slate-300">{t(baselineSummary)}</div>
                   {pendingAssessmentSources.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {pendingAssessmentSources.map(source => (
-                        <span key={t(source)} className="rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1 text-[10px] text-slate-500">{t(source)}</span>
+                        <span key={t(source)} className="rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1 text-sm text-slate-300">{t(source)}</span>
                       ))}
                     </div>
                   )}
-                  <div className="mt-2 text-[10px] leading-relaxed text-slate-600">{t("Scoring data is read from persisted source snapshots only. No placeholder values are shown while background refresh is pending.")}</div>
+                  <div className="mt-2 text-sm leading-relaxed text-slate-300">{t("Scoring data is read from persisted source snapshots only. No placeholder values are shown while background refresh is pending.")}</div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
                 {dataCards.map(([label, item, category]) => (
                   <div key={t(label)} className="rounded-2xl bg-white/[0.045] border border-white/5 p-3">
-                    <div className="text-[11px] text-slate-400">{t(label)} · {category}</div>
+                    <div className="text-sm text-slate-300">{t(label)} · {category}</div>
                     <div className="mt-1 text-sm font-bold">
                       {item?.value != null
                         ? item.value + ' ' + t(item.unit)
@@ -279,7 +278,7 @@ export function AssessmentWorkspace({
                           ? t("No mapped inundation")
                           : 'N/A'}
                     </div>
-                    <div className={`mt-1 text-[10px] ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    <div className={`mt-1 text-sm ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}`}>
                       {item?.status === 'available'
                         ? t("Source data available")
                         : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
@@ -287,7 +286,7 @@ export function AssessmentWorkspace({
                           : t("Data unavailable")}
                     </div>
                     {item && (
-                      <div className="mt-1 text-[10px] text-slate-600 truncate" title={`${t(item.source || 'Unknown source')} · ${item.retrievedAt || t("not retrieved")}`}>
+                      <div className="mt-1 text-sm text-slate-300 truncate" title={`${t(item.source || 'Unknown source')} · ${item.retrievedAt || t("not retrieved")}`}>
                         {t(item.source || 'Unknown source')} · {formatFreshness(item.retrievedAt)}
                       </div>
                     )}
@@ -296,8 +295,8 @@ export function AssessmentWorkspace({
               </div>
               {assessment?.officialServiceMetrics && (
                 <div className="mt-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.04] p-3">
-                  <div className="text-xs font-bold text-emerald-100">{t("Official local services")}</div>
-                  <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                  <div className="text-sm font-bold text-emerald-100">{t("Official local services")}</div>
+                  <div className="mt-1 text-sm leading-relaxed text-slate-300">
                      {t("Persisted official inventories near this location. These values are source evidence; only metrics defined by the scoring model affect CLS.")} </div>
                   <div className="mt-2 grid grid-cols-2 gap-1.5">
                     {[
@@ -314,8 +313,8 @@ export function AssessmentWorkspace({
                       [t("Parks · 800m"), String(assessment.officialServiceMetrics.officialParkCount800m)],
                     ].map(([label, value]) => (
                       <div key={t(label)} className="rounded-xl bg-white/[0.03] border border-white/5 px-2.5 py-2">
-                        <div className="text-[10px] text-slate-600">{t(label)}</div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-slate-300">{value}</div>
+                        <div className="text-sm text-slate-300">{t(label)}</div>
+                        <div className="mt-0.5 text-sm font-semibold text-slate-300">{value}</div>
                       </div>
                     ))}
                   </div>
@@ -324,57 +323,57 @@ export function AssessmentWorkspace({
 
               {assessment?.historicalFloodEvents && (
                 <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/10 p-3">
-                  <div className="text-xs font-bold text-slate-300">{t("Historical flood records")}</div>
-                  <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                  <div className="text-sm font-bold text-slate-300">{t("Historical flood records")}</div>
+                  <div className="mt-1 text-sm leading-relaxed text-slate-300">
                      {t("Official historical inundation records near this location. These records are shown as evidence and do not directly change CLS.")} </div>
                   {assessment.historicalFloodEvents.length > 0 ? (
                     <div className="mt-2 space-y-1.5">
                       {assessment.historicalFloodEvents.slice(0, 5).map((event, index) => (
                         <div key={event.eventDate + '|' + event.address + '|' + index} className="rounded-xl bg-white/[0.03] px-2.5 py-2">
-                          <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <div className="flex items-center justify-between gap-2 text-sm">
                             <span className="font-semibold text-slate-300">{event.eventDate || t("Date unavailable")}</span>
                             <span className="shrink-0 text-slate-300">
                               {event.depthCm != null ? event.depthCm + ' cm' : t("Depth unavailable")}
                             </span>
                           </div>
-                          <div className="mt-0.5 text-[10px] text-slate-500">
+                          <div className="mt-0.5 text-sm text-slate-300">
                             {(event.address || event.townName || t("Location unavailable")) + ' · ' + Math.round(event.distanceMeters) + ' m'}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="mt-2 text-[10px] text-slate-500">{t("No historical inundation polygon was recorded within 500 m.")}</div>
+                    <div className="mt-2 text-sm text-slate-300">{t("No historical inundation polygon was recorded within 500 m.")}</div>
                   )}
-                  <div className="mt-2 text-[10px] text-slate-600">{t("Source: Taipei City Water Resources Department · historical inundation records")}</div>
+                  <div className="mt-2 text-sm text-slate-300">{t("Source: Taipei City Water Resources Department · historical inundation records")}</div>
                 </div>
               )}
             </section>}
             {view === 'field' && step === 2 && <section>
               <div className="mb-3">
-                <h3 className="text-xs uppercase tracking-wider text-slate-400 font-bold">{t("Your observation")}</h3>
-                <p className="text-[11px] text-slate-500 mt-1">{t("Rate only conditions you actually observed. Unrated items do not affect CLS. Notes are recommended when an observation meaningfully changes the assessment.")}</p>
+                <h3 className="text-sm uppercase tracking-wider text-slate-300 font-bold">{t("Your observation")}</h3>
+                <p className="text-sm text-slate-300 mt-1">{t("Rate only conditions you actually observed. Unrated items do not affect CLS. Notes are recommended when an observation meaningfully changes the assessment.")}</p>
               </div>
               <div className="rounded-2xl border border-white/[0.08] bg-white/10 p-3 mb-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] uppercase tracking-wider text-slate-300/80 font-bold">{t("CLS adjustment preview")}</div>
+                  <div className="text-sm uppercase tracking-wider text-slate-300/80 font-bold">{t("CLS adjustment preview")}</div>
                   {isPreviewingFieldAdjustment && <Loader2 className="w-3.5 h-3.5 text-slate-300 animate-spin" />}
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <div>
-                    <div className="text-[10px] text-slate-500">{t("External baseline")}</div>
+                    <div className="text-sm text-slate-300">{t("External baseline")}</div>
                     <div className="text-sm font-black text-white">{fieldAdjustment?.baselineCls ?? assessment?.scores.overall ?? '—'}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-500">{t("Field adjustment")}</div>
+                    <div className="text-sm text-slate-300">{t("Field adjustment")}</div>
                     <div className="text-sm font-black text-slate-300">{isPreviewingFieldAdjustment ? '…' : fieldAdjustment ? (fieldAdjustment.adjustment >= 0 ? '+' : '') + fieldAdjustment.adjustment : '—'}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-500">{t("Adjusted CLS")}</div>
+                    <div className="text-sm text-slate-300">{t("Adjusted CLS")}</div>
                     <div className="text-sm font-black text-white">{fieldAdjustment?.adjustedCls ?? assessment?.scores.overall ?? '—'}</div>
                   </div>
                 </div>
-                <div className="text-[10px] leading-relaxed text-slate-500 mt-2">
+                <div className="text-sm leading-relaxed text-slate-300 mt-2">
                    {t("The baseline uses source-backed observations when available. When a category has no local observation, StreetLens may use a clearly marked estimate derived from persisted real reference data; it does not fabricate street-level facts. Field observations are a separate bounded adjustment.")} </div>
                 {fieldAdjustment && fieldAdjustment.ratedItemCount > 0 && (
                   <div className="mt-3 pt-3 border-t border-white/[0.08] space-y-2">
@@ -383,37 +382,37 @@ export function AssessmentWorkspace({
                       const itemImpact = fieldAdjustment.itemAdjustments[item.id] ?? 0;
                       const categoryImpact = fieldAdjustment.categoryAdjustments[item.category] ?? 0;
                       return (
-                        <div key={item.id} className="flex items-start justify-between gap-2 text-[10px]">
+                        <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
                           <div className="min-w-0">
                             <div className="text-slate-300 font-semibold">{item.category} · {t(item.title)}</div>
-                            <div className="text-slate-500">{t(item.ratingLabels[rating - 1])}  {t("· item impact")} {itemImpact >= 0 ? '+' : ''}{itemImpact}</div>
+                            <div className="text-slate-300">{t(item.ratingLabels[rating - 1])}  {t("· item impact")} {itemImpact >= 0 ? '+' : ''}{itemImpact}</div>
                           </div>
                           <span className="shrink-0 text-slate-300 font-mono font-bold">{categoryImpact >= 0 ? '+' : ''}{Math.round(categoryImpact * 10) / 10}</span>
                         </div>
                       );
                     })}
-                    <div className="text-[10px] leading-relaxed text-slate-600">{t("Each category is capped at ±10. Category adjustments are then equally weighted across C1–C5, so a +8 C3 category adjustment contributes +1.6 to overall CLS.")}</div>
+                    <div className="text-sm leading-relaxed text-slate-300">{t("Each category is capped at ±10. Category adjustments are then equally weighted across C1–C5, so a +8 C3 category adjustment contributes +1.6 to overall CLS.")}</div>
                   </div>
                 )}
               </div>
               <div className="space-y-3">
                 {['C1','C2','C3','C4','C5'].map(category => (
                   <div key={category} className="rounded-2xl bg-white/[0.035] border border-white/5 p-3">
-                    <div className="text-[11px] font-bold text-slate-300 mb-2">{category}</div>
+                    <div className="text-sm font-bold text-slate-300 mb-2">{category}</div>
                     {FIELD_OBSERVATION_DEFINITIONS.filter(item => item.category === category).map(item => {
                       const value = observationRatings[item.id];
                       return (
                         <div key={item.id} className="py-2.5 border-t first:border-t-0 border-white/5">
                           <div className="min-w-0">
-                            <div className="text-xs font-semibold">{t(item.title)}</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">{t(item.description)}</div>
+                            <div className="text-sm font-semibold">{t(item.title)}</div>
+                            <div className="text-sm text-slate-300 mt-0.5">{t(item.description)}</div>
                             <div className="flex gap-1 mt-2">
                               {item.ratingScale.map((rating, index) => (
                                 <button
                                   type="button"
                                   key={rating}
                                   onClick={() => onRatingChange(item.id, rating)}
-                                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold border ${value === rating ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/5 border-white/5 text-slate-500 hover:text-slate-300'}`}
+                                  className={`flex-1 py-1.5 rounded-lg text-sm font-semibold border ${value === rating ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/5 border-white/5 text-slate-300 hover:text-slate-300'}`}
                                 >
                                   {t(item.ratingLabels[index])}
                                 </button>
@@ -428,29 +427,29 @@ export function AssessmentWorkspace({
               </div>
             </section>}            {view === 'field' && step === 3 && <>
               <section>
-                <label className="text-xs uppercase tracking-wider text-slate-400 font-bold">{t("Review & save")}</label>
+                <label className="text-sm uppercase tracking-wider text-slate-300 font-bold">{t("Review & save")}</label>
               <div className="mt-3 rounded-2xl bg-white/[0.04] border border-white/5 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
                     <Check className="w-4 h-4 text-emerald-400" />
                      {t("Observation ready to save")} </div>
-                  <div className="text-[10px] text-slate-500 mt-1">
+                  <div className="text-sm text-slate-300 mt-1">
                      {t("Your observations are stored separately and applied as a bounded adjustment when saved.")} </div>
                 </div>
-                <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder={t("What did you observe? e.g. sidewalk blocked, good shade, heavy traffic...")} className="mt-2 w-full rounded-2xl bg-white/5 border border-white/[0.08] p-3 text-xs outline-none focus:border-white/[0.08] resize-none placeholder:text-slate-600" />
+                <textarea value={fieldNotes} onChange={e => onUpdateNotes(e.target.value)} rows={3} placeholder={t("What did you observe? e.g. sidewalk blocked, good shade, heavy traffic...")} className="mt-2 w-full rounded-2xl bg-white/5 border border-white/[0.08] p-3 text-sm outline-none focus:border-white/[0.08] resize-none placeholder:text-slate-300" />
               </section>
 
               <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs font-bold text-slate-200">{t("Evidence")}</div>
-                    <div className="text-[10px] text-slate-500 mt-1">{t("Photos are stored as evidence only. They never change CLS.")}</div>
+                    <div className="text-sm font-bold text-slate-200">{t("Evidence")}</div>
+                    <div className="text-sm text-slate-300 mt-1">{t("Photos are stored as evidence only. They never change CLS.")}</div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => evidenceCameraInputRef.current?.click()}
                       disabled={evidenceDrafts.length >= 6}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/[0.08] text-[10px] font-bold text-slate-300 disabled:opacity-40"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/[0.08] text-sm font-bold text-slate-300 disabled:opacity-40"
                       title={t("Take a photo with your device camera")}
                     >
                       <Camera className="w-3.5 h-3.5" />
@@ -459,7 +458,7 @@ export function AssessmentWorkspace({
                       type="button"
                       onClick={() => evidenceLibraryInputRef.current?.click()}
                       disabled={evidenceDrafts.length >= 6}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/[0.08] text-[10px] font-bold text-slate-300 disabled:opacity-40"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/[0.08] text-sm font-bold text-slate-300 disabled:opacity-40"
                     >
                       <Images className="w-3.5 h-3.5" />
                        {t("Library")} </button>
@@ -506,14 +505,14 @@ export function AssessmentWorkspace({
                             </button>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-[10px] text-slate-400 truncate">{photo.fileName}</div>
-                            <div className="text-[10px] text-slate-600 mt-0.5">{t("Captured")} {new Date(photo.capturedAt).toLocaleString(dateLocale())}  {t("· selected street location")}</div>
+                            <div className="text-sm text-slate-300 truncate">{photo.fileName}</div>
+                            <div className="text-sm text-slate-300 mt-0.5">{t("Captured")} {new Date(photo.capturedAt).toLocaleString(dateLocale())}  {t("· selected street location")}</div>
                             <input
                               type="text"
                               value={photo.note}
                               onChange={event => onUpdateEvidenceNote(photo.id, event.target.value)}
                               placeholder={t("Add a note for this photo")}
-                              className="mt-2 w-full rounded-lg bg-white/5 border border-white/[0.08] px-2.5 py-2 text-[10px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]"
+                              className="mt-2 w-full rounded-lg bg-white/5 border border-white/[0.08] px-2.5 py-2 text-sm text-white placeholder:text-slate-300 outline-none focus:border-white/[0.08]"
                             />
                           </div>
                         </div>
@@ -524,7 +523,7 @@ export function AssessmentWorkspace({
 
                 {selectedSavedEvidence.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-white/[0.08]">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t("Saved with this session")}</div>
+                    <div className="text-sm uppercase tracking-wider text-slate-300 font-bold">{t("Saved with this session")}</div>
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       {selectedSavedEvidence.filter(item => item.type === 'photo').map(item => {
                         const savedEvidenceUrl = savedEvidenceUrls[item.id]
@@ -534,38 +533,38 @@ export function AssessmentWorkspace({
                             {savedEvidenceUrl ? (
                               <img src={savedEvidenceUrl} alt={t("Saved assessment evidence")} className="w-full h-full object-cover" />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-600">{t("Photo unavailable")}</div>
+                              <div className="w-full h-full flex items-center justify-center text-sm text-slate-300">{t("Photo unavailable")}</div>
                             )}
                           </div>
                         );
                       })}
                     </div>
                     {selectedSavedEvidence.filter(item => item.type === 'note' && item.note).map(item => (
-                      <div key={item.id} className="mt-2 rounded-lg bg-white/[0.03] px-2.5 py-2 text-[10px] text-slate-400">
+                      <div key={item.id} className="mt-2 rounded-lg bg-white/[0.03] px-2.5 py-2 text-sm text-slate-300">
                         {item.note}
                       </div>
                     ))}
                   </div>
                 )}
 
-                {evidenceError && <div className="mt-2 text-[10px] text-rose-300">{t(evidenceError)}</div>}
-                {evidenceDrafts.length >= 6 && <div className="mt-2 text-[10px] text-slate-600">{t("Maximum 6 photos per assessment.")}</div>}
+                {evidenceError && <div className="mt-2 text-sm text-rose-300">{t(evidenceError)}</div>}
+                {evidenceDrafts.length >= 6 && <div className="mt-2 text-sm text-slate-300">{t("Maximum 6 photos per assessment.")}</div>}
               </section>
 
               <section className="rounded-2xl border border-violet-400/20 bg-violet-400/[0.05] p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-xs font-bold text-violet-100">
+                    <div className="flex items-center gap-2 text-sm font-bold text-violet-100">
                       <Sparkles className="w-4 h-4 text-violet-300" />
                        {t("Gemini explanation")} </div>
-                    <div className="text-[10px] text-slate-500 mt-1">
+                    <div className="text-sm text-slate-300 mt-1">
                        {t("Generated from the saved session only. It does not recalculate CLS or add missing data.")} </div>
                   </div>
                   <button
                     type="button"
                     onClick={onGenerateAiExplanation}
                     disabled={!activeSavedAssessmentId || isGeneratingAiExplanation}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/15 border border-violet-400/20 text-[10px] font-bold text-violet-200 disabled:opacity-40"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/15 border border-violet-400/20 text-sm font-bold text-violet-200 disabled:opacity-40"
                   >
                     {isGeneratingAiExplanation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                     {isGeneratingAiExplanation ? t("Explaining…") : t("Explain with Gemini")}
@@ -573,12 +572,12 @@ export function AssessmentWorkspace({
                 </div>
 
                 {!activeSavedAssessmentId && (
-                  <div className="mt-2 text-[10px] text-slate-600">
+                  <div className="mt-2 text-sm text-slate-300">
                      {t("Save this assessment to PostgreSQL before generating a grounded explanation.")} </div>
                 )}
 
                 {aiExplanationError && (
-                  <div className="mt-2 rounded-lg bg-rose-400/10 border border-rose-400/15 px-2.5 py-2 text-[10px] text-rose-300">
+                  <div className="mt-2 rounded-lg bg-rose-400/10 border border-rose-400/15 px-2.5 py-2 text-sm text-rose-300">
                     {t(aiExplanationError)}
                   </div>
                 )}
@@ -586,8 +585,8 @@ export function AssessmentWorkspace({
                 {aiExplanation && (
                   <div className="mt-3 space-y-2.5">
                     <div className="rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
-                      <div className="text-[10px] uppercase tracking-wider text-violet-300/80 font-bold">{t("Summary")}</div>
-                      <div className="text-[11px] leading-relaxed text-slate-300 mt-1">{aiExplanation.summary}</div>
+                      <div className="text-sm uppercase tracking-wider text-violet-300/80 font-bold">{t("Summary")}</div>
+                      <div className="text-sm leading-relaxed text-slate-300 mt-1">{aiExplanation.summary}</div>
                     </div>
                     {([
                       [t("Strengths"), aiExplanation.strengths],
@@ -596,10 +595,10 @@ export function AssessmentWorkspace({
                       [t("Follow-up checks"), aiExplanation.followUpChecks],
                     ] as const).map(([label, items]) => items.length > 0 && (
                       <div key={t(label)}>
-                        <div className="text-[10px] uppercase tracking-wider text-slate-600 font-bold mb-1">{t(label)}</div>
+                        <div className="text-sm uppercase tracking-wider text-slate-300 font-bold mb-1">{t(label)}</div>
                         <div className="space-y-1">
                           {items.map((item, index) => (
-                            <div key={label + index} className="rounded-lg bg-black/10 px-2.5 py-2 text-[10px] text-slate-400">
+                            <div key={label + index} className="rounded-lg bg-black/10 px-2.5 py-2 text-sm text-slate-300">
                               {item}
                             </div>
                           ))}
@@ -611,11 +610,11 @@ export function AssessmentWorkspace({
               </section>
 
               <section className="rounded-2xl border border-white/[0.08] bg-white/10 p-3">
-                <div className="flex items-center gap-2 text-xs font-bold">
+                <div className="flex items-center gap-2 text-sm font-bold">
                   <MapPin className="w-4 h-4 text-slate-300" />
                   <span className="truncate">{displayPlace(streetName) || t("Selected street")}</span>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-1">
+                <div className="text-sm text-slate-300 mt-1">
                   {district} · {city}  {t("· Saved with the assessment timestamp")} </div>
               </section>
             </>}
@@ -628,13 +627,13 @@ export function AssessmentWorkspace({
           <div className="space-y-3">
             <div className="mb-4">
               <h2 className="text-xl font-bold">{t("Street library")}</h2>
-              <p className="text-xs text-slate-500 mt-1">{t("Favorites help you track streets; saved assessments preserve individual field sessions.")}</p>
+              <p className="text-sm text-slate-300 mt-1">{t("Favorites help you track streets; saved assessments preserve individual field sessions.")}</p>
             </div>
             <div className="flex gap-1.5 mb-3">
               {([['all',t("All")],['favorites',t("Favorites")]] as const).map(([value, label]) => (
-                <button key={value} onClick={() => setSavedFilter(value)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border ${savedFilter === value ? 'bg-amber-400/15 border-amber-300/30 text-amber-200' : 'bg-white/[0.03] border-white/5 text-slate-500'}`}>{t(label)}</button>
+                <button key={value} onClick={() => setSavedFilter(value)} className={`px-3 py-1.5 rounded-lg text-sm font-bold border ${savedFilter === value ? 'bg-amber-400/15 border-amber-300/30 text-amber-200' : 'bg-white/[0.03] border-white/5 text-slate-300'}`}>{t(label)}</button>
               ))}
-              <select value={savedSort} onChange={e => setSavedSort(e.target.value as typeof savedSort)} className="ml-auto px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/[0.08] text-[10px] text-slate-300 outline-none">
+              <select value={savedSort} onChange={e => setSavedSort(e.target.value as typeof savedSort)} className="ml-auto px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/[0.08] text-sm text-slate-300 outline-none">
                 <option value="recent">{t("Recent")}</option>
                 <option value="score">{t("CLS high → low")}</option>
                 <option value="grade">{t("Grade high → low")}</option>
@@ -644,13 +643,13 @@ export function AssessmentWorkspace({
               <section className="rounded-2xl border border-white/[0.08] bg-white/10 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <div className="text-xs font-bold text-slate-300">{t("Compare assessments")}</div>
-                    <div className="text-[10px] text-slate-500">{t("Side-by-side records; no ranking is applied.")}</div>
+                    <div className="text-sm font-bold text-slate-300">{t("Compare assessments")}</div>
+                    <div className="text-sm text-slate-300">{t("Side-by-side records; no ranking is applied.")}</div>
                   </div>
-                  <button type="button" onClick={() => setCompareIds([])} className="text-[10px] text-slate-500 hover:text-white">{t("Clear")}</button>
+                  <button type="button" onClick={() => setCompareIds([])} className="text-sm text-slate-300 hover:text-white">{t("Clear")}</button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-[10px]">
+                  <table className="w-full text-sm">
                     <tbody>
                       {[
                         [t("Street"), (saved: SavedLocation) => saved.streetName],
@@ -664,7 +663,7 @@ export function AssessmentWorkspace({
                         [t("C5 Community"), (saved: SavedLocation) => saved.scores.c5 ?? '—'],
                       ].map(([label, getter]) => (
                         <tr key={String(label)} className="border-t border-white/5">
-                          <td className="py-1.5 pr-2 text-slate-500 whitespace-nowrap">{String(label)}</td>
+                          <td className="py-1.5 pr-2 text-slate-300 whitespace-nowrap">{String(label)}</td>
                           {compareIds.map(id => {
                             const saved = savedLocations.find(item => item.id === id);
                             return <td key={id} className="py-1.5 px-2 text-slate-200 font-semibold">{saved ? String((getter as (item: SavedLocation) => string | number)(saved)) : '—'}</td>;
@@ -676,37 +675,37 @@ export function AssessmentWorkspace({
                 </div>
               </section>
             )}
-            {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-500">{savedFilter === 'favorites' ? t("No favorite streets yet.") : t("No saved assessments yet.")}</div>}
+            {savedList.length === 0 && <div className="py-16 text-center text-sm text-slate-300">{savedFilter === 'favorites' ? t("No favorite streets yet.") : t("No saved assessments yet.")}</div>}
             {savedList.map(saved => (
               <div key={saved.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <button onClick={() => onSelectSaved(saved)} className="text-left min-w-0 flex-1">
                     <div className="font-bold truncate">{saved.name}</div>
-                    <div className="text-[11px] text-slate-500 mt-1">{saved.district} · {saved.city}</div>
+                    <div className="text-sm text-slate-300 mt-1">{saved.district} · {saved.city}</div>
                     {saved.walkMoment && <div className={`text-sm mt-2 ${saved.walkMoment.feeling === 'good' ? 'text-emerald-300' : saved.walkMoment.feeling === 'bad' ? 'text-rose-300' : 'text-slate-300'}`}>{saved.walkMoment.feeling === 'good' ? t("喜歡這裡") : saved.walkMoment.feeling === 'bad' ? t("不喜歡") : t("拍照留存")}{favoriteLocationKeys.includes(favoriteKey(saved.coords, saved.streetName)) ? t(t(' · 最愛')) : ''}</div>}
                     <div className="mt-3 flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-lg border text-xs font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${saved.clsScore}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
-                      <span className="text-[10px] text-slate-500">{new Date(saved.timestamp).toLocaleString(dateLocale())}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-sm font-bold ${gradeClass(saved.grade)}`}>{saved.clsScore == null ? t("CLS 待補") : `CLS ${saved.clsScore}`} {saved.grade ?? ''}{saved.assessmentSnapshot?.scores.overallMode === 'estimated' ? t(" · 推估") : ''}</span>
+                      <span className="text-sm text-slate-300">{new Date(saved.timestamp).toLocaleString(dateLocale())}</span>
                     </div>
-                    {saved.clsScore == null && <div className="mt-2 text-xs text-slate-400">{t("開啟網站時每 30 秒重試；有來源資料後自動補上")}</div>}
-                    {saved.syncStatus === 'local' && <div className="mt-1 text-xs text-slate-400">{t("已存於此裝置，等待同步")}</div>}
+                    {saved.clsScore == null && <div className="mt-2 text-sm text-slate-300">{t("開啟網站時每 30 秒重試；有來源資料後自動補上")}</div>}
+                    {saved.syncStatus === 'local' && <div className="mt-1 text-sm text-slate-300">{t("已存於此裝置，等待同步")}</div>}
                   </button>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setCompareIds(prev => prev.includes(saved.id) ? prev.filter(id => id !== saved.id) : prev.length < 2 ? [...prev, saved.id] : prev)}
-                      className={`px-2 py-1.5 rounded-lg text-[10px] border ${compareIds.includes(saved.id) ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/[0.03] border-white/5 text-slate-500'}`}
+                      className={`px-2 py-1.5 rounded-lg text-sm border ${compareIds.includes(saved.id) ? 'bg-white/10 border-white/[0.08] text-slate-300' : 'bg-white/[0.03] border-white/5 text-slate-300'}`}
                       title={compareIds.length >= 2 && !compareIds.includes(saved.id) ? t("Compare up to two assessments") : t("Compare")}
                     >
                       {compareIds.includes(saved.id) ? t("Selected") : t("Compare")}
                     </button>
-                    <button onClick={() => onDeleteSaved(saved.id)} className="w-8 h-8 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center" title={t("Delete assessment")}><Trash2 className="w-4 h-4" /></button>
+                    <button onClick={() => onDeleteSaved(saved.id)} className="w-8 h-8 rounded-lg text-slate-300 hover:text-rose-300 hover:bg-rose-400/10 flex items-center justify-center" title={t("Delete assessment")}><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
                 {(locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length || 0) > 1 && <details className="mt-3 border-t border-white/10 pt-3">
-                  <summary className="text-xs text-slate-400 cursor-pointer">{t("查看此地全部實勘紀錄（照片、筆記與感受保留）")}</summary>
-                  {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.map(visit => <button key={visit.id} type="button" onClick={() => onSelectSaved(visit)} className="block w-full text-left text-xs text-slate-300 py-3">
-                    {new Date(visit.timestamp).toLocaleString(dateLocale())} · CLS {visit.clsScore ?? t("待補")} · {visit.walkMoment?.feeling === 'good' ? t("喜歡") : visit.walkMoment?.feeling === 'bad' ? t("不喜歡") : t("實勘")}  {t("· 照片")} {(visit.evidence || []).filter(item => item.type === 'photo').length}
+                  <summary className="text-sm text-slate-300 cursor-pointer">{t("查看此地全部紀錄（照片、筆記與感受保留）")}</summary>
+                  {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.map(visit => <button key={visit.id} type="button" onClick={() => onSelectSaved(visit)} className="block w-full text-left text-sm text-slate-300 py-3">
+                    {new Date(visit.timestamp).toLocaleString(dateLocale())} · CLS {visit.clsScore ?? t("待補")} · {visit.walkMoment?.feeling === 'good' ? t("喜歡") : visit.walkMoment?.feeling === 'bad' ? t("不喜歡") : t("環境觀察")}  {t("· 照片")} {(visit.evidence || []).filter(item => item.type === 'photo').length}
                   </button>)}
                 </details>}
               </div>
@@ -718,33 +717,33 @@ export function AssessmentWorkspace({
           <div className="space-y-4">
             <div>
               <h2 className="text-xl font-bold">{t("目前地點資料")}</h2>
-              <p className="text-xs text-slate-500 mt-1">{t("查看此地點的資料來源、可用性與更新時間。")}</p>
+              <p className="text-sm text-slate-300 mt-1">{t("查看此地點的資料來源、可用性與更新時間。")}</p>
             </div>
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
               <div className="flex items-center gap-3">
                 <Database className="w-5 h-5 text-slate-300" />
                 <div>
                   <div className="text-sm font-semibold">{t("資料來源與可用性")}</div>
-                  <div className="text-[11px] text-slate-500 mt-1">{t("目前地點已載入的評估資料。")}</div>
+                  <div className="text-sm text-slate-300 mt-1">{t("目前地點已載入的評估資料。")}</div>
                 </div>
               </div>
               <div className="mt-3 space-y-2">
                 {(assessment?.sourceStatus || []).map(source => (
-                  <div key={t(source.source)} className="flex items-center justify-between gap-3 text-[10px]">
-                    <span className="text-slate-400 truncate">{t(source.source)}</span>
-                    <span className={source.status === 'available' ? 'text-emerald-400' : 'text-slate-500'}>
+                  <div key={t(source.source)} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-slate-300 truncate">{t(source.source)}</span>
+                    <span className={source.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}>
                       {t(source.status)} · {formatFreshness(source.retrievedAt || undefined)}
                     </span>
                   </div>
                 ))}
                 {(!assessment?.sourceStatus || assessment.sourceStatus.length === 0) && (
-                  <div className="text-[10px] text-slate-500">{t("此地點尚無可顯示的資料來源狀態。")}</div>
+                  <div className="text-sm text-slate-300">{t("此地點尚無可顯示的資料來源狀態。")}</div>
                 )}
               </div>
             </div>
             <div className="p-4 rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-              <div className="text-xs font-bold text-slate-300">{t("評估依據")}</div>
-              <div className="text-[11px] text-slate-500 mt-1">{t("CLS 以已儲存的外部資料計算；現場環境觀察另記為實勘調整。")}</div>
+              <div className="text-sm font-bold text-slate-300">{t("評估依據")}</div>
+              <div className="text-sm text-slate-300 mt-1">{t("CLS 以已儲存的外部資料計算；環境觀察另記為觀察調整。")}</div>
             </div>
           </div>
         )}
@@ -754,17 +753,17 @@ export function AssessmentWorkspace({
       {view === 'field' && (
         <footer className="assessment-footer shrink-0 p-4 border-t border-white/[0.08] bg-[#141A23]">
           {step < 3 ? (
-            <button onClick={() => setStep((step + 1) as 2|3)} className="w-full py-3 rounded-xl hud-primary text-white text-xs font-bold flex items-center justify-center gap-2">{t("Continue")} <ChevronRight className="w-4 h-4" /></button>
+            <button onClick={() => setStep((step + 1) as 2|3)} className="w-full py-3 rounded-xl hud-primary text-white text-sm font-bold flex items-center justify-center gap-2">{t("Continue")} <ChevronRight className="w-4 h-4" /></button>
           ) : (
             <div className="flex gap-2">
-              <input value={name} onChange={e => setName(e.target.value)} placeholder={t("Assessment name")} className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-white/5 border border-white/[0.08] text-xs outline-none" />
-              <button onClick={handleSave} disabled={isSaving} className="px-5 py-3 rounded-xl hud-primary disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-2">
+              <input value={name} onChange={e => setName(e.target.value)} placeholder={t("Assessment name")} className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-white/5 border border-white/[0.08] text-sm outline-none" />
+              <button onClick={handleSave} disabled={isSaving} className="px-5 py-3 rounded-xl hud-primary disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center gap-2">
                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 {isSaving ? t("Saving…") : t("Save")}
               </button>
             </div>
           )}
-          {savedNotice && <div className="text-[10px] text-emerald-400 text-center mt-2">{t("Assessment saved.")}</div>}
+          {savedNotice && <div className="text-sm text-emerald-400 text-center mt-2">{t("Assessment saved.")}</div>}
         </footer>
       )}
     </aside>

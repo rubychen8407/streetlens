@@ -22,9 +22,15 @@ export async function testLanguageUI(browser: Browser, prepare: (context: Browse
       strengths: [], limitations: [], fieldObservations: [], followUpChecks: [] }) }).catch(() => {});
   });
   const page = await context.newPage();
+  async function chooseLanguage(language: 'en' | 'zh-TW') {
+    await page.getByRole('button', { name: /^(個人設定|Profile settings)$/ }).click();
+    await page.getByRole('dialog').getByRole('radio', { name: language === 'en' ? 'English' : '繁體中文', exact: true }).check();
+    await page.getByRole('dialog').getByRole('button', { name: /^(關閉|Close)$/ }).click();
+  }
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(baseURL);
-  await page.getByRole('button', { name: '切換至英文' }).click();
+  await chooseLanguage('en');
+  assert.equal(await page.getByRole('button', { name: /Switch to Chinese|切換至英文/ }).count(), 0, 'profile is the only language control');
   assert.equal(await page.locator('html').getAttribute('lang'), 'en');
   await page.getByRole('button', { name: 'Field walk', exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: '實勘', exact: true }).count(), 0);
@@ -38,11 +44,12 @@ export async function testLanguageUI(browser: Browser, prepare: (context: Browse
   await page.getByRole('button', { name: 'Great', exact: true }).first().waitFor();
   const fieldText = await page.locator('aside').innerText();
   assert.ok(!/[\u4e00-\u9fff]/.test(fieldText.replace(/永康街|大安區|臺北市|中文/g, '')), 'English field UI has no Chinese labels');
-  await page.getByRole('button', { name: 'Back to assessment', exact: true }).click();
-  await page.getByRole('button', { name: 'Close report', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to map', exact: true }).click();
   await page.getByRole('button', { name: 'Field walk', exact: true }).click();
   await page.getByRole('button', { name: 'Capture frame', exact: true }).waitFor();
-  await page.locator('.walk-panel').getByRole('button', { name: 'Switch to Chinese' }).click();
+  await page.getByRole('button', { name: 'End walk', exact: true }).click();
+  await chooseLanguage('zh-TW');
+  await page.getByRole('button', { name: '實勘', exact: true }).click();
   await page.getByRole('button', { name: '拍下畫面', exact: true }).waitFor();
   await page.getByRole('button', { name: '結束步行', exact: true }).click();
   await page.getByRole('button', { name: '街道資料庫', exact: true }).click();
@@ -50,7 +57,7 @@ export async function testLanguageUI(browser: Browser, prepare: (context: Browse
   let report = page.getByRole('complementary', { name: '街道結果報告' });
   await report.getByRole('button', { name: '產生 AI 解說' }).click();
   await report.getByText('繁體中文解說測試。', { exact: true }).waitFor();
-  await report.getByRole('button', { name: '切換至英文' }).click();
+  await chooseLanguage('en');
   report = page.getByRole('complementary', { name: 'Street report' });
   assert.equal(await report.getByText('繁體中文解說測試。').count(), 0, 'switch clears the old-language explanation');
   await report.getByText('我自己的筆記 / my own notes', { exact: true }).waitFor();
@@ -63,7 +70,7 @@ export async function testLanguageUI(browser: Browser, prepare: (context: Browse
   // The response may arrive after switching; it must never appear in the new locale.
   for (let attempt = 0; !release && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.ok(release, 'delayed explanation request reached the route');
-  await report.getByRole('button', { name: 'Switch to Chinese' }).click();
+  await chooseLanguage('zh-TW');
   release();
   await page.getByRole('button', { name: '產生 AI 解說' }).waitFor();
   assert.equal(await page.getByText('English explanation fixture.').count(), 0);

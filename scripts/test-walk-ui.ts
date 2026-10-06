@@ -1,6 +1,7 @@
 import { t } from '../src/i18n';
 import { testLanguageUI } from './test-language-ui';
 import { testProfileUI } from './test-profile-ui';
+import { testNavigationUI } from './test-navigation-ui';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -190,8 +191,8 @@ try {
     const dataStatus = view.getByRole('complementary', { name: t("資料狀態") });
     await dataStatus.getByRole('heading', { name: t("目前地點資料"), exact: true }).waitFor();
     assert.equal(await dataStatus.getByText('Settings', { exact: true }).count(), 0);
-    await dataStatus.getByRole('button', { name: t("返回評估"), exact: true }).click();
-    await view.getByRole('button', { name: t("關閉報告"), exact: true }).click();
+    await dataStatus.getByRole('button', { name: t("返回地圖"), exact: true }).click();
+    assert.equal(await view.getByRole('complementary').count(), 0, 'direct data status returns to map');
     assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).count(), 0);
     await view.getByRole('button', { name: t("實勘"), exact: true }).click();
     await view.getByRole('region', { name: t("步行感受") }).waitFor();
@@ -211,7 +212,7 @@ try {
     assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
 
     await view.screenshot({ path: `artifacts/walk-ui/assessment-${width}.png` });
-    await view.getByRole('button', { name: t("關閉報告") }).focus();
+    await view.getByRole('button', { name: t("返回地圖") }).focus();
     await view.keyboard.press('Escape');
     assert.equal(await panel.count(), 0);
     assert.equal(await view.getByRole('button', { name: t("CLS 結果報告"), exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
@@ -273,7 +274,7 @@ try {
   const pendingReport = pendingPage.getByRole('complementary', { name: t("街道評估面板") });
   await pendingReport.getByText('80', { exact: true }).waitFor({ timeout: 10000 });
   assert.equal(await pendingPage.getByRole('region', { name: t("CLS 載入狀態") }).count(), 0);
-  await pendingPage.getByRole('button', { name: t("關閉報告") }).click();
+  await pendingPage.getByRole('button', { name: t("返回地圖") }).click();
   await pendingPage.getByRole('button', { name: t("環境觀察"), exact: true }).click();
   await pendingPage.getByText(t("Your observation"), { exact: true }).waitFor();
   assert.equal(await pendingPage.getByRole('complementary').getByText(t("環境觀察"), { exact: true }).count(), 1, 'field view replaces CLS read view');
@@ -353,6 +354,7 @@ try {
   assert.deepEqual(await deletionPage.evaluate(() => JSON.parse(localStorage.getItem('cls_pending_deletions') || '[]')), ['offline-delete']);
   await deletionContext.close();
   await testLanguageUI(browser, prepare, baseURL);
+  await testNavigationUI(browser, prepare, baseURL);
   await testProfileUI(browser, prepare, baseURL);
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log('Field UI checks passed: restored explicit field recording, inert background shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');

@@ -44,7 +44,7 @@ export async function testLanguageUI(browser: Browser, prepare: (context: Browse
   await page.getByRole('button', { name: 'Great', exact: true }).first().waitFor();
   const fieldText = await page.locator('aside').innerText();
   assert.ok(!/[\u4e00-\u9fff]/.test(fieldText.replace(/永康街|大安區|臺北市|中文/g, '')), 'English field UI has no Chinese labels');
-  await page.getByRole('button', { name: 'Back to map', exact: true }).click();
+  await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
   await page.getByRole('button', { name: 'Field walk', exact: true }).click();
   await page.getByRole('button', { name: 'Capture frame', exact: true }).waitFor();
   await page.getByRole('button', { name: 'End walk', exact: true }).click();

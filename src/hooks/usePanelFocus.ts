@@ -10,7 +10,7 @@ export function usePanelFocus(open: boolean, onClose: () => void, dismissible = 
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
+    (panelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? panelRef.current)?.focus({ preventScroll: true });
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && dismissibleRef.current && panelRef.current?.contains(document.activeElement)) {
         event.preventDefault();

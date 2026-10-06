@@ -16,13 +16,36 @@ export async function testNavigationUI(browser: Browser, prepare: (context: Brow
     await prepare(context);
     const page = await context.newPage();
     await page.goto(baseURL);
+    let geocodes = 0;
+    page.on('request', request => { if (request.url().includes('/api/reverse-geocode')) geocodes++; });
     await page.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
-    await page.getByRole('button', { name: '返回地圖', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: '返回地圖', exact: true }).count(), 0, 'arrow never doubles as map dismissal');
+    const beforeDismiss = geocodes;
+    await page.getByRole('complementary').getByText('CLS 街道報告', { exact: true }).click();
+    assert.equal(await page.getByRole('complementary').count(), 1, 'panel clicks do not dismiss');
+    await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
     assert.equal(await page.getByRole('complementary').count(), 0, 'direct dock report returns to map, not library');
+    assert.equal(geocodes, beforeDismiss, 'dismissing does not select a different street');
+    assert.equal(await page.getByRole('navigation').locator('[aria-pressed="true"]').count(), 0, 'dismiss clears dock selection');
+    const selection = page.waitForRequest(request => request.url().includes('/api/reverse-geocode'));
+    await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
+    await selection;
+    await page.getByRole('button', { name: '環境觀察', exact: true }).click();
+    await page.getByRole('complementary').getByRole('button', { name: '良好', exact: true }).first().click();
+    await page.mouse.move(4, 4);
+    await page.mouse.down();
+    await page.mouse.move(65, 8, { steps: 8 });
+    await page.mouse.up();
+    assert.equal(await page.getByRole('complementary').count(), 1, 'dragging the map does not dismiss');
+    await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
+    await page.getByRole('button', { name: '環境觀察', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: '返回環境觀察', exact: true }).count(), 0, 'dismiss clears previous navigation history');
+    assert.ok(await page.getByRole('complementary').getByRole('button', { name: '良好', exact: true }).first().getAttribute('class').then(value => value?.includes('bg-white/10')), 'observation draft survives dismissal');
+    await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
     await page.getByRole('button', { name: 'CLS 結果報告', exact: true }).click();
     await page.getByRole('complementary').getByRole('button', { name: '資料狀態', exact: true }).click();
     await page.getByRole('button', { name: '返回評估', exact: true }).click();
-    await page.getByRole('button', { name: '返回地圖', exact: true }).click();
+    await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
     await page.getByRole('button', { name: '實勘', exact: true }).click();
     await page.getByRole('button', { name: '詳細環境觀察', exact: true }).click();
     await page.getByRole('button', { name: '返回實勘', exact: true }).click();
@@ -53,7 +76,7 @@ export async function testNavigationUI(browser: Browser, prepare: (context: Brow
           return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
         });
         assert.ok(contrast >= 4.5, `${label}/${theme} subtitle contrast ${contrast} meets 4.5:1`);
-        await page.getByRole('button', { name: '返回地圖', exact: true }).click();
+        await page.locator('.leaflet-container').click({ position: { x: 4, y: 4 } });
       }
     }
     await context.close();

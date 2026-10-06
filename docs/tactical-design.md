@@ -18,7 +18,7 @@ Profile Settings is the only language-selection entry point; the duplicate toolb
 
 ## Navigation and outdoor readability
 
-Navigation records actual map, walk and workspace routes. Back pops the recorded origin: a report opened directly from the map returns to the map; Library → report → Data Status unwinds one step at a time. Re-selecting the current route does not add history. Escape explicitly dismisses the workspace and clears its navigation history.
+Navigation records actual map, walk and workspace routes. The back arrow only returns to an earlier feature, and is absent for a feature opened directly from the map. Library → report → Data Status unwinds one feature at a time. Clicking exposed map background dismisses the whole workspace without moving the selected pin; Escape provides the keyboard equivalent. Dismissal clears navigation history and dock selection, not observation drafts or saved records. Panel controls, map markers and map dragging are not background-dismiss actions. Re-selecting the current route does not add history.
 
 Reports, structured observations and floating controls use at least 14px text, with 16px section headings and brighter secondary text. Browser regression tests cover both themes, a 4.5:1 subtitle contrast minimum and small/desktop viewports.
 

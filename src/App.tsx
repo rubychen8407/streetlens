@@ -915,6 +915,11 @@ export default function App() {
     <div className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans" id="app-root" data-map-theme={mapTheme}>
       {/* 1. Fullscreen Edge-to-Edge Map (Apple Maps Aesthetic) */}
       <ScoutMap
+        onBackgroundClick={() => {
+          if (!isSheetOpen) return false;
+          navigation.close();
+          return true;
+        }}
         currentLocation={currentLocation}
         targetLocation={isWalkOpen && walkLocation ? walkLocation : targetLocation}
         onSelectLocation={(coord, customName) => {
@@ -1009,7 +1014,7 @@ export default function App() {
         isOpen={isSheetOpen}
         onClose={navigation.close}
         onBack={navigation.back}
-        backLabel={t(backLabels[navigation.history.at(-1) ?? 'map'])}
+        backLabel={navigation.history.at(-1) && navigation.history.at(-1) !== 'map' ? t(backLabels[navigation.history.at(-1)!]) : null}
         view={workspaceView}
         streetName={streetName}
         district={district}

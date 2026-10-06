@@ -230,10 +230,9 @@ export function StreetReport(props: Props) {
               <div className="text-base font-semibold text-white mt-0.5">
                 <span>{feeling === 'good' ? t("喜歡") : feeling === 'bad' ? t("不喜歡") : t("拍照紀錄")}</span>
               </div>
-              <div className="text-sm text-slate-300 mt-0.5">
-                {saved?.walkMoment?.accuracyMeters != null ? t("定位精度 ±") + saved.walkMoment.accuracyMeters + ' m · ' : ''}
-                {saved ? new Date(saved.timestamp).toLocaleString(dateLocale()) : ''}
-              </div>
+              {saved?.walkMoment?.accuracyMeters != null && <div className="text-sm text-slate-300 mt-0.5">
+                {t("定位精度 ±")}{saved.walkMoment.accuracyMeters} m
+              </div>}
             </div>
           </div>
         )}

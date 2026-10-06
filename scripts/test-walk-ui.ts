@@ -1,3 +1,5 @@
+import { openMapAssessment } from './mapAssessmentEntry';
+import { testMapAssessmentEntryUI } from './test-map-assessment-entry-ui';
 import { t } from '../src/i18n';
 import { testLanguageUI } from './test-language-ui';
 import { testProfileUI } from './test-profile-ui';
@@ -164,7 +166,8 @@ try {
     // Toolbar alignment, touch targets and keyboard-accessible popovers at every breakpoint.
     const search = await view.getByLabel(t("搜尋地點"), { exact: true }).boundingBox();
     const tools = await view.getByRole('button', { name: t("定位到目前位置") }).boundingBox();
-    const entry = await view.getByRole('button', { name: t("CLS 結果報告"), exact: true }).boundingBox();
+    const entry = await view.getByRole('button', { name: t("環境觀察"), exact: true }).boundingBox();
+    assert.equal(await view.getByRole('button', { name: t("CLS 結果報告"), exact: true }).count(), 0, 'CLS is no longer a duplicate dock action');
     const dockLocator = view.getByRole('navigation', { name: t("地點功能") });
     const dock = await dockLocator.boundingBox();
     const dockBackground = await dockLocator.evaluate(element => getComputedStyle(element).backgroundImage);
@@ -182,7 +185,7 @@ try {
     assert.ok(observationBox && tools && (observationBox.x + observationBox.width <= tools.x || tools.x + tools.width <= observationBox.x || observationBox.y + observationBox.height <= tools.y || tools.y + tools.height <= observationBox.y), 'observation and location touch areas do not overlap');
     await locationButton.click();
     assert.equal(await view.getByRole('complementary', { name: t("街道評估面板") }).count(), 0, 'GPS does not open the observation panel');
-    for (const label of [t("CLS 結果報告"), t("環境觀察"), t("Street Library"), t("實勘"), t("資料狀態")]) {
+    for (const label of [t("環境觀察"), t("Street Library"), t("實勘"), t("資料狀態")]) {
       const box = await view.getByRole('button', { name: t(label), exact: true }).boundingBox();
       assert.ok(box && box.width >= 44 && box.height >= 44, label + ' needs a touch target');
     }
@@ -206,10 +209,11 @@ try {
       assert.ok(action && action.width >= 44 && action.height >= 44 && action.y + action.height <= height);
     }
     await view.getByRole('button', { name: t("結束步行") }).click();
-    await view.getByRole('button', { name: t("CLS 結果報告"), exact: true }).click();
+    await openMapAssessment(view);
     const panel = view.getByRole('complementary', { name: t("街道評估面板") });
     assert.equal(await panel.getByText(t("Your observation"), { exact: true }).count(), 0, 'CLS does not contain field-rating workflow');
     assert.equal(await panel.getByRole('button', { name: t("Continue"), exact: true }).count(), 0);
+    await panel.getByText(t('Safety') + ' · C1', { exact: true }).waitFor();
     assert.equal(await panel.getByText(t('Safety') + ' · C1', { exact: true }).count(), 1);
     const bounds = await panel.boundingBox();
     assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
@@ -218,7 +222,7 @@ try {
     await panel.focus();
     await view.keyboard.press('Escape');
     assert.equal(await panel.count(), 0);
-    assert.equal(await view.getByRole('button', { name: t("CLS 結果報告"), exact: true }).evaluate(element => element === document.activeElement), true, 'dismiss restores focus');
+    assert.equal(await view.locator('#leaflet-apple-map').evaluate(element => element === document.activeElement), true, 'dismiss restores focus to the map entry');
     await view.getByRole('button', { name: t("環境觀察"), exact: true }).click();
     await view.getByText(t("Your observation"), { exact: true }).waitFor();
     assert.equal(await view.getByRole('complementary').getByText(t("環境觀察"), { exact: true }).count(), 1);
@@ -255,7 +259,7 @@ try {
   const favoriteContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(favoriteContext);
   const favoritePage = await favoriteContext.newPage();
   await favoritePage.goto(baseURL);
-  await favoritePage.getByRole('button', { name: t("CLS 結果報告"), exact: true }).click();
+  await openMapAssessment(favoritePage);
   await favoritePage.getByRole('button', { name: t("加入最愛"), exact: true }).click();
   assert.equal((await saved(favoritePage)).length, 1);
   assert.equal((await saved(favoritePage))[0].clsScore, null);
@@ -273,7 +277,7 @@ try {
   assert.equal(await pendingPage.getByRole('button', { name: t("重試 CLS") }).isEnabled(), true);
   readyScore = true;
   await pendingPage.getByRole('button', { name: t("重試 CLS") }).click();
-  await pendingPage.getByRole('button', { name: t("CLS 結果報告"), exact: true }).click();
+  await openMapAssessment(pendingPage);
   const pendingReport = pendingPage.getByRole('complementary', { name: t("街道評估面板") });
   await pendingReport.getByText('80', { exact: true }).waitFor({ timeout: 10000 });
   assert.equal(await pendingPage.getByRole('region', { name: t("CLS 載入狀態") }).count(), 0);
@@ -404,6 +408,7 @@ try {
   await deletionContext.close();
   await testLanguageUI(browser, prepare, baseURL);
   await testNavigationUI(browser, prepare, baseURL);
+  await testMapAssessmentEntryUI(browser, prepare, baseURL);
   await testPanelInformationUI(browser, prepare, baseURL);
   await testProfileUI(browser, prepare, baseURL);
   await testSavedMapUI(browser, prepare, baseURL);

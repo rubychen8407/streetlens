@@ -1,5 +1,7 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+街道地圖|Street map
+點選街道查看評估；鍵盤 Enter 查看地圖中心。|Select a street to view its assessment; press Enter to assess the map centre.
 外部 CLS 以路段共用取樣點計算；總分另加此筆實勘調整。|External CLS uses the street portion's shared sampling point; the final score adds this visit's field adjustment.
 讀取最新共用外部 CLS，保留此筆實勘加減分。|Reading the latest shared external CLS while retaining this visit's field adjustment.
 🎯 評估地點|🎯 Assessment location

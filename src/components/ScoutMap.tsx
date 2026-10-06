@@ -167,6 +167,7 @@ export function ScoutMap({
       const target = e.originalEvent.target;
       const isBackground = !(target instanceof Element && target.closest('.leaflet-interactive, .leaflet-marker-icon, .leaflet-control, .leaflet-popup'));
       if (isBackground && backgroundHandler.current?.()) return;
+      mapContainerRef.current?.focus({ preventScroll: true });
       selectionHandler.current({ lat: e.latlng.lat, lng: e.latlng.lng });
     });
 
@@ -315,6 +316,11 @@ export function ScoutMap({
       }).addTo(mapInstance);
 
       marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        selectionHandler.current({ lat: pos.lat, lng: pos.lng });
+      });
+      marker.on('click', () => {
+        mapContainerRef.current?.focus({ preventScroll: true });
         const pos = marker.getLatLng();
         selectionHandler.current({ lat: pos.lat, lng: pos.lng });
       });
@@ -512,6 +518,15 @@ export function ScoutMap({
       ref={mapContainerRef}
       className="w-full h-full absolute inset-0 z-0 bg-slate-900 outline-none"
       id="leaflet-apple-map"
+      tabIndex={0}
+      aria-label={t('街道地圖')}
+      aria-description={t('點選街道查看評估；鍵盤 Enter 查看地圖中心。')}
+      onKeyDown={event => {
+        if (event.key !== 'Enter' || event.target !== event.currentTarget || !mapInstance) return;
+        event.preventDefault();
+        const center = mapInstance.getCenter();
+        selectionHandler.current({ lat: center.lat, lng: center.lng });
+      }}
     />
   );
 }

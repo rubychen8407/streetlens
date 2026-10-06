@@ -7,6 +7,7 @@ interface ScoutMapProps {
   currentLocation: LocationCoord;
   targetLocation: LocationCoord;
   onSelectLocation: (coord: LocationCoord, streetName?: string) => void;
+  onBackgroundClick?: () => boolean;
   streetSegments: StreetSegmentScore[];
   poiMarkers: POIMarker[];
   activeLayers: {
@@ -69,6 +70,7 @@ export function ScoutMap({
   currentLocation,
   targetLocation,
   onSelectLocation,
+  onBackgroundClick,
   streetSegments,
   poiMarkers,
   activeLayers,
@@ -80,6 +82,8 @@ export function ScoutMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const selectionHandler = useRef(onSelectLocation);
   selectionHandler.current = onSelectLocation;
+  const backgroundHandler = useRef(onBackgroundClick);
+  backgroundHandler.current = onBackgroundClick;
   const themeRef = useRef(mapTheme);
   themeRef.current = mapTheme;
   const mapRef = useRef<L.Map | null>(null);
@@ -148,8 +152,11 @@ export function ScoutMap({
     streetLayersRef.current = L.layerGroup().addTo(map);
     poiLayersRef.current = L.layerGroup().addTo(map);
 
-    // Click on map to place or move target pin
+    // Dismiss an open workspace first; that click must not also move its pin.
     map.on('click', (e: L.LeafletMouseEvent) => {
+      const target = e.originalEvent.target;
+      const isBackground = !(target instanceof Element && target.closest('.leaflet-interactive, .leaflet-marker-icon, .leaflet-control, .leaflet-popup'));
+      if (isBackground && backgroundHandler.current?.()) return;
       selectionHandler.current({ lat: e.latlng.lat, lng: e.latlng.lng });
     });
 

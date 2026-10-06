@@ -130,7 +130,7 @@ interface AssessmentWorkspaceProps {
   view: View;
   onOpenField: () => void;
   onBack: () => void;
-  backLabel: string;
+  backLabel: string | null;
   isOpen: boolean;
   onClose: () => void;
   streetName: string;
@@ -259,11 +259,11 @@ export function AssessmentWorkspace({
   const unavailableCategoryCount = categoryScores.filter((category) => category.score === null).length;
 
   return (
-    <aside ref={panelRef} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
+    <aside ref={panelRef} tabIndex={-1} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <button onClick={onBack} className="w-11 h-11 shrink-0 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={backLabel} aria-label={backLabel}><ArrowLeft className="w-5 h-5" /></button>
+            {backLabel && <button onClick={onBack} className="w-11 h-11 shrink-0 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={backLabel} aria-label={backLabel}><ArrowLeft className="w-5 h-5" /></button>}
             <div><div className="text-sm font-bold">{view === 'field' ? t("環境觀察") : view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("CLS 街道報告")}</div><div className="text-sm text-slate-300">{view === 'field' ? t("1–4 級環境評分、筆記與佐證") : view === 'report' || view === 'settings' ? displayPlace(streetName) + ' · ' + district + ' ' + city : view === 'saved' ? t("收藏、街道與歷次評估") : t('CLS · 資料來源 · 歷史比較')}</div></div>
           </div>
           {(view === 'assessment' || view === 'report') && <button onClick={onToggleFavorite} title={isFavorite ? t("取消最愛") : t("加入最愛")} aria-label={isFavorite ? t("取消最愛") : t("加入最愛")} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-300'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}

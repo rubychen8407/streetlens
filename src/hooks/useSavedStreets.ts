@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SavedLocation } from '../types';
-import { deletePersistedAssessment, listPersistedAssessments, persistAssessment } from '../utils/assessmentApi';
+import { deletePersistedAssessment, listAssessmentSummaryPage, getPersistedAssessment, persistAssessment } from '../utils/assessmentApi';
 import { FAVORITES_KEY, SAVED_LOCATIONS_KEY, mergeSavedRecords, migrateFavoriteKeys } from '../utils/savedLocations';
 import { resolveSavedScore } from '../utils/savedScoreApi';
+import { ReadRetry } from '../utils/readRetry';
 
 type Change = SavedLocation[] | ((current: SavedLocation[]) => SavedLocation[]);
 const DELETIONS_KEY = 'cls_pending_deletions';
@@ -27,8 +28,15 @@ export function useSavedStreets(workspaceId: string) {
   const deletedDuringSession = useRef(new Set(pendingDeletions.current));
   const deletionRetryAt = useRef(new Map<string, number>());
   const run = useRef<() => void>(() => {});
-  const retryAt = useRef(new Map<string, number>());
+  const retryAt = useRef(new ReadRetry());
   const [error, setError] = useState<string | null>(null);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const cursorRef = useRef<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
+  const historyGeneration = useRef(0);
+  const historyRequest = useRef<AbortController | null>(null);
+  const detailRequests = useRef(new Map<string, Promise<SavedLocation | null>>());
 
   // Synchronous ref + durable write prevents concurrent saves/backfills losing entries.
   const commit = useCallback((change: Change) => {
@@ -46,29 +54,63 @@ export function useSavedStreets(workspaceId: string) {
     return next;
   }, []);
 
-  const retry = useCallback(() => { retryAt.current.clear(); deletionRetryAt.current.clear(); run.current(); }, []);
+  const retry = useCallback(() => { run.current(); }, []);
 
-  useEffect(() => {
-    let stopped = false;
-    // Persist migrated favorites once so reloads keep their identity.
-    try { commit(current => current); } catch { setError('瀏覽器儲存空間不足，請釋出空間後重試。'); }
-    void listPersistedAssessments(workspaceId).then(remote => {
-      if (stopped || !remote.length) return;
+  const loadSavedDetails = useCallback((id: string): Promise<SavedLocation | null> => {
+    const existing = records.current.find(record => record.id === id);
+    if (!existing || !existing.historySummary) return Promise.resolve(existing || null);
+    const key = workspaceId + ':' + id;
+    const inflight = detailRequests.current.get(key);
+    if (inflight) return inflight;
+    const generation = historyGeneration.current;
+    const request = getPersistedAssessment(workspaceId, id).then(remote => {
+      if (generation !== historyGeneration.current || deletedDuringSession.current.has(id)) return null;
+      const current = records.current.find(record => record.id === id);
+      if (!current) return null;
+      const merged = current.syncStatus === 'local' && !current.historySummary ? current
+        : { ...mergeSavedRecords(current, remote), historySummary: false };
+      commit(items => items.map(item => item.id === id ? merged : item));
+      return merged;
+    }).finally(() => { detailRequests.current.delete(key); });
+    detailRequests.current.set(key, request);
+    return request;
+  }, [workspaceId, commit]);
+
+  const loadMoreSaved = useCallback(async () => {
+    if (historyRequest.current) return;
+    const generation = historyGeneration.current;
+    const controller = new AbortController(); historyRequest.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
+    setHistoryLoading(true); setHistoryError(false);
+    try {
+      const page = await listAssessmentSummaryPage(workspaceId, cursorRef.current, controller.signal);
+      if (controller.signal.aborted || generation !== historyGeneration.current) return;
       commit(current => {
         const byId = new Map(current.map(item => [item.id, item]));
-        for (const item of remote) {
-          // History can arrive while this visit's photos are still uploading.
-          // Only the upload result may acknowledge a local pending write.
-          if (byId.get(item.id)?.syncStatus === 'local') continue;
-          if (!deletedDuringSession.current.has(item.id)) byId.set(item.id, byId.has(item.id)
-            ? mergeSavedRecords(byId.get(item.id)!, item) : { ...item, syncStatus: 'synced' });
+        for (const item of page.records) {
+          if (byId.get(item.id)?.syncStatus === 'local' || deletedDuringSession.current.has(item.id)) continue;
+          byId.set(item.id, byId.has(item.id) ? mergeSavedRecords(byId.get(item.id)!, item) : { ...item, syncStatus: 'synced' });
         }
-        return [...byId.values()].sort((a, b) => b.timestamp - a.timestamp);
+        return [...byId.values()].sort((a,b) => b.timestamp - a.timestamp);
       });
+      cursorRef.current = page.nextCursor; setHistoryCursor(page.nextCursor);
       run.current();
-    }).catch(() => { /* Local history remains usable offline. */ });
-    return () => { stopped = true; };
+    } catch {
+      if (generation === historyGeneration.current) setHistoryError(true);
+    } finally {
+      window.clearTimeout(timeout);
+      if (generation === historyGeneration.current) { historyRequest.current = null; setHistoryLoading(false); }
+    }
   }, [workspaceId, commit]);
+
+  useEffect(() => {
+    historyGeneration.current++;
+    cursorRef.current = null; setHistoryCursor(null); historyRequest.current = null;
+    // Persist migrated favorites once so reloads keep their identity.
+    try { commit(current => current); } catch { setError('瀏覽器儲存空間不足，請釋出空間後重試。'); }
+    void loadMoreSaved();
+    return () => { historyGeneration.current++; historyRequest.current?.abort(); };
+  }, [workspaceId, commit, loadMoreSaved]);
 
   useEffect(() => {
     let stopped = false, running = false;
@@ -95,19 +137,25 @@ export function useSavedStreets(workspaceId: string) {
             continue;
           }
           const next = records.current.find(item => (item.clsScore == null || item.scoreSyncPending || item.syncStatus === 'local')
-            && !attempted.has(item.id) && (retryAt.current.get(item.id) || 0) <= Date.now());
+            && !attempted.has(item.id) && retryAt.current.due(item.id));
           if (!next) break;
           attempted.add(next.id);
-          retryAt.current.set(next.id, Date.now() + 30_000);
+          retryAt.current.defer(next.id);
           const controller = new AbortController(); active = controller;
           const timeout = window.setTimeout(() => controller.abort(), 20_000);
           try {
             let updated = next;
-            if (next.syncStatus === 'local') {
-              const result = await persistAssessment(workspaceId, next, [], controller.signal);
-              if (result.ok && result.record) updated = mergeSavedRecords(next, result.record);
+            if (next.historySummary) {
+              const full = await loadSavedDetails(next.id);
+              if (!full || stopped || controller.signal.aborted) continue;
+              updated = full;
+            }
+            if (updated.syncStatus === 'local') {
+              const result = await persistAssessment(workspaceId, updated, [], controller.signal);
+              if (result.ok && result.record) updated = mergeSavedRecords(updated, result.record);
             }
             if (updated.clsScore == null || updated.scoreSyncPending) updated = await resolveSavedScore(updated, workspaceId, controller.signal);
+            if (updated.clsScore != null && !updated.scoreSyncPending && updated.syncStatus !== 'local') retryAt.current.reset(next.id);
             if (stopped || controller.signal.aborted) continue;
             if (!records.current.some(item => item.id === next.id)) {
               if (updated.syncStatus === 'synced') void deletePersistedAssessment(workspaceId, next.id).catch(() => {});
@@ -137,8 +185,9 @@ export function useSavedStreets(workspaceId: string) {
       window.removeEventListener('online', resume); window.removeEventListener('focus', resume);
       document.removeEventListener('visibilitychange', resume);
     };
-  }, [workspaceId, commit, retry]);
+  }, [workspaceId, commit, retry, loadSavedDetails]);
 
   useEffect(() => { run.current(); }, [saved]);
-  return { savedLocations: saved, setSavedLocations: commit, retrySavedScores: retry, savedStorageError: error };
+  return { savedLocations: saved, setSavedLocations: commit, retrySavedScores: retry, savedStorageError: error,
+    hasMoreSaved: historyCursor !== null, historyLoading, historyError, loadMoreSaved, loadSavedDetails };
 }

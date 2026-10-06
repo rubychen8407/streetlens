@@ -1,4 +1,5 @@
 import { t, bilingual, useLanguage, errorText } from './i18n';
+import { ReadRetry } from './utils/readRetry';
 import { useTheme } from './utils/theme';
 import { backLabels, useNavigation } from './hooks/useNavigation';
 import { QuickWalk } from './components/QuickWalk';
@@ -91,7 +92,8 @@ export default function App() {
   });
   const isFavorite = favoriteLocations.includes(favoriteKey(targetLocation, streetName));
   const [workspaceId] = useState(() => getWorkspaceId());
-  const { savedLocations, setSavedLocations, retrySavedScores, savedStorageError } = useSavedStreets(workspaceId);
+  const { savedLocations, setSavedLocations, retrySavedScores, savedStorageError,
+    hasMoreSaved, historyLoading, historyError, loadMoreSaved, loadSavedDetails } = useSavedStreets(workspaceId);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeSavedAssessmentId, setActiveSavedAssessmentId] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<AssessmentExplanation | null>(null);
@@ -127,6 +129,10 @@ export default function App() {
   const [assessment, setAssessment] = useState<StreetAssessmentResponse | null>(null);
   const assessmentRequestRef = useRef(0);
   const assessmentAbortRef = useRef<AbortController | null>(null);
+  const assessmentRetry = useRef(new ReadRetry());
+  const assessmentRetryKey = JSON.stringify([targetLocation, district, city, streetName]);
+  const assessmentRetryKeyRef = useRef(assessmentRetryKey);
+  assessmentRetryKeyRef.current = assessmentRetryKey;
   const [assessmentReadState, setAssessmentReadState] = useState<'loading' | 'pending' | 'error' | 'ready'>('loading');
   const addressRequestRef = useRef(0);
   const [fieldAdjustment, setFieldAdjustment] = useState<FieldObservationAdjustment | null>(null);
@@ -280,6 +286,8 @@ export default function App() {
 
   // Read persisted assessment data. This request never fetches external sources.
   const fetchLocationData = useCallback(async (coord: LocationCoord, targetDist: string = district, targetCity: string = city, targetStreet: string = streetName, resetDraft = false) => {
+    const retryKey = JSON.stringify([coord, targetDist, targetCity, targetStreet]);
+    assessmentRetry.current.defer(retryKey);
     const requestId = ++assessmentRequestRef.current;
     assessmentAbortRef.current?.abort();
     const controller = new AbortController(); assessmentAbortRef.current = controller;
@@ -343,6 +351,7 @@ export default function App() {
       if (requestId !== assessmentRequestRef.current) return;
       setAssessment(data);
       setAssessmentReadState(data.scores.overall == null ? 'pending' : 'ready');
+      if (data.scores.overall != null) assessmentRetry.current.reset(retryKey);
       setFieldAdjustment(null);
       setPendingAssessmentSources([]);
       setBaselineSummary(data.dataSources.length ? '資料來源：' + data.dataSources.join('、') : '資料來源資訊不足');
@@ -375,7 +384,9 @@ export default function App() {
   retryAssessmentRef.current = handleAutoFetchBaseline;
   useEffect(() => {
     if (activeSavedAssessmentId || !['pending', 'error'].includes(assessmentReadState)) return;
-    const retry = () => { if (!document.hidden && navigator.onLine) retryAssessmentRef.current(); };
+    const retry = () => {
+      if (!document.hidden && navigator.onLine && assessmentRetry.current.due(assessmentRetryKeyRef.current)) retryAssessmentRef.current();
+    };
     const timer = window.setInterval(retry, 30000);
     window.addEventListener('online', retry); window.addEventListener('focus', retry);
     document.addEventListener('visibilitychange', retry);
@@ -449,7 +460,7 @@ export default function App() {
 
   // Select and load a saved location from the Bottom Sheet
   const handleSelectSavedLocation = (saved: SavedLocation) => {
-    ++assessmentRequestRef.current;
+    const selectionRequest = ++assessmentRequestRef.current;
     ++addressRequestRef.current;
     setActiveSavedAssessmentId(saved.id);
     setAiExplanation(null);
@@ -519,6 +530,10 @@ export default function App() {
           entries[item.id] = getRemoteEvidencePhotoUrl(workspaceId, saved.id, item.id);
         }
       }
+      if (selectionRequest !== assessmentRequestRef.current) {
+        Object.values(entries).forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
+        return;
+      }
       savedEvidenceUrlsRef.current = entries;
       setSavedEvidenceUrls(entries);
     })();;
@@ -542,6 +557,24 @@ export default function App() {
     fetchWeather(saved.coords);
     setGpsSuccessMsg(bilingual('已切換至已存地點', 'Opened saved location') + ' · ' + (saved.name || saved.streetName) + ' · CLS ' + (saved.clsScore ?? '—'));
     setTimeout(() => setGpsSuccessMsg(null), 4000);
+    if (saved.historySummary) {
+      setIsLoadingBaseline(true);
+      setBaselineSummary(bilingual('正在載入已儲存的完整報告…', 'Loading the full saved report…'));
+      void loadSavedDetails(saved.id).then(full => {
+        if (selectionRequest !== assessmentRequestRef.current) return;
+        // The list retained notes/ratings/evidence. Restore only the omitted
+        // report, not editable UI state that may have changed while reading.
+        if (full) {
+          setAssessment(full.assessmentSnapshot || null);
+          setBaselineSummary(full.clsScore == null ? '已儲存地點的 CLS 待補，取得資料後會自動更新。' : '顯示已儲存的歷史 CLS。');
+        }
+        setIsLoadingBaseline(false);
+      }).catch(() => {
+        if (selectionRequest !== assessmentRequestRef.current) return;
+        setIsLoadingBaseline(false);
+        setBaselineSummary(bilingual('完整歷史報告暫時無法載入，請重新開啟此紀錄重試。', 'Full history report unavailable. Reopen this record to retry.'));
+      });
+    }
   };
 
   useEffect(() => {
@@ -1054,6 +1087,10 @@ export default function App() {
         pendingAssessmentSources={pendingAssessmentSources}
         baselineSummary={baselineSummary}
         savedLocations={savedLocations}
+        hasMoreSaved={hasMoreSaved}
+        historyLoading={historyLoading}
+        historyError={historyError}
+        onLoadMoreSaved={() => void loadMoreSaved()}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);
           navigation.go('report');

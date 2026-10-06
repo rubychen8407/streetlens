@@ -1,6 +1,25 @@
 import "dotenv/config";
 import pg from "pg";
 import crypto from "node:crypto";
+import { referenceReadCache, spatialReferenceCache, invalidateSourceReads } from './readCache';
+import { readReferenceSnapshots } from './referenceSnapshots';
+import { readSpatialPointMetrics } from './referenceSpatialMetrics';
+import { localSnapshotPayload, type LocalSnapshotRead } from './localSnapshotProjection';
+import { measuredQuery } from './queryTransferMetrics';
+import { readLocalFacilityMetrics } from './localFacilityMetrics';
+import { readLineMetrics, readReferenceLineMetrics } from './spatialLineMetrics';
+
+export function getLocalFacilityMetrics(lat: number, lng: number) {
+  return dataDb ? readLocalFacilityMetrics((sql, values) => dataDb.query(sql, values), lat, lng)
+    : Promise.resolve({} as Record<string, { count: number; quantitySum: number }>);
+}
+
+export function getAssessmentSpatialPoints(sourceKey: string, lat: number, lng: number, radius: number, limit: number) {
+  const properties = sourceKey === 'taipei_youbike'
+    ? ['active', 'availableRentBikes', 'availableReturnBikes']
+    : sourceKey === 'taipei_official_aqi' ? ['aqi', 'pm25', 'publishTime'] : [];
+  return getNearbyExternalSpatialPoints(sourceKey, lat, lng, radius, limit, false, properties);
+}
 
 const { Pool } = pg;
 
@@ -14,6 +33,10 @@ const poolConfig = connectionString
   : null;
 
 export const dataDb = poolConfig ? new Pool(poolConfig) : null;
+
+function scoringQuery(sql: string, values?: any[], operation = 'scoring.other') {
+  return measuredQuery(operation, () => dataDb!.query(sql, values));
+}
 
 export interface CachedSnapshot {
   sourceKey: string;
@@ -30,6 +53,23 @@ export interface CachedSnapshot {
   status: string;
 }
 
+export type SnapshotMetadata = Omit<CachedSnapshot, 'payload'>;
+
+export async function getSnapshotMetadata(sourceKey: string, scopeKey: string): Promise<SnapshotMetadata | null> {
+  if (!dataDb) return null;
+  const result = await scoringQuery(
+    `SELECT source_key AS "sourceKey", scope_key AS "scopeKey",
+            etag, last_modified AS "lastModified", content_hash AS "contentHash",
+            fetched_at AS "fetchedAt", checked_at AS "checkedAt",
+            source_updated_at AS "sourceUpdatedAt", source_version AS "sourceVersion",
+            freshness_method AS "freshnessMethod", status
+     FROM external_data_snapshots WHERE source_key = $1 AND scope_key = $2`,
+    [sourceKey, scopeKey],
+    "snapshot.metadata",
+  );
+  return result.rows[0] || null;
+}
+
 export function hashPayload(payload: unknown): string {
   return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
@@ -43,13 +83,13 @@ export async function ensureDataCacheSchema(): Promise<void> {
   // still use the regular snapshot cache. Neon supports PostGIS for spatial
   // point-in-polygon queries used by the flood-risk index.
   try {
-    await dataDb.query(`CREATE EXTENSION IF NOT EXISTS postgis;`);
+    await scoringQuery(`CREATE EXTENSION IF NOT EXISTS postgis;`);
     postgisAvailable = true;
   } catch (error) {
     console.warn("PostGIS is not available; global flood spatial index disabled:", error);
   }
 
-  await dataDb.query(`
+  await scoringQuery(`
     CREATE TABLE IF NOT EXISTS external_spatial_points (
       source_key TEXT NOT NULL,
       feature_id TEXT NOT NULL,
@@ -106,7 +146,7 @@ export async function ensureDataCacheSchema(): Promise<void> {
 
   if (postgisAvailable) {
     try {
-      await dataDb.query(`
+      await scoringQuery(`
       CREATE TABLE IF NOT EXISTS external_spatial_areas (
         source_key TEXT NOT NULL,
         feature_id TEXT NOT NULL,
@@ -189,14 +229,17 @@ export async function registerAssessmentTarget(lat: number, lng: number): Promis
   if (!dataDb) return null;
   const scopeKey = spatialScopeKey(lat, lng);
   try {
-    await dataDb.query(
+    const registered = await scoringQuery(
     `INSERT INTO assessment_targets (latitude, longitude, scope_key, last_requested_at)
      VALUES ($1, $2, $3, NOW())
      ON CONFLICT (scope_key)
      DO UPDATE SET latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-                   last_requested_at = NOW(), active = TRUE`,
+                   last_requested_at = NOW(), active = TRUE
+     RETURNING (xmax = 0) AS inserted`,
     [lat, lng, scopeKey],
   );
+    referenceReadCache.delete('active-targets');
+    if (registered.rows[0]?.inserted) invalidateSourceReads();
   } catch (error) {
     // A read must still serve existing snapshots when target registration is full.
     if (!(error instanceof Error) || !error.message.includes('STORAGE_WRITE_LIMIT')) throw error;
@@ -205,8 +248,12 @@ export async function registerAssessmentTarget(lat: number, lng: number): Promis
 }
 
 export async function listActiveAssessmentTargets(): Promise<Array<{ latitude: number; longitude: number; scopeKey: string }>> {
+  return referenceReadCache.get('active-targets', loadActiveAssessmentTargets);
+}
+
+async function loadActiveAssessmentTargets(): Promise<Array<{ latitude: number; longitude: number; scopeKey: string }>> {
   if (!dataDb) return [];
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `SELECT latitude, longitude, scope_key AS "scopeKey"
      FROM assessment_targets
      WHERE active = TRUE
@@ -246,6 +293,7 @@ export async function pruneExpiredAssessmentCache(): Promise<{ targets: number; 
       [scopeKeys],
     );
     await client.query("COMMIT");
+    invalidateSourceReads();
     return {
       targets: removedTargets.rowCount ?? 0,
       snapshots: removedSnapshots.rowCount ?? 0,
@@ -258,18 +306,21 @@ export async function pruneExpiredAssessmentCache(): Promise<{ targets: number; 
   }
 }
 
-export async function getCachedSnapshot(sourceKey: string, scopeKey: string): Promise<CachedSnapshot | null> {
+export async function getCachedSnapshot(sourceKey: string, scopeKey: string, localRead?: LocalSnapshotRead): Promise<CachedSnapshot | null> {
   if (!dataDb) return null;
-  const result = await dataDb.query(
-    `SELECT source_key AS "sourceKey", scope_key AS "scopeKey", payload,
+  // Only these two sources need the additional coordinate parameters.
+  if (sourceKey !== 'taipei_green' && sourceKey !== 'taipei_safety') localRead = undefined;
+  const result = await measuredQuery('snapshot.exact', () => dataDb!.query(
+    `SELECT source_key AS "sourceKey", scope_key AS "scopeKey",
+            ${localRead ? localSnapshotPayload(sourceKey, 'payload', '$3::double precision', '$4::double precision', localRead.includeAccidents) : 'payload'} AS payload,
             etag, last_modified AS "lastModified", content_hash AS "contentHash",
             fetched_at AS "fetchedAt", checked_at AS "checkedAt",
             source_updated_at AS "sourceUpdatedAt", source_version AS "sourceVersion",
             freshness_method AS "freshnessMethod", status
      FROM external_data_snapshots
      WHERE source_key = $1 AND scope_key = $2`,
-    [sourceKey, scopeKey],
-  );
+    localRead ? [sourceKey, scopeKey, localRead.lat, localRead.lng] : [sourceKey, scopeKey],
+  ));
   return result.rows[0] || null;
 }
 
@@ -279,11 +330,13 @@ export async function getNearbyCachedSnapshots(
   lng: number,
   maxDistanceMeters = 900,
   limit = 6,
+  localRead?: LocalSnapshotRead,
 ): Promise<Array<CachedSnapshot & { scopeDistanceMeters: number }>> {
   if (!dataDb) return [];
 
-  const result = await dataDb.query(
-    `SELECT s.source_key AS "sourceKey", s.scope_key AS "scopeKey", s.payload,
+  const result = await measuredQuery('snapshot.nearby', () => dataDb!.query(
+    `SELECT s.source_key AS "sourceKey", s.scope_key AS "scopeKey",
+            ${localRead ? localSnapshotPayload(sourceKey, 's.payload', '$2::double precision', '$3::double precision', localRead.includeAccidents) : 's.payload'} AS payload,
             s.etag, s.last_modified AS "lastModified", s.content_hash AS "contentHash",
             s.fetched_at AS "fetchedAt", s.checked_at AS "checkedAt",
             s.source_updated_at AS "sourceUpdatedAt", s.source_version AS "sourceVersion",
@@ -297,10 +350,15 @@ export async function getNearbyCachedSnapshots(
      JOIN assessment_targets t ON t.scope_key = s.scope_key
      WHERE s.source_key = $1
        AND s.status IN ('available', 'empty')
+       AND 6371000 * 2 * ASIN(SQRT(
+         POWER(SIN(RADIANS(t.latitude - $2) / 2), 2) +
+         COS(RADIANS($2)) * COS(RADIANS(t.latitude)) *
+         POWER(SIN(RADIANS(t.longitude - $3) / 2), 2)
+       )) <= $5
      ORDER BY "scopeDistanceMeters" ASC
      LIMIT $4`,
-    [sourceKey, lat, lng, limit],
-  );
+    [sourceKey, lat, lng, limit, maxDistanceMeters],
+  ));
 
   return result.rows.filter((row) =>
     Number.isFinite(Number(row.scopeDistanceMeters))
@@ -409,6 +467,7 @@ export async function replaceHistoricalFloodEvents(
     }
 
     await client.query("COMMIT");
+    invalidateSourceReads();
     return true;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -433,7 +492,7 @@ export async function getHistoricalFloodEventsAtPoint(
 }>> {
   if (!dataDb || !postgisAvailable) return [];
 
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `SELECT event_date AS "eventDate",
             town_name AS "townName",
             address,
@@ -514,6 +573,7 @@ export async function replaceFloodHazardPolygons(
     }
 
     await client.query("COMMIT");
+    invalidateSourceReads();
     return true;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -525,7 +585,7 @@ export async function replaceFloodHazardPolygons(
 
 export async function hasFloodHazardPolygons(): Promise<boolean> {
   if (!dataDb || !postgisAvailable) return false;
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `SELECT EXISTS (
        SELECT 1 FROM flood_hazard_polygons
      ) AS "hasRows"`,
@@ -546,7 +606,7 @@ export async function getFloodHazardsAtPoint(
 }>> {
   if (!dataDb || !postgisAvailable) return [];
 
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `SELECT scenario_mmh AS "scenarioMmPerHour",
             depth_cm AS "depthCm",
             source
@@ -592,11 +652,11 @@ export async function saveSnapshot(
 ): Promise<{ changed: boolean; contentHash: string }> {
   if (!dataDb) throw new Error("DATABASE_URL is required for persistent external data storage");
   const contentHash = hashPayload(payload);
-  const existing = await getCachedSnapshot(sourceKey, scopeKey);
+  const existing = await getSnapshotMetadata(sourceKey, scopeKey);
 
   if (shouldPreserveExistingSnapshot(existing, contentHash)) {
     // Content is unchanged: record the check, but do not rewrite the snapshot version.
-    await dataDb.query(
+    await scoringQuery(
       `UPDATE external_data_snapshots
        SET checked_at = NOW(), status = $3,
            etag = COALESCE($4, etag),
@@ -612,10 +672,11 @@ export async function saveSnapshot(
         metadata.freshnessMethod ?? "unknown",
       ],
     );
+    if (existing?.status !== metadata.status) invalidateSourceReads();
     return { changed: false, contentHash };
   }
 
-  await dataDb.query(
+  await scoringQuery(
     `INSERT INTO external_data_snapshots
        (source_key, scope_key, payload, content_hash, etag, last_modified, status, fetched_at,
         checked_at, source_updated_at, source_version, freshness_method)
@@ -645,6 +706,7 @@ export async function saveSnapshot(
     ],
   );
 
+  invalidateSourceReads();
   return { changed: true, contentHash };
 }
 
@@ -661,7 +723,7 @@ export async function markSnapshotChecked(
   } = {},
 ): Promise<void> {
   if (!dataDb) return;
-  await dataDb.query(
+  await scoringQuery(
     `UPDATE external_data_snapshots
      SET checked_at = NOW(),
          etag = COALESCE($3, etag),
@@ -684,24 +746,44 @@ export async function getSafetyReference(excludeScopeKey?: string): Promise<{
   accidentCounts: number[];
   floodDepths: number[];
 }> {
+  return referenceReadCache.get("getSafetyReference" + JSON.stringify([excludeScopeKey]), () => loadSafetyReference(excludeScopeKey));
+}
+
+async function loadSafetyReference(excludeScopeKey?: string): Promise<{
+  accidentCounts: number[];
+  floodDepths: number[];
+}> {
   if (!dataDb) return { accidentCounts: [], floodDepths: [] };
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
+  const result = await scoringQuery(
+    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey",
+       CASE WHEN jsonb_typeof(payload->'accidents') = 'array'
+         THEN jsonb_array_length(payload->'accidents') END AS "accidentCount",
+       COALESCE((SELECT MAX(depth) FROM (
+         SELECT CASE
+           WHEN cell->'depthCm' = 'null'::jsonb OR btrim(cell->>'depthCm') = '' THEN 0
+           WHEN cell->'depthCm' = 'true'::jsonb THEN 1
+           WHEN cell->'depthCm' = 'false'::jsonb THEN 0
+           WHEN cell->>'depthCm' ~ '^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
+             THEN (cell->>'depthCm')::numeric END AS depth
+         FROM jsonb_array_elements(CASE
+           WHEN jsonb_typeof(payload->'cells') = 'array' THEN payload->'cells'
+           WHEN jsonb_typeof(payload->'riskCells') = 'array' THEN payload->'riskCells'
+           ELSE '[]'::jsonb END) cell
+       ) depths WHERE abs(depth) <= 1.7976931348623157e308), 0) AS "floodDepth"
      FROM external_data_snapshots
      WHERE source_key IN ('taipei_safety', 'taipei_flood')
        AND status IN ('available', 'empty')`,
+    undefined, "references.safety",
   );
   const accidentsByScope = new Map<string, number>();
   const floodByScope = new Map<string, number>();
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
     if (row.sourceKey === "taipei_safety") {
-      const count = Array.isArray(row.payload?.accidents) ? row.payload.accidents.length : null;
+      const count = row.accidentCount;
       if (Number.isFinite(count)) accidentsByScope.set(row.scopeKey, count);
     } else {
-      const cells = Array.isArray(row.payload?.cells) ? row.payload.cells : Array.isArray(row.payload?.riskCells) ? row.payload.riskCells : [];
-      const depths = cells.map((cell: any) => Number(cell?.depthCm)).filter(Number.isFinite);
-      floodByScope.set(row.scopeKey, depths.length ? Math.max(...depths) : 0);
+      floodByScope.set(row.scopeKey, Number(row.floodDepth));
     }
   }
   return {
@@ -711,13 +793,13 @@ export async function getSafetyReference(excludeScopeKey?: string): Promise<{
 }
 
 export async function getPoiDensityReference(excludeScopeKey?: string): Promise<number[]> {
+  return referenceReadCache.get("getPoiDensityReference" + JSON.stringify([excludeScopeKey]), () => loadPoiDensityReference(excludeScopeKey));
+}
+
+async function loadPoiDensityReference(excludeScopeKey?: string): Promise<number[]> {
   if (!dataDb) return [];
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", payload
-     FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap')
-       AND status IN ('available', 'empty')`,
-  );
+  const result = { rows: (await readReferenceSnapshots(sql => measuredQuery('references.snapshots', () => dataDb!.query(sql))))
+    .filter(row => row.sourceKey === 'google_places' || row.sourceKey === 'openstreetmap') };
   const byScope = new Map<string, Map<string, any>>();
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
@@ -736,8 +818,8 @@ export async function getPoiDensityReference(excludeScopeKey?: string): Promise<
     const scopePois = byScope.get(target.scopeKey) || new Map<string, any>();
 
     const [medical, markets] = await Promise.all([
-      getNearbyExternalSpatialPoints("taipei_medical", target.latitude, target.longitude, 1200, 1000),
-      getNearbyExternalSpatialPoints("taipei_markets", target.latitude, target.longitude, 1200, 500),
+      getReferenceSpatialPoints("taipei_medical", target.latitude, target.longitude, 1200, 1000),
+      getReferenceSpatialPoints("taipei_markets", target.latitude, target.longitude, 1200, 500),
     ]);
 
     for (const point of medical) {
@@ -759,13 +841,13 @@ export async function getPoiDensityReference(excludeScopeKey?: string): Promise<
 }
 
 export async function getC5CommunityReference(excludeScopeKey?: string): Promise<number[]> {
+  return referenceReadCache.get("getC5CommunityReference" + JSON.stringify([excludeScopeKey]), () => loadC5CommunityReference(excludeScopeKey));
+}
+
+async function loadC5CommunityReference(excludeScopeKey?: string): Promise<number[]> {
   if (!dataDb) return [];
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", payload
-     FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap')
-       AND status IN ('available', 'empty')`,
-  );
+  const result = { rows: (await readReferenceSnapshots(sql => measuredQuery('references.snapshots', () => dataDb!.query(sql))))
+    .filter(row => row.sourceKey === 'google_places' || row.sourceKey === 'openstreetmap') };
   const byScope = new Map<string, Map<string, any>>();
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
@@ -784,7 +866,7 @@ export async function getC5CommunityReference(excludeScopeKey?: string): Promise
   const targets = await listActiveAssessmentTargets();
   for (const target of targets) {
     if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const libraries = await getNearbyExternalSpatialPoints("taipei_libraries", target.latitude, target.longitude, 800, 500);
+    const libraries = await getReferenceSpatialPoints("taipei_libraries", target.latitude, target.longitude, 800, 500);
     if (!libraries.length) continue;
     const scopePois = byScope.get(target.scopeKey) || new Map<string, any>();
     for (const library of libraries) {
@@ -800,13 +882,13 @@ export async function getC5CommunityReference(excludeScopeKey?: string): Promise
 }
 
 export async function getNearestCommunityDistanceReference(excludeScopeKey?: string): Promise<number[]> {
+  return referenceReadCache.get("getNearestCommunityDistanceReference" + JSON.stringify([excludeScopeKey]), () => loadNearestCommunityDistanceReference(excludeScopeKey));
+}
+
+async function loadNearestCommunityDistanceReference(excludeScopeKey?: string): Promise<number[]> {
   if (!dataDb) return [];
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", payload
-     FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap')
-       AND status IN ('available', 'empty')`,
-  );
+  const result = { rows: (await readReferenceSnapshots(sql => measuredQuery('references.snapshots', () => dataDb!.query(sql))))
+    .filter(row => row.sourceKey === 'google_places' || row.sourceKey === 'openstreetmap') };
   const nearestByScope = new Map<string, number>();
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
@@ -833,19 +915,30 @@ export async function getNearestCommunityDistanceReference(excludeScopeKey?: str
 export async function getGreenDensityReference(
   excludeScopeKey?: string,
 ): Promise<{ street: number[]; park: number[] }> {
+  return referenceReadCache.get("getGreenDensityReference" + JSON.stringify([excludeScopeKey]), () => loadGreenDensityReference(excludeScopeKey));
+}
+
+async function loadGreenDensityReference(
+  excludeScopeKey?: string,
+): Promise<{ street: number[]; park: number[] }> {
   if (!dataDb) return { street: [], park: [] };
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", payload
+  const result = await scoringQuery(
+    `SELECT scope_key AS "scopeKey",
+       CASE WHEN jsonb_typeof(payload->'streetTrees') = 'array'
+         THEN jsonb_array_length(payload->'streetTrees') END AS "streetCount",
+       CASE WHEN jsonb_typeof(payload->'parkTrees') = 'array'
+         THEN jsonb_array_length(payload->'parkTrees') END AS "parkCount"
      FROM external_data_snapshots
      WHERE source_key = 'taipei_green' AND status = 'available'`,
+    undefined, "references.green",
   );
 
   const street: number[] = [];
   const park: number[] = [];
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
-    const streetCount = Array.isArray(row.payload?.streetTrees) ? row.payload.streetTrees.length : null;
-    const parkCount = Array.isArray(row.payload?.parkTrees) ? row.payload.parkTrees.length : null;
+    const streetCount = row.streetCount;
+    const parkCount = row.parkCount;
     const areaKm2 = Math.PI * (0.8 ** 2);
     if (Number.isFinite(streetCount)) street.push(streetCount / areaKm2);
     if (Number.isFinite(parkCount)) park.push(parkCount / areaKm2);
@@ -927,6 +1020,7 @@ export async function replaceExternalSpatialPoints(
     }
 
     await client.query("COMMIT");
+    invalidateSourceReads();
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -991,6 +1085,7 @@ export async function replaceExternalSpatialAreas(
     }
 
     await client.query("COMMIT");
+    invalidateSourceReads();
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -1017,7 +1112,7 @@ export async function getNearbyExternalSpatialAreaCoverage(
   }
 
   const point = "ST_SetSRID(ST_Point($2, $1), 4326)::geography";
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `WITH clipped AS (
        SELECT
          ST_Intersection(
@@ -1056,6 +1151,14 @@ export async function getNearbyExternalSpatialAreaCoverage(
 }
 
 export async function getSpatialAreaCoverageReference(
+  sourceKey: string,
+  radiusMeters = 500,
+  excludeScopeKey?: string,
+): Promise<number[]> {
+  return referenceReadCache.get("getSpatialAreaCoverageReference" + JSON.stringify([sourceKey, radiusMeters, excludeScopeKey]), () => loadSpatialAreaCoverageReference(sourceKey, radiusMeters, excludeScopeKey));
+}
+
+async function loadSpatialAreaCoverageReference(
   sourceKey: string,
   radiusMeters = 500,
   excludeScopeKey?: string,
@@ -1131,12 +1234,24 @@ export async function replaceExternalSpatialLines(
     }
 
     await client.query("COMMIT");
+    invalidateSourceReads();
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
   }
+}
+
+export async function getNearbySpatialLineMetrics(source: string, lat: number, lng: number, radius = 500, limit = 2000) {
+  if (!dataDb || !postgisAvailable) return { count: 0, lengthMeters: 0 };
+  const rows = await readLineMetrics((sql, values) => scoringQuery(sql, values, 'lines.local.metrics'), source, radius, limit, { lat, lng });
+  return rows[0] || { count: 0, lengthMeters: 0 };
+}
+
+async function getReferenceLineMetrics(source: string, radius: number, limit: number) {
+  if (!dataDb || !postgisAvailable) return [];
+  return readReferenceLineMetrics((sql, values) => scoringQuery(sql, values, 'references.lines'), source, radius, limit);
 }
 
 export async function getNearbyExternalSpatialLines(
@@ -1157,7 +1272,7 @@ export async function getNearbyExternalSpatialLines(
 }>> {
   if (!dataDb || !postgisAvailable) return [];
 
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `SELECT
        feature_id AS "id",
        name,
@@ -1180,6 +1295,7 @@ export async function getNearbyExternalSpatialLines(
      ORDER BY "distanceMeters" ASC
      LIMIT $5`,
     [sourceKey, lat, lng, maxDistanceMeters, limit],
+    "lines.local",
   );
 
   return result.rows.map((row) => ({
@@ -1199,25 +1315,17 @@ export async function getSpatialLineLengthReference(
   maxDistanceMeters = 500,
   excludeScopeKey?: string,
 ): Promise<number[]> {
+  return referenceReadCache.get("getSpatialLineLengthReference" + JSON.stringify([sourceKey, maxDistanceMeters, excludeScopeKey]), () => loadSpatialLineLengthReference(sourceKey, maxDistanceMeters, excludeScopeKey));
+}
+
+async function loadSpatialLineLengthReference(
+  sourceKey: string,
+  maxDistanceMeters = 500,
+  excludeScopeKey?: string,
+): Promise<number[]> {
   if (!dataDb || !postgisAvailable) return [];
-  const targets = await listActiveAssessmentTargets();
-  const values: number[] = [];
-
-  for (const target of targets) {
-    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const lines = await getNearbyExternalSpatialLines(
-      sourceKey,
-      target.latitude,
-      target.longitude,
-      maxDistanceMeters,
-      5000,
-    );
-    const total = lines.reduce((sum, line) =>
-      sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0);
-    values.push(total);
-  }
-
-  return values;
+  const rows = await getReferenceLineMetrics(sourceKey, maxDistanceMeters, 5000);
+  return rows.filter(row => !excludeScopeKey || row.scopeKey !== excludeScopeKey).map(row => row.lengthMeters);
 }
 
 export async function getNearbyExternalSpatialPoints(
@@ -1226,22 +1334,22 @@ export async function getNearbyExternalSpatialPoints(
   lng: number,
   maxDistanceMeters = 1500,
   limit = 2000,
+  summaryOnly = false,
+  propertyKeys?: string[],
 ): Promise<ExternalSpatialPointRecord[]> {
   if (!dataDb) return [];
 
   const latDelta = maxDistanceMeters / 111_320;
   const lngDelta = maxDistanceMeters / (111_320 * Math.max(0.35, Math.cos(lat * Math.PI / 180)));
 
-  const result = await dataDb.query(
+  const result = await scoringQuery(
     `SELECT
        feature_id AS "id",
        name,
        latitude AS lat,
        longitude AS lng,
-       properties,
-       fetched_at AS "fetchedAt",
-       source_updated_at AS "sourceUpdatedAt",
-       source_version AS "sourceVersion",
+       ${summaryOnly ? "'{}'::jsonb AS properties, NULL::timestamptz AS \"fetchedAt\", NULL::timestamptz AS \"sourceUpdatedAt\", NULL::text AS \"sourceVersion\"," :
+         `${propertyKeys ? "COALESCE((SELECT jsonb_object_agg(key, value) FROM jsonb_each(properties) WHERE key = ANY($9::text[])), '{}'::jsonb) AS properties" : 'properties'}, fetched_at AS "fetchedAt", source_updated_at AS "sourceUpdatedAt", source_version AS "sourceVersion",`}
        6371000 * 2 * ASIN(SQRT(
          POWER(SIN(RADIANS(latitude - $2) / 2), 2) +
          COS(RADIANS($2)) * COS(RADIANS(latitude)) *
@@ -1262,7 +1370,9 @@ export async function getNearbyExternalSpatialPoints(
       lng - lngDelta,
       lng + lngDelta,
       limit,
+      ...(propertyKeys && !summaryOnly ? [propertyKeys] : []),
     ],
+    "points.local",
   );
 
   return result.rows
@@ -1274,7 +1384,7 @@ export async function getNearbyExternalSpatialPoints(
       lng: Number(row.lng),
       distanceMeters: Number(row.distanceMeters),
       properties: row.properties || {},
-      fetchedAt: new Date(row.fetchedAt).toISOString(),
+      fetchedAt: row.fetchedAt ? new Date(row.fetchedAt).toISOString() : '',
       sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
       sourceVersion: row.sourceVersion || null,
     }));
@@ -1285,23 +1395,19 @@ export async function getSpatialPointCountReference(
   maxDistanceMeters = 300,
   excludeScopeKey?: string,
 ): Promise<number[]> {
+  return referenceReadCache.get("getSpatialPointCountReference" + JSON.stringify([sourceKey, maxDistanceMeters, excludeScopeKey]), () => loadSpatialPointCountReference(sourceKey, maxDistanceMeters, excludeScopeKey));
+}
+
+async function loadSpatialPointCountReference(
+  sourceKey: string,
+  maxDistanceMeters = 300,
+  excludeScopeKey?: string,
+): Promise<number[]> {
   if (!dataDb) return [];
-  const targets = await listActiveAssessmentTargets();
-  const values: number[] = [];
-
-  for (const target of targets) {
-    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const rows = await getNearbyExternalSpatialPoints(
-      sourceKey,
-      target.latitude,
-      target.longitude,
-      maxDistanceMeters,
-      5000,
-    );
-    values.push(rows.length);
-  }
-
-  return values;
+  const rows = await readSpatialPointMetrics((sql, values) => measuredQuery('references.spatial', () => dataDb!.query(sql, values)), sourceKey,
+    maxDistanceMeters, 5000);
+  return rows.filter(row => !excludeScopeKey || row.scopeKey !== excludeScopeKey)
+    .map(row => row.count);
 }
 
 export async function getSpatialPointPropertySumReference(
@@ -1310,26 +1416,20 @@ export async function getSpatialPointPropertySumReference(
   maxDistanceMeters = 300,
   excludeScopeKey?: string,
 ): Promise<number[]> {
+  return referenceReadCache.get("getSpatialPointPropertySumReference" + JSON.stringify([sourceKey, propertyKey, maxDistanceMeters, excludeScopeKey]), () => loadSpatialPointPropertySumReference(sourceKey, propertyKey, maxDistanceMeters, excludeScopeKey));
+}
+
+async function loadSpatialPointPropertySumReference(
+  sourceKey: string,
+  propertyKey: string,
+  maxDistanceMeters = 300,
+  excludeScopeKey?: string,
+): Promise<number[]> {
   if (!dataDb) return [];
-  const targets = await listActiveAssessmentTargets();
-  const values: number[] = [];
-
-  for (const target of targets) {
-    if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const rows = await getNearbyExternalSpatialPoints(
-      sourceKey,
-      target.latitude,
-      target.longitude,
-      maxDistanceMeters,
-      5000,
-    );
-    values.push(rows.reduce((sum, row) => {
-      const value = Number(row.properties?.[propertyKey]);
-      return sum + (Number.isFinite(value) ? value : 0);
-    }, 0));
-  }
-
-  return values;
+  const rows = await readSpatialPointMetrics((sql, values) => measuredQuery('references.spatial', () => dataDb!.query(sql, values)), sourceKey,
+    maxDistanceMeters, 5000, propertyKey);
+  return rows.filter(row => !excludeScopeKey || row.scopeKey !== excludeScopeKey)
+    .map(row => row.propertySum);
 }
 
 export async function closeDataDb(): Promise<void> {
@@ -1352,13 +1452,13 @@ function parseScope(scopeKey: string): { lat: number; lng: number } | null {
 }
 
 export async function getNearestParkDistanceReference(excludeScopeKey?: string): Promise<number[]> {
+  return referenceReadCache.get("getNearestParkDistanceReference" + JSON.stringify([excludeScopeKey]), () => loadNearestParkDistanceReference(excludeScopeKey));
+}
+
+async function loadNearestParkDistanceReference(excludeScopeKey?: string): Promise<number[]> {
   if (!dataDb) return [];
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
-     FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap')
-       AND status IN ('available', 'empty')`,
-  );
+  const result = { rows: (await readReferenceSnapshots(sql => measuredQuery('references.snapshots', () => dataDb!.query(sql))))
+    .filter(row => row.sourceKey === 'google_places' || row.sourceKey === 'openstreetmap') };
 
   const nearestByScope = new Map<string, number>();
   for (const row of result.rows) {
@@ -1382,7 +1482,7 @@ export async function getNearestParkDistanceReference(excludeScopeKey?: string):
   const targets = await listActiveAssessmentTargets();
   for (const target of targets) {
     if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const parks = await getNearbyExternalSpatialPoints("taipei_parks", target.latitude, target.longitude, 1500, 500);
+    const parks = await getReferenceSpatialPoints("taipei_parks", target.latitude, target.longitude, 1500, 500);
     if (parks.length) {
       const distance = parks[0].distanceMeters;
       const current = nearestByScope.get(target.scopeKey);
@@ -1394,13 +1494,13 @@ export async function getNearestParkDistanceReference(excludeScopeKey?: string):
 }
 
 export async function getNearestCommunityCulturalDistanceReference(excludeScopeKey?: string): Promise<number[]> {
+  return referenceReadCache.get("getNearestCommunityCulturalDistanceReference" + JSON.stringify([excludeScopeKey]), () => loadNearestCommunityCulturalDistanceReference(excludeScopeKey));
+}
+
+async function loadNearestCommunityCulturalDistanceReference(excludeScopeKey?: string): Promise<number[]> {
   if (!dataDb) return [];
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", payload
-     FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap')
-       AND status IN ('available', 'empty')`,
-  );
+  const result = { rows: (await readReferenceSnapshots(sql => measuredQuery('references.snapshots', () => dataDb!.query(sql))))
+    .filter(row => row.sourceKey === 'google_places' || row.sourceKey === 'openstreetmap') };
   const nearestByScope = new Map<string, number>();
   for (const row of result.rows) {
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
@@ -1424,7 +1524,7 @@ export async function getNearestCommunityCulturalDistanceReference(excludeScopeK
   const targets = await listActiveAssessmentTargets();
   for (const target of targets) {
     if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
-    const libraries = await getNearbyExternalSpatialPoints("taipei_libraries", target.latitude, target.longitude, 1000, 200);
+    const libraries = await getReferenceSpatialPoints("taipei_libraries", target.latitude, target.longitude, 1000, 200);
     const nearestLibrary = libraries.length ? libraries[0].distanceMeters : null;
     if (nearestLibrary != null) {
       const current = nearestByScope.get(target.scopeKey);
@@ -1447,14 +1547,24 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   c1AedCounts: number[];
   c1HydrantCounts: number[];
 }> {
+  return referenceReadCache.get("getDistanceAndAirQualityReferences" + JSON.stringify([excludeScopeKey]), () => loadDistanceAndAirQualityReferences(excludeScopeKey));
+}
+
+async function loadDistanceAndAirQualityReferences(excludeScopeKey?: string): Promise<{
+  c2Distances: Partial<Record<"supermarketDist" | "convenienceDist" | "clinicDist" | "schoolDist" | "bankPostDist" | "marketDist", number[]>>;
+  c3RailDistances: number[];
+  c3BusDistances: number[];
+  c3YouBikeDistances: number[];
+  c3BikeLaneLengths: number[];
+  c3SidewalkCoveragePcts: number[];
+  c4Aqi: number[];
+  c4CoolingPointCounts: number[];
+  c1AedCounts: number[];
+  c1HydrantCounts: number[];
+}> {
   if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [], c4CoolingPointCounts: [], c1AedCounts: [], c1HydrantCounts: [] };
 
-  const result = await dataDb.query(
-    `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
-     FROM external_data_snapshots
-     WHERE source_key IN ('google_places', 'openstreetmap', 'tdx_transit', 'open_meteo_air_quality', 'taipei_official_aqi')
-       AND status IN ('available', 'empty')`,
-  );
+  const result = { rows: await readReferenceSnapshots(sql => measuredQuery('references.snapshots', () => dataDb!.query(sql))) };
 
   const c2ByScope = new Map<string, Map<string, number>>();
   const c3RailByScope = new Map<string, number>();
@@ -1531,57 +1641,68 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     }
   }
 
+  const metricSources = [
+    ['taipei_medical', 1500, 500], ['taipei_bus_stops', 1500, 1000],
+    ['taipei_mrt_stations', 2000, 300], ['taipei_youbike', 1500, 200],
+    ['taipei_markets', 1200, 300], ['taipei_cooling_points', 1200, 300],
+    ['taipei_aed', 500, 500], ['taipei_fire_hydrants', 500, 1000],
+  ] as const;
+  const metrics = new Map(await Promise.all(metricSources.map(async ([source, radius, limit]) =>
+    [source, new Map((await readSpatialPointMetrics((sql, values) => measuredQuery('references.spatial', () => dataDb!.query(sql, values)), source, radius, limit))
+      .map(row => [row.scopeKey, row]))] as const)));
+  const bikeLaneMetrics = new Map((await getReferenceLineMetrics('taipei_bike_lanes', 500, 5000))
+    .map(row => [row.scopeKey, row]));
   const targets = await listActiveAssessmentTargets();
   for (const target of targets) {
     if (excludeScopeKey && target.scopeKey === excludeScopeKey) continue;
 
-    const medical = await getNearbyExternalSpatialPoints("taipei_medical", target.latitude, target.longitude, 1500, 500);
-    if (medical.length) {
-      const distance = medical[0].distanceMeters;
+    const medical = metrics.get('taipei_medical')?.get(target.scopeKey);
+    if (medical?.count || 0) {
+      const distance = medical!.nearestDistance!;
       c2Distances.clinicDist ||= [];
       c2Distances.clinicDist.push(distance);
     }
 
-    const busStops = await getNearbyExternalSpatialPoints("taipei_bus_stops", target.latitude, target.longitude, 1500, 1000);
-    if (busStops.length) c3BusByScope.set(target.scopeKey, busStops[0].distanceMeters);
+    const busStops = metrics.get('taipei_bus_stops')?.get(target.scopeKey);
+    if (busStops?.count || 0) c3BusByScope.set(target.scopeKey, busStops!.nearestDistance!);
 
-    const mrtStations = await getNearbyExternalSpatialPoints("taipei_mrt_stations", target.latitude, target.longitude, 2000, 300);
-    if (mrtStations.length) {
+    const mrtStations = metrics.get('taipei_mrt_stations')?.get(target.scopeKey);
+    if (mrtStations?.count || 0) {
       const existingRail = c3RailByScope.get(target.scopeKey);
-      const officialRail = mrtStations[0].distanceMeters;
+      const officialRail = mrtStations!.nearestDistance!;
       if (existingRail == null || officialRail < existingRail) {
         c3RailByScope.set(target.scopeKey, officialRail);
       }
     }
 
-    const bikes = await getNearbyExternalSpatialPoints("taipei_youbike", target.latitude, target.longitude, 1500, 200);
-    if (bikes.length) c3YouBikeByScope.set(target.scopeKey, bikes[0].distanceMeters);
+    const bikes = metrics.get('taipei_youbike')?.get(target.scopeKey);
+    if (bikes?.count || 0) c3YouBikeByScope.set(target.scopeKey, bikes!.nearestDistance!);
 
-    const bikeLanes = await getNearbyExternalSpatialLines("taipei_bike_lanes", target.latitude, target.longitude, 500, 5000);
-    if (bikeLanes.length) {
+    const bikeLanes = bikeLaneMetrics.get(target.scopeKey);
+    if (bikeLanes?.count) {
       c3BikeLaneByScope.set(
         target.scopeKey,
-        bikeLanes.reduce((sum, line) => sum + (Number.isFinite(line.lengthMeters) ? line.lengthMeters : 0), 0),
+        bikeLanes.lengthMeters,
       );
     }
 
     const sidewalk = await getNearbyExternalSpatialAreaCoverage("taipei_sidewalk_areas", target.latitude, target.longitude, 500);
     if (sidewalk.featureCount > 0) c3SidewalkByScope.set(target.scopeKey, sidewalk.coveragePct);
 
-    const markets = await getNearbyExternalSpatialPoints("taipei_markets", target.latitude, target.longitude, 1200, 300);
-    if (markets.length) {
+    const markets = metrics.get('taipei_markets')?.get(target.scopeKey);
+    if (markets?.count || 0) {
       c2Distances.marketDist ||= [];
-      c2Distances.marketDist.push(markets[0].distanceMeters);
+      c2Distances.marketDist.push(markets!.nearestDistance!);
     }
 
-    const coolingPoints = await getNearbyExternalSpatialPoints("taipei_cooling_points", target.latitude, target.longitude, 1200, 300);
-    c4CoolingByScope.set(target.scopeKey, coolingPoints.length);
+    const coolingPoints = metrics.get('taipei_cooling_points')?.get(target.scopeKey);
+    c4CoolingByScope.set(target.scopeKey, coolingPoints?.count || 0);
 
-    const aedPoints = await getNearbyExternalSpatialPoints("taipei_aed", target.latitude, target.longitude, 500, 500);
-    c1AedByScope.set(target.scopeKey, aedPoints.length);
+    const aedPoints = metrics.get('taipei_aed')?.get(target.scopeKey);
+    c1AedByScope.set(target.scopeKey, aedPoints?.count || 0);
 
-    const hydrants = await getNearbyExternalSpatialPoints("taipei_fire_hydrants", target.latitude, target.longitude, 500, 1000);
-    c1HydrantByScope.set(target.scopeKey, hydrants.length);
+    const hydrants = metrics.get('taipei_fire_hydrants')?.get(target.scopeKey);
+    c1HydrantByScope.set(target.scopeKey, hydrants?.count || 0);
   }
 
   return {
@@ -1596,4 +1717,9 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     c1AedCounts: [...c1AedByScope.values()],
     c1HydrantCounts: [...c1HydrantByScope.values()],
   };
+}
+
+async function getReferenceSpatialPoints(sourceKey: string, lat: number, lng: number, radius: number, limit: number) {
+  return spatialReferenceCache.get('reference-points' + JSON.stringify([sourceKey, lat, lng, radius, limit]),
+    () => getNearbyExternalSpatialPoints(sourceKey, lat, lng, radius, limit, true));
 }

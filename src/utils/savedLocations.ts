@@ -65,6 +65,9 @@ export function fillSavedScore(
 }
 
 export function mergeSavedRecords(local: SavedLocation, remote: SavedLocation): SavedLocation {
+  // Summary reads cannot erase a full report already cached on this device.
+  if (remote.historySummary) remote = { ...remote, assessmentSnapshot: local.assessmentSnapshot,
+    historySummary: local.historySummary === true || (!local.assessmentSnapshot && local.clsScore !== remote.clsScore) };
   if (local.fieldRecord || remote.fieldRecord) {
     const merged = mergeFieldRecord(local, remote);
     const needsSync = (local.fieldUpdatedAt ?? local.timestamp) > (remote.fieldUpdatedAt ?? remote.timestamp);

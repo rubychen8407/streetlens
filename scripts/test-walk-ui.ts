@@ -2,6 +2,7 @@ import { t } from '../src/i18n';
 import { testLanguageUI } from './test-language-ui';
 import { testProfileUI } from './test-profile-ui';
 import { testNavigationUI } from './test-navigation-ui';
+import { testHistoryUI } from './test-history-ui';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -251,13 +252,18 @@ try {
   readyScore = false;
   const favoriteContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); await prepare(favoriteContext);
   const favoritePage = await favoriteContext.newPage();
+  await favoritePage.clock.install();
   await favoritePage.goto(baseURL);
   await favoritePage.getByRole('button', { name: t("CLS 結果報告"), exact: true }).click();
   await favoritePage.getByRole('button', { name: t("加入最愛"), exact: true }).click();
   assert.equal((await saved(favoritePage)).length, 1);
   assert.equal((await saved(favoritePage))[0].clsScore, null);
+  await favoritePage.clock.runFor(500);
   readyScore = true;
   await favoritePage.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await favoritePage.clock.runFor(500);
+  assert.equal((await saved(favoritePage))[0].clsScore, null, 'focus must not bypass the pending-score cooldown');
+  await favoritePage.clock.fastForward(30_000);
   await favoritePage.waitForFunction(() => JSON.parse(localStorage.getItem('cls_saved_locations') || '[]')[0]?.clsScore === 80);
   await favoriteContext.close();
 
@@ -361,6 +367,7 @@ try {
   await testLanguageUI(browser, prepare, baseURL);
   await testNavigationUI(browser, prepare, baseURL);
   await testProfileUI(browser, prepare, baseURL);
+  await testHistoryUI(browser, prepare, baseURL);
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log('Field UI checks passed: restored explicit field recording, inert background shortcuts, structured observations and explicit save, preserved historical visits/evidence, mobile/desktop layout, favorites, delayed CLS, legacy scores and offline deletion.');
 } catch (error) {

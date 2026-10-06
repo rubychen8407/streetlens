@@ -29,6 +29,8 @@ try {
   assert.equal(body.evidence[0].id, "photo-1");
   assert.equal(body.evidence[0].note, "路口視線");
   assert.equal("storageKey" in body.evidence[0], false, "local IndexedDB keys must not be persisted remotely");
+  await assert.rejects(persistAssessment('workspace-1', { ...assessment, historySummary:true }, []), /full saved assessment/);
+  assert.equal(requests.length,1,'a partial history projection cannot be uploaded over a complete report');
   console.log("Photo storage checks passed: metadata syncs, image bytes stay local.");
 } finally {
   globalThis.fetch = originalFetch;

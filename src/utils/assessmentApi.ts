@@ -36,6 +36,7 @@ export async function persistAssessment(
   evidenceDrafts: EvidencePhotoDraft[],
   signal?: AbortSignal,
 ): Promise<PersistAssessmentResult> {
+  if (assessment.historySummary) throw new Error('Load the full saved assessment before persisting it');
   const response = await fetch("/api/assessments", {
     method: "POST",
     signal,
@@ -45,6 +46,7 @@ export async function persistAssessment(
       assessment: {
         ...assessment,
         evidence: undefined,
+        historySummary: undefined,
       },
       evidence: evidenceMetadata(assessment.evidence || []),
     }),
@@ -66,6 +68,29 @@ export async function listPersistedAssessments(workspaceId: string): Promise<Sav
   const response = await fetch("/api/assessments?workspaceId=" + encodeURIComponent(workspaceId));
   if (!response.ok) return [];
   return await response.json() as SavedLocation[];
+}
+
+export async function listAssessmentSummaryPage(workspaceId: string, cursor: string | null = null, signal?: AbortSignal): Promise<{ records: SavedLocation[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ workspaceId, view: 'summary', limit: '20' });
+  if (cursor) params.set('cursor', cursor);
+  const response = await fetch('/api/assessments?' + params, { signal });
+  if (!response.ok) throw new Error('History unavailable');
+  const body = await response.json();
+  // Keep compatibility with an older backend during a rolling deployment.
+  return Array.isArray(body) ? { records: body, nextCursor: null } : body;
+}
+
+export async function getPersistedAssessment(workspaceId: string, id: string, signal?: AbortSignal): Promise<SavedLocation> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timeout = setTimeout(abort, 20_000);
+  if (signal?.aborted) abort();
+  signal?.addEventListener('abort', abort, { once:true });
+  try {
+    const response = await fetch('/api/assessments/' + encodeURIComponent(id) + '?workspaceId=' + encodeURIComponent(workspaceId), { signal:controller.signal });
+    if (!response.ok) throw new Error('Saved report unavailable');
+    return { ...await response.json(), historySummary: false };
+  } finally { clearTimeout(timeout); signal?.removeEventListener('abort',abort); }
 }
 
 export async function deletePersistedAssessment(workspaceId: string, id: string, signal?: AbortSignal): Promise<boolean> {

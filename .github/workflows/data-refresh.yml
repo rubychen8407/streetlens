@@ -1,9 +1,11 @@
-name: Data refresh
+name: Manual data refresh
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '20 19 * * *' # 03:20 Asia/Taipei (UTC+8)
+
+concurrency:
+  group: streetlens-data-refresh
+  cancel-in-progress: false
 
 jobs:
   refresh:

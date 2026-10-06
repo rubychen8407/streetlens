@@ -23,8 +23,7 @@ import {
   Database,
   UserRound,
 } from 'lucide-react';
-import { StreetTelemetry } from './StreetTelemetry';
-import { LocationCoord, StreetAssessmentResponse } from '../types';
+import { LocationCoord } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
 import { CARTO_STORAGE_KEY, getActiveCartoKey } from './ScoutMap';
 
@@ -33,12 +32,10 @@ interface FloatingControlsProps {
   currentStreetName: string;
   district: string;
   city: string;
-  assessment?: StreetAssessmentResponse | null;
   isLoadingScore: boolean;
   scoreStatus: string;
   onRetryScore: () => void;
   clsScore: number | null;
-  grade: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   isLocatingGPS: boolean;
   onLocateMe: () => void;
   onSelectCoordinate: (coord: LocationCoord, streetName: string, district?: string, city?: string) => void;
@@ -80,8 +77,6 @@ export function FloatingControls({
   city,
   clsScore,
   isLoadingScore, scoreStatus, onRetryScore,
-  assessment,
-  grade,
   isLocatingGPS,
   onLocateMe,
   onSelectCoordinate,
@@ -258,7 +253,6 @@ export function FloatingControls({
         <DockButton label={t('資料狀態')} active={!profileOpen && activeDock === 'settings'} onClick={onOpenSettings}><Database size={21} /></DockButton>
       </nav>
       <ProfileSettings open={profileOpen} onClose={() => setProfileOpen(false)} />
-      <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenReport} />
       {/* LOCATION SELECTOR */}
       <div className="search-toolbar pointer-events-auto">
         <div className="location-selector w-full max-w-3xl flex items-center gap-2">

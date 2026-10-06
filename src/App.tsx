@@ -966,7 +966,6 @@ export default function App() {
       <FloatingControls
         activeDock={isWalkOpen ? 'walk' : !isSheetOpen ? null : workspaceView === 'assessment' || workspaceView === 'report' ? 'report' : workspaceView === 'field' || workspaceView === 'settings' ? workspaceView : null}
         onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
-        assessment={assessment}
         isLoadingScore={isLoadingBaseline}
         scoreStatus={baselineSummary}
         onRetryScore={() => activeSavedAssessmentId ? retrySavedScores() : handleAutoFetchBaseline()}
@@ -974,7 +973,6 @@ export default function App() {
         district={district}
         city={city}
         clsScore={clsScore}
-        grade={clsGrade}
         isLocatingGPS={isLocatingGPS}
         onLocateMe={handleLocateMe}
         onSelectCoordinate={(coord, name, dist, c) => {

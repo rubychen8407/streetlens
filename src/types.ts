@@ -123,11 +123,25 @@ export interface POIMarker {
   id: string;
   name: string;
   category: 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
+  amenityType?: string;
+  source?: string;
   lat: number;
   lng: number;
   distanceMeters: number;
   scale?: number;
   note?: string;
+}
+
+// 地圖圖層啟用設定
+export interface MapActiveLayers {
+  walkingRadius: boolean;
+  streetScores: boolean;
+  pois: boolean;
+  c1Safety: boolean;
+  c2Amenity: boolean;
+  c3Transit: boolean;
+  c4Green: boolean;
+  c5Vitality: boolean;
 }
 
 // 街道段評分覆蓋線
@@ -376,5 +390,10 @@ export interface StreetAssessmentResponse {
     streetLightCount300m: number | null;
     officialParkCount800m: number;
     officialParkNearestDistance800m: number | null;
+    marketNearestDistance?: number | null;
+    marketCount1200m?: number;
+    aedCount500m?: number;
+    fireHydrantCount500m?: number;
+    coolingPointCount1200m?: number;
   };
 }

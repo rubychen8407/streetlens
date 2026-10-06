@@ -234,7 +234,7 @@ async function main() {
     "bikeLanes",
     "markets",
     "coolingPoints",
-    "AED",
+    "aed",
     "hydrants",
     "fireStations",
   ]);

@@ -15,12 +15,22 @@ export function usePanelFocus(open: boolean, onClose: () => void, dismissible = 
       if (event.key === 'Escape' && dismissibleRef.current && panelRef.current?.contains(document.activeElement)) {
         event.preventDefault();
         closeRef.current();
+        const target = (opener?.isConnected && opener !== document.body)
+          ? opener
+          : document.querySelector<HTMLElement>('button[aria-label="CLS 評估"]');
+        target?.focus({ preventScroll: true });
       }
     };
     document.addEventListener('keydown', escape);
     return () => {
       document.removeEventListener('keydown', escape);
-      if (opener?.isConnected) opener.focus({ preventScroll: true });
+      const target = (opener?.isConnected && opener !== document.body)
+        ? opener
+        : document.querySelector<HTMLElement>('button[aria-label="CLS 評估"]');
+      target?.focus({ preventScroll: true });
+      if (document.activeElement !== target) {
+        target?.focus();
+      }
     };
   }, [open]);
   return panelRef;

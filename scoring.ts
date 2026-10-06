@@ -234,9 +234,13 @@ function referenceRelativeScore(
   value: number | undefined,
   referenceValues: number[] | undefined,
   direction: "higher_is_better" | "lower_is_better",
+  fallbackMedian?: number,
 ): number | null {
   if (!Number.isFinite(value)) return null;
-  const median = medianValue(referenceValues);
+  let median = medianValue(referenceValues);
+  if (median == null && fallbackMedian != null) {
+    median = fallbackMedian;
+  }
   if (median == null) return null;
 
   const numericValue = Number(value);
@@ -279,8 +283,8 @@ export function validateAssessmentIntegrity(assessment: AssessmentScores): { val
     }
   }
 
-  if (assessment.overall !== null && categories.some((category) => category.score === null)) {
-    errors.push("overall must be null when any category score is unavailable");
+  if (assessment.overall !== null && categories.every((category) => category.score === null)) {
+    errors.push("overall must be null when all category scores are unavailable");
   }
   if (assessment.overall !== null && (!Number.isFinite(assessment.overall) || assessment.overall < 0 || assessment.overall > 100)) {
     errors.push("overall must be null or within 0-100");
@@ -616,7 +620,10 @@ export function calculateAssessment(
         : "low",
       status: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? "available" : "unavailable",
       retrievedAt: c3TransitMetrics?.retrievedAt,
-      scoringMethod: "raw_observation",
+      referenceSampleSize: normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0,
+      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
+        ? ((normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
+        : "not_scored",
       availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? undefined : "no_observation",
     },
     {

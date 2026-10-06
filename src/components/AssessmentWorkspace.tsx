@@ -1,13 +1,130 @@
 import { t, bilingual, dateLocale, displayPlace } from '../i18n';
 import { usePanelFocus } from '../hooks/usePanelFocus';
 import { useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, MapPin, Save, Database, Star, Trash2, ArrowLeft, Loader2, Camera, Images, Sparkles, X } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  MapPin,
+  Save,
+  Database,
+  Star,
+  Trash2,
+  ArrowLeft,
+  Loader2,
+  Camera,
+  Images,
+  Sparkles,
+  X,
+  ShieldCheck,
+  Store,
+  Train,
+  Trees,
+  Users,
+  Activity,
+  TrendingUp,
+  TrendingDown,
+} from 'lucide-react';
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 import { favoriteKey, groupSavedStreets } from '../utils/savedLocations';
 import { StreetReport } from './StreetReport';
 
 type View = 'assessment' | 'report' | 'field' | 'saved' | 'settings';
+
+function LivabilityRadarChart({ scores }: { scores?: { c1?: number | null; c2?: number | null; c3?: number | null; c4?: number | null; c5?: number | null } }) {
+  const cx = 110;
+  const cy = 100;
+  const radius = 68;
+  const axes = [
+    { key: 'c1' as const, label: t('安全 C1'), angle: -Math.PI / 2 },
+    { key: 'c2' as const, label: t('機能 C2'), angle: -Math.PI / 2 + (2 * Math.PI) / 5 },
+    { key: 'c3' as const, label: t('交通 C3'), angle: -Math.PI / 2 + (4 * Math.PI) / 5 },
+    { key: 'c4' as const, label: t('綠意 C4'), angle: -Math.PI / 2 + (6 * Math.PI) / 5 },
+    { key: 'c5' as const, label: t('社區 C5'), angle: -Math.PI / 2 + (8 * Math.PI) / 5 },
+  ];
+
+  const points = axes.map(axis => {
+    const val = Math.min(100, Math.max(10, scores?.[axis.key] ?? 50));
+    const r = (val / 100) * radius;
+    const x = cx + r * Math.cos(axis.angle);
+    const y = cy + r * Math.sin(axis.angle);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  return (
+    <div className="flex justify-center py-2">
+      <svg width="220" height="200" viewBox="0 0 220 200" className="overflow-visible select-none">
+        {[0.25, 0.5, 0.75, 1].map((scale) => {
+          const ringPoints = axes.map(axis => {
+            const x = cx + radius * scale * Math.cos(axis.angle);
+            const y = cy + radius * scale * Math.sin(axis.angle);
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+          }).join(' ');
+          return (
+            <polygon
+              key={scale}
+              points={ringPoints}
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="1"
+            />
+          );
+        })}
+        {axes.map(axis => (
+          <line
+            key={axis.key}
+            x1={cx}
+            y1={cy}
+            x2={cx + radius * Math.cos(axis.angle)}
+            y2={cy + radius * Math.sin(axis.angle)}
+            stroke="rgba(255,255,255,0.12)"
+            strokeWidth="1"
+          />
+        ))}
+        <polygon
+          points={points}
+          fill="rgba(212, 249, 113, 0.22)"
+          stroke="#d4f971"
+          strokeWidth="2.5"
+        />
+        {axes.map(axis => {
+          const val = Math.min(100, Math.max(10, scores?.[axis.key] ?? 50));
+          const r = (val / 100) * radius;
+          const x = cx + r * Math.cos(axis.angle);
+          const y = cy + r * Math.sin(axis.angle);
+          return (
+            <circle
+              key={axis.key}
+              cx={x}
+              cy={y}
+              r="3.5"
+              fill="#d4f971"
+              stroke="#0e131a"
+              strokeWidth="1.5"
+            />
+          );
+        })}
+        {axes.map(axis => {
+          const x = cx + (radius + 20) * Math.cos(axis.angle);
+          const y = cy + (radius + 14) * Math.sin(axis.angle);
+          return (
+            <text
+              key={axis.key}
+              x={x}
+              y={y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="text-sm font-bold fill-slate-200"
+              style={{ fontSize: '14px' }}
+            >
+              {axis.label}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
 
 interface AssessmentWorkspaceProps {
   view: View;
@@ -142,7 +259,7 @@ export function AssessmentWorkspace({
   const unavailableCategoryCount = categoryScores.filter((category) => category.score === null).length;
 
   return (
-    <aside ref={panelRef} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
+    <aside ref={panelRef} aria-label={view === 'report' ? t("街道結果報告") : view === 'saved' ? t("Street Library") : view === 'settings' ? t("資料狀態") : t("街道評估面板")} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -177,178 +294,266 @@ export function AssessmentWorkspace({
             {view === 'field' && <div className="grid grid-cols-2 gap-1.5">
               {[t("觀察"), t("儲存")].map((label, index) => <button key={t(label)} onClick={() => setStep((index + 2) as 2|3)} aria-current={step === index + 2 ? 'step' : undefined} className="rounded-xl py-2 text-sm border border-white/10">{t(label)}</button>)}
             </div>}
-            {view === 'assessment' && <section>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm uppercase tracking-wider text-slate-300 font-bold">{t("Objective data")}</h3>
-                <button onClick={onOpenDataLogs} className="text-sm text-slate-300 hover:text-slate-300 flex items-center gap-1">{t("Data status")} <ChevronRight className="w-3 h-3" /></button>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowScoreDetails(v => !v)}
-                className="mt-3 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-left hover:bg-white/[0.06]"
-                aria-expanded={showScoreDetails}
-              >
+            {view === 'assessment' && (
+              <section className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-200">{t("Why this score?")}</span>
-                  <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform ${showScoreDetails ? 'rotate-90' : ''}`} />
+                  <h3 className="text-base uppercase tracking-wider text-slate-200 font-bold flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-[#d4f971]" />
+                    {t("Objective data")}
+                  </h3>
+                  <button onClick={onOpenDataLogs} className="text-sm text-slate-300 hover:text-white flex items-center gap-1">
+                    {t("Data status")} <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <div className="text-sm text-slate-300 mt-1">{t("See the source-backed category scores and factor provenance.")}</div>
-              </button>
-              {assessment?.scores && (
-                <div className="mt-2 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-slate-300">{t("Data quality")}</span>
-                    <span className="text-sm text-slate-300">
-                      {observedCategoryCount}  {t("observed ·")} {estimatedCategoryCount}  {t("estimated ·")} {unavailableCategoryCount}  {t("unavailable")} </span>
-                  </div>
-                  {assessment.scores.estimatedCategoryCount > 0 ? (
-                    <div className="mt-1 text-sm leading-relaxed text-amber-200/80">
-                       {t("Estimated categories use persisted real reference observations, not fabricated street-level values.")} </div>
-                  ) : (
-                    <div className="mt-1 text-sm leading-relaxed text-slate-300">
-                       {t("All five categories currently use local source-backed observations.")} </div>
-                  )}
-                </div>
-              )}
-              {showScoreDetails && (
-                <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/10 p-3 space-y-2">
-                  {(['C1','C2','C3','C4','C5'] as const).map(category => {
-                    const categoryKey = category.toLowerCase() as 'c1' | 'c2' | 'c3' | 'c4' | 'c5';
-                    const score = assessment?.scores[categoryKey]?.score ?? null;
-                    const factors = assessment?.scores[categoryKey]?.factors || [];
-                    return (
-                      <div key={category} className="rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-bold text-slate-300">{category}</span>
-                          <div className="flex items-center gap-1.5">
-                            {assessment?.scores[categoryKey]?.mode === 'estimated' && (
-                              <span className="text-sm font-semibold text-amber-300">{t("推估")}</span>
-                            )}
-                            <span className="text-sm font-mono font-bold text-white">{score ?? '—'}</span>
-                          </div>
-                        </div>
-                        <div className="mt-1.5 space-y-1">
-                          {factors.slice(0, 4).map(item => (
-                            <div key={t(item.indicator)} className="rounded-lg bg-black/10 px-2 py-1.5 text-sm">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="truncate text-slate-300">{t(item.indicator)}</span>
-                                <span className={item.status === 'available' ? 'text-slate-300' : 'text-slate-300'}>
-                                  {item.value ?? 'N/A'}{item.unit ? ' ' + t(item.unit) : ''}
-                                </span>
+
+                {/* Dashboard Card 1: 5-Dimension Radar Chart & Category Scores Matrix */}
+                {assessment?.scores && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4 space-y-4 shadow-xl">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                      <span className="text-sm font-bold text-white flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-[#d4f971]" />
+                        {t("宜居面向雷達看板")}
+                      </span>
+                      <span className="text-sm text-slate-300">
+                        {observedCategoryCount} {t("observed ·")} {estimatedCategoryCount} {t("estimated ·")} {unavailableCategoryCount} {t("unavailable")}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                      <LivabilityRadarChart
+                        scores={{
+                          c1: assessment.scores.c1?.score,
+                          c2: assessment.scores.c2?.score,
+                          c3: assessment.scores.c3?.score,
+                          c4: assessment.scores.c4?.score,
+                          c5: assessment.scores.c5?.score,
+                        }}
+                      />
+
+                      {/* 5 Dimensions Progress Matrix */}
+                      <div className="space-y-2.5">
+                        {[
+                          { key: 'c1', label: 'C1 安全', score: assessment.scores.c1, icon: ShieldCheck, color: '#f87171', barColor: 'bg-rose-400' },
+                          { key: 'c2', label: 'C2 生活機能', score: assessment.scores.c2, icon: Store, color: '#fbbf24', barColor: 'bg-amber-400' },
+                          { key: 'c3', label: 'C3 大眾交通', score: assessment.scores.c3, icon: Train, color: '#60a5fa', barColor: 'bg-sky-400' },
+                          { key: 'c4', label: 'C4 綠意環境', score: assessment.scores.c4, icon: Trees, color: '#34d399', barColor: 'bg-emerald-400' },
+                          { key: 'c5', label: 'C5 社區活力', score: assessment.scores.c5, icon: Users, color: '#c084fc', barColor: 'bg-purple-400' },
+                        ].map((cat) => {
+                          const val = cat.score?.score;
+                          const pct = val != null ? Math.min(100, Math.max(0, val)) : 0;
+                          return (
+                            <div key={cat.key} className="rounded-xl bg-white/[0.025] border border-white/[0.05] p-2.5 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <cat.icon className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
+                                  <span className="text-sm font-semibold text-slate-200">{cat.label}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {cat.score?.mode === 'estimated' && (
+                                    <span className="text-sm px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30">
+                                      {t("推估")}
+                                    </span>
+                                  )}
+                                  <span className="text-sm font-mono font-bold text-white">{val ?? '—'}</span>
+                                </div>
                               </div>
-                              <div className="mt-0.5 flex items-center justify-between gap-2 text-sm text-slate-300">
-                                <span className="truncate">{t(item.source || 'Source unavailable')}</span>
-                                <span className="shrink-0">
-                                  {t(item.method)} · {t(item.confidence || 'low')} · {formatFreshness(item.retrievedAt)}
-                                </span>
+                              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-500 ${cat.barColor}`} style={{ width: `${pct}%` }} />
                               </div>
                             </div>
-                          ))}
-                          {factors.length === 0 && <div className="text-sm text-slate-300">{t("No factor details available.")}</div>}
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                  <div className="text-sm leading-relaxed text-slate-300">
-                     {t("CLS is calculated from the source-backed assessment model. Field observations are recorded separately and are not silently added to the external-data score.")} </div>
-                </div>
-              )}
-              {!assessment && (pendingAssessmentSources.length > 0 || baselineSummary) && (
-                <div className="mb-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-3">
-                  <div className="text-sm font-bold text-amber-100">{t("External data status")}</div>
-                  <div className="mt-1 text-sm leading-relaxed text-slate-300">{t(baselineSummary)}</div>
-                  {pendingAssessmentSources.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {pendingAssessmentSources.map(source => (
-                        <span key={t(source)} className="rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1 text-sm text-slate-300">{t(source)}</span>
-                      ))}
                     </div>
-                  )}
-                  <div className="mt-2 text-sm leading-relaxed text-slate-300">{t("Scoring data is read from persisted source snapshots only. No placeholder values are shown while background refresh is pending.")}</div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                {dataCards.map(([label, item, category]) => (
-                  <div key={t(label)} className="rounded-2xl bg-white/[0.045] border border-white/5 p-3">
-                    <div className="text-sm text-slate-300">{t(label)} · {category}</div>
-                    <div className="mt-1 text-sm font-bold">
-                      {item?.value != null
-                        ? item.value + ' ' + t(item.unit)
-                        : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
-                          ? t("No mapped inundation")
-                          : 'N/A'}
-                    </div>
-                    <div className={`mt-1 text-sm ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}`}>
-                      {item?.status === 'available'
-                        ? t("Source data available")
-                        : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
-                          ? t("Official model has no mapped area here")
-                          : t("Data unavailable")}
-                    </div>
-                    {item && (
-                      <div className="mt-1 text-sm text-slate-300 truncate" title={`${t(item.source || 'Unknown source')} · ${item.retrievedAt || t("not retrieved")}`}>
-                        {t(item.source || 'Unknown source')} · {formatFreshness(item.retrievedAt)}
+
+                    {assessment.scores.estimatedCategoryCount > 0 ? (
+                      <div className="text-sm leading-relaxed text-amber-200/80 pt-1">
+                        {t("Estimated categories use persisted real reference observations, not fabricated street-level values.")}
+                      </div>
+                    ) : (
+                      <div className="text-sm leading-relaxed text-slate-300 pt-1">
+                        {t("All five categories currently use local source-backed observations.")}
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-              {assessment?.officialServiceMetrics && (
-                <div className="mt-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.04] p-3">
-                  <div className="text-sm font-bold text-emerald-100">{t("Official local services")}</div>
-                  <div className="mt-1 text-sm leading-relaxed text-slate-300">
-                     {t("Persisted official inventories near this location. These values are source evidence; only metrics defined by the scoring model affect CLS.")} </div>
-                  <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    {[
-                      ['YouBike', assessment.officialServiceMetrics.youBikeNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.youBikeNearestDistance) + ' m'],
-                      [t("YouBike bikes"), assessment.officialServiceMetrics.youBikeAvailableBikes == null ? '—' : String(assessment.officialServiceMetrics.youBikeAvailableBikes)],
-                      [t("Bike lane · 500m"), Math.round(assessment.officialServiceMetrics.bikeLaneLength500m) + ' m'],
-                      [t("Sidewalk coverage · 500m"), assessment.officialServiceMetrics.sidewalkCoverage500mPct == null ? '—' : assessment.officialServiceMetrics.sidewalkCoverage500mPct.toFixed(1) + '%'],
-                      [t("Medical"), assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
-                      [t("Bus stop"), assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
-                      [t("MRT station"), assessment.officialServiceMetrics.mrtStationNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.mrtStationNearestDistance) + ' m'],
-                      [t("Libraries · 800m"), String(assessment.officialServiceMetrics.libraryCount800m)],
-                      [t("Public toilets · 800m"), String(assessment.officialServiceMetrics.publicToiletCount800m)],
-                      [t("Street lights · 300m"), assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : String(assessment.officialServiceMetrics.streetLightCount300m)],
-                      [t("Parks · 800m"), String(assessment.officialServiceMetrics.officialParkCount800m)],
-                    ].map(([label, value]) => (
-                      <div key={t(label)} className="rounded-xl bg-white/[0.03] border border-white/5 px-2.5 py-2">
-                        <div className="text-sm text-slate-300">{t(label)}</div>
-                        <div className="mt-0.5 text-sm font-semibold text-slate-300">{value}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                )}
 
-              {assessment?.historicalFloodEvents && (
-                <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/10 p-3">
-                  <div className="text-sm font-bold text-slate-300">{t("Historical flood records")}</div>
-                  <div className="mt-1 text-sm leading-relaxed text-slate-300">
-                     {t("Official historical inundation records near this location. These records are shown as evidence and do not directly change CLS.")} </div>
-                  {assessment.historicalFloodEvents.length > 0 ? (
-                    <div className="mt-2 space-y-1.5">
-                      {assessment.historicalFloodEvents.slice(0, 5).map((event, index) => (
-                        <div key={event.eventDate + '|' + event.address + '|' + index} className="rounded-xl bg-white/[0.03] px-2.5 py-2">
-                          <div className="flex items-center justify-between gap-2 text-sm">
-                            <span className="font-semibold text-slate-300">{event.eventDate || t("Date unavailable")}</span>
-                            <span className="shrink-0 text-slate-300">
-                              {event.depthCm != null ? event.depthCm + ' cm' : t("Depth unavailable")}
-                            </span>
+                {/* Dashboard Card 2: Interactive Accordion for Factor Provenance (Required by tests) */}
+                <button
+                  type="button"
+                  onClick={() => setShowScoreDetails(v => !v)}
+                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-left hover:bg-white/[0.06] transition-colors"
+                  aria-expanded={showScoreDetails}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-200">{t("Why this score?")}</span>
+                    <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform ${showScoreDetails ? 'rotate-90' : ''}`} />
+                  </div>
+                  <div className="text-sm text-slate-300 mt-1">{t("See the source-backed category scores and factor provenance.")}</div>
+                </button>
+
+                {showScoreDetails && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3.5 space-y-3">
+                    {(['C1','C2','C3','C4','C5'] as const).map(category => {
+                      const categoryKey = category.toLowerCase() as 'c1' | 'c2' | 'c3' | 'c4' | 'c5';
+                      const score = assessment?.scores[categoryKey]?.score ?? null;
+                      const factors = assessment?.scores[categoryKey]?.factors || [];
+                      return (
+                        <div key={category} className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-bold text-slate-200">{category}</span>
+                            <div className="flex items-center gap-1.5">
+                              {assessment?.scores[categoryKey]?.mode === 'estimated' && (
+                                <span className="text-sm font-semibold text-amber-300">{t("推估")}</span>
+                              )}
+                              <span className="text-sm font-mono font-bold text-white">{score ?? '—'}</span>
+                            </div>
                           </div>
-                          <div className="mt-0.5 text-sm text-slate-300">
-                            {(event.address || event.townName || t("Location unavailable")) + ' · ' + Math.round(event.distanceMeters) + ' m'}
+                          <div className="mt-2 space-y-1.5">
+                            {factors.slice(0, 4).map(item => (
+                              <div key={t(item.indicator)} className="rounded-lg bg-black/20 px-3 py-2 text-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="truncate text-slate-200 font-medium">{t(item.indicator)}</span>
+                                  <span className={item.status === 'available' ? 'text-white font-mono' : 'text-slate-300 font-mono'}>
+                                    {item.value ?? 'N/A'}{item.unit ? ' ' + t(item.unit) : ''}
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex items-center justify-between gap-2 text-sm text-slate-300">
+                                  <span className="truncate">{t(item.source || 'Source unavailable')}</span>
+                                  <span className="shrink-0">
+                                    {t(item.method)} · {t(item.confidence || 'low')} · {formatFreshness(item.retrievedAt)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                            {factors.length === 0 && <div className="text-sm text-slate-300">{t("No factor details available.")}</div>}
                           </div>
+                        </div>
+                      );
+                    })}
+                    <div className="text-sm leading-relaxed text-slate-300">
+                      {t("CLS is calculated from the source-backed assessment model. Field observations are recorded separately and are not silently added to the external-data score.")}
+                    </div>
+                  </div>
+                )}
+
+                {!assessment && (pendingAssessmentSources.length > 0 || baselineSummary) && (
+                  <div className="mb-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-3.5">
+                    <div className="text-sm font-bold text-amber-100">{t("External data status")}</div>
+                    <div className="mt-1 text-sm leading-relaxed text-slate-300">{t(baselineSummary)}</div>
+                    {pendingAssessmentSources.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {pendingAssessmentSources.map(source => (
+                          <span key={t(source)} className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-1 text-sm text-slate-300">{t(source)}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2 text-sm leading-relaxed text-slate-300">{t("Scoring data is read from persisted source snapshots only. No placeholder values are shown while background refresh is pending.")}</div>
+                  </div>
+                )}
+
+                {/* Dashboard Card 3: Seven Primary Factor KPI Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {dataCards.map(([label, item, category]) => (
+                    <div key={t(label)} className="rounded-2xl bg-white/[0.045] border border-white/[0.06] p-3.5 space-y-1">
+                      <div className="text-sm text-slate-300 font-medium">{t(label)} · {category}</div>
+                      <div className="text-base font-bold text-white">
+                        {item?.value != null
+                          ? item.value + ' ' + t(item.unit)
+                          : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
+                            ? t("No mapped inundation")
+                            : 'N/A'}
+                      </div>
+                      <div className={`text-sm ${item?.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {item?.status === 'available'
+                          ? t("Source data available")
+                          : label === 'Flood risk' && floodSourceStatus?.status === 'empty'
+                            ? t("Official model has no mapped area here")
+                            : t("Data unavailable")}
+                      </div>
+                      {item && (
+                        <div className="text-sm text-slate-300 truncate" title={`${t(item.source || 'Unknown source')} · ${item.retrievedAt || t("not retrieved")}`}>
+                          {t(item.source || 'Unknown source')} · {formatFreshness(item.retrievedAt)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Dashboard Card 4: Official City Infrastructure Services */}
+                {assessment?.officialServiceMetrics && (
+                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.04] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-bold text-emerald-100 flex items-center gap-2">
+                        <Store className="w-4 h-4 text-emerald-300" />
+                        {t("Official local services")}
+                      </div>
+                      <span className="text-sm text-emerald-300/80">{t("官方公開實體設施")}</span>
+                    </div>
+                    <div className="text-sm leading-relaxed text-slate-300">
+                      {t("Persisted official inventories near this location. These values are source evidence; only metrics defined by the scoring model affect CLS.")}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                      {[
+                        ['YouBike', assessment.officialServiceMetrics.youBikeNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.youBikeNearestDistance) + ' m'],
+                        [t("YouBike bikes"), assessment.officialServiceMetrics.youBikeAvailableBikes == null ? '—' : String(assessment.officialServiceMetrics.youBikeAvailableBikes)],
+                        [t("Bike lane · 500m"), Math.round(assessment.officialServiceMetrics.bikeLaneLength500m) + ' m'],
+                        [t("Sidewalk coverage · 500m"), assessment.officialServiceMetrics.sidewalkCoverage500mPct == null ? '—' : assessment.officialServiceMetrics.sidewalkCoverage500mPct.toFixed(1) + '%'],
+                        [t("Medical"), assessment.officialServiceMetrics.medicalFacilityNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.medicalFacilityNearestDistance) + ' m'],
+                        [t("Bus stop"), assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
+                        [t("MRT station"), assessment.officialServiceMetrics.mrtStationNearestDistance == null ? '—' : Math.round(assessment.officialServiceMetrics.mrtStationNearestDistance) + ' m'],
+                        [t("Libraries · 800m"), String(assessment.officialServiceMetrics.libraryCount800m)],
+                        [t("Public toilets · 800m"), String(assessment.officialServiceMetrics.publicToiletCount800m)],
+                        [t("Street lights · 300m"), assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : String(assessment.officialServiceMetrics.streetLightCount300m)],
+                        [t("Parks · 800m"), String(assessment.officialServiceMetrics.officialParkCount800m)],
+                      ].map(([label, value]) => (
+                        <div key={t(label)} className="rounded-xl bg-white/[0.035] border border-white/5 p-2.5">
+                          <div className="text-sm text-slate-300">{t(label)}</div>
+                          <div className="mt-1 text-sm font-semibold font-mono text-white">{value}</div>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div className="mt-2 text-sm text-slate-300">{t("No historical inundation polygon was recorded within 500 m.")}</div>
-                  )}
-                  <div className="mt-2 text-sm text-slate-300">{t("Source: Taipei City Water Resources Department · historical inundation records")}</div>
-                </div>
-              )}
-            </section>}
+                  </div>
+                )}
+
+                {/* Dashboard Card 5: Historical Flood Resilience */}
+                {assessment?.historicalFloodEvents && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4 space-y-2">
+                    <div className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-sky-400" />
+                      {t("Historical flood records")}
+                    </div>
+                    <div className="text-sm leading-relaxed text-slate-300">
+                      {t("Official historical inundation records near this location. These records are shown as evidence and do not directly change CLS.")}
+                    </div>
+                    {assessment.historicalFloodEvents.length > 0 ? (
+                      <div className="space-y-2 pt-1">
+                        {assessment.historicalFloodEvents.slice(0, 5).map((event, index) => (
+                          <div key={event.eventDate + '|' + event.address + '|' + index} className="rounded-xl bg-white/[0.03] p-2.5">
+                            <div className="flex items-center justify-between gap-2 text-sm">
+                              <span className="font-semibold text-slate-200">{event.eventDate || t("Date unavailable")}</span>
+                              <span className="shrink-0 text-amber-300 font-mono">
+                                {event.depthCm != null ? event.depthCm + ' cm' : t("Depth unavailable")}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-sm text-slate-300">
+                              {(event.address || event.townName || t("Location unavailable")) + ' · ' + Math.round(event.distanceMeters) + ' m'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl">
+                        {t("No historical inundation polygon was recorded within 500 m.")}
+                      </div>
+                    )}
+                    <div className="text-sm text-slate-300">
+                      {t("Source: Taipei City Water Resources Department · historical inundation records")}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
             {view === 'field' && step === 2 && <section>
               <div className="mb-3">
                 <h3 className="text-sm uppercase tracking-wider text-slate-300 font-bold">{t("Your observation")}</h3>

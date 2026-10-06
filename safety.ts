@@ -272,6 +272,9 @@ function parseAccidentRow(row: Record<string, string>, retrievedAt: string): any
   };
 }
 
+let memoryAccidentsCache: { accidents: any[]; cachedAt: number } | null = null;
+const ACCIDENTS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 export async function fetchTaipeiSafetyData(
   lat: number,
   lng: number,
@@ -282,24 +285,29 @@ export async function fetchTaipeiSafetyData(
   const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
-    const response = await fetch(TAIPEI_ACCIDENT_URL, {
-      signal: controller.signal,
-      headers: { Accept: "text/csv,*/*", "User-Agent": "StreetLens/1.0" },
-    });
-    if (!response.ok) throw new Error(`Taipei accident resource HTTP ${response.status}`);
+    let allAccidents = memoryAccidentsCache?.accidents;
+    if (!allAccidents || (Date.now() - (memoryAccidentsCache?.cachedAt || 0)) > ACCIDENTS_CACHE_TTL_MS) {
+      const response = await fetch(TAIPEI_ACCIDENT_URL, {
+        signal: controller.signal,
+        headers: { Accept: "text/csv,*/*", "User-Agent": "StreetLens/1.0" },
+      });
+      if (!response.ok) throw new Error(`Taipei accident resource HTTP ${response.status}`);
 
-    const text = await response.text();
-    const rows = parseCsv(text);
-    const parsed = rows
-      .map((row) => parseAccidentRow(row, retrievedAt))
-      .filter(Boolean) as any[];
+      const text = await response.text();
+      const rows = parseCsv(text);
+      const parsed = rows
+        .map((row) => parseAccidentRow(row, retrievedAt))
+        .filter(Boolean) as any[];
 
-    const unique = new Map<string, any>();
-    for (const accident of parsed) {
-      if (!unique.has(accident.eventKey)) unique.set(accident.eventKey, accident);
+      const unique = new Map<string, any>();
+      for (const accident of parsed) {
+        if (!unique.has(accident.eventKey)) unique.set(accident.eventKey, accident);
+      }
+      allAccidents = [...unique.values()];
+      memoryAccidentsCache = { accidents: allAccidents, cachedAt: Date.now() };
     }
 
-    const accidents = [...unique.values()]
+    const accidents = allAccidents
       .map((accident) => ({
         ...accident,
         distanceMeters: haversineDistanceMeters(lat, lng, accident.lat, accident.lng),

@@ -199,33 +199,19 @@ export function ScoutMap({
     if (!mapInstance) return;
 
     const rotDeg = heading !== null && heading !== undefined ? heading : 0;
-    const showBeam = heading !== null && heading !== undefined;
 
-    // Custom Apple Maps style location dot with flashlight beam, dual pulse waves, and coordinates popup
+    // Custom Apple Maps style location dot with dual pulse waves and high-contrast core
     const userIcon = L.divIcon({
       className: 'ios-user-marker',
       html: `
         <div style="position: relative; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; user-select: none;">
-          <!-- Direction Flashlight Beam (rotates with device heading/compass) -->
-          ${
-            showBeam
-              ? `
-              <div 
-                style="position: absolute; width: 80px; height: 80px; top: -32px; pointer-events: none; transition: transform 0.3s ease-out; transform: rotate(${rotDeg}deg);"
-              >
-                <div class="flashlight-cone" style="width: 48px; height: 60px; margin: 0 auto; background: linear-gradient(to top, rgba(212, 249, 113, 0.25), rgba(212, 249, 113, 0.06), transparent);"></div>
-              </div>
-            `
-              : ''
-          }
-          
           <!-- Outer Radar Pulse Ring (Large) -->
           <div class="user-pulse-outer" style="position: absolute; width: 48px; height: 48px; border-radius: 9999px; background: rgba(212, 249, 113, 0.12);"></div>
 
           <!-- Middle Pulse Ring (Tight) -->
           <div class="user-pulse-inner" style="position: absolute; width: 30px; height: 30px; border-radius: 9999px; background: rgba(212, 249, 113, 0.22);"></div>
 
-          <!-- Solid Apple Blue Dot with White Border -->
+          <!-- Solid Apple Blue/Lime Dot with White Border -->
           <div style="position: relative; width: 22px; height: 22px; border-radius: 9999px; background: #D4F971; border: 3.5px solid #ffffff; box-shadow: 0 0 14px #D4F971, 0 3px 10px rgba(0, 0, 0, 0.4); z-index: 10;">
             <!-- Micro specular highlight -->
             <div style="position: absolute; top: 2px; left: 3px; width: 4px; height: 4px; border-radius: 9999px; background: rgba(255, 255, 255, 0.85);"></div>
@@ -282,23 +268,21 @@ export function ScoutMap({
     const targetIcon = L.divIcon({
       className: 'ios-target-marker',
       html: `
-        <div class="relative flex flex-col items-center cursor-grab active:cursor-grabbing select-none group" style="width: 36px; height: 50px;">
-          <!-- Drop Pin Head -->
-          <div class="w-8 h-8 rounded-full bg-[#1e2632] border-2 border-slate-400 shadow-[0_4px_12px_rgba(0,0,0,0.4)] flex items-center justify-center text-white transform group-hover:scale-110 transition-transform">
+        <div class="relative flex flex-col items-center cursor-grab active:cursor-grabbing select-none group" style="width: 36px; height: 44px;">
+          <!-- Drop Pin Head with subtle glow and crosshair target icon -->
+          <div class="w-8 h-8 rounded-full bg-[#1e2632] border-2 border-[#D4F971] shadow-[0_4px_16px_rgba(212,249,113,0.35),0_2px_8px_rgba(0,0,0,0.5)] flex items-center justify-center text-[#D4F971] transform group-hover:scale-115 transition-all">
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
               <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
             </svg>
           </div>
           <!-- Pin Needle Tip -->
-          <div style="width: 2px; height: 6px; background: #7e8b9b; margin-top: -1px;"></div>
+          <div style="width: 2px; height: 6px; background: #D4F971; margin-top: -1px; box-shadow: 0 0 4px rgba(212,249,113,0.6);"></div>
           <!-- Ground Shadow -->
-          <div style="width: 10px; height: 3px; background: rgba(0, 0, 0, 0.4); border-radius: 9999px; filter: blur(0.5px); margin-top: 1px;"></div>
-          <!-- Target Badge Label -->
-          <div class="target-badge-label">${t('🎯 評估地點')}</div>
+          <div style="width: 12px; height: 4px; background: rgba(0, 0, 0, 0.45); border-radius: 9999px; filter: blur(0.5px); margin-top: 1px;"></div>
         </div>
       `,
-      iconSize: [36, 50],
-      iconAnchor: [18, 46],
+      iconSize: [36, 44],
+      iconAnchor: [18, 42],
     });
 
     if (targetMarkerRef.current && mapInstance.hasLayer(targetMarkerRef.current)) {
@@ -327,13 +311,6 @@ export function ScoutMap({
       duration: 0.8,
     });
   }, [mapInstance, targetLocation.lat, targetLocation.lng]);
-
-  // Leaflet owns this marker DOM. Update its label without moving the map
-  // when the user switches languages.
-  useEffect(() => {
-    const label = targetMarkerRef.current?.getElement()?.querySelector('.target-badge-label');
-    if (label) label.textContent = t('🎯 評估地點');
-  }, [mapInstance, targetLocation.lat, targetLocation.lng, language]);
 
   // Update Walking Radius Circles (300m / 500m)
   useEffect(() => {

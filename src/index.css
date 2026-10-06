@@ -5,167 +5,198 @@
 @font-face { font-family: 'Plus Jakarta Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/plus-jakarta-sans-600.ttf') format('truetype'); }
 @font-face { font-family: 'Plus Jakarta Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/plus-jakarta-sans-700.ttf') format('truetype'); }
 
-/* iOS Map Style & Animations */
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.95);
-    opacity: 0.8;
+@layer base {
+  :root {
+    --canvas-bg: #0E131A;
+    --canvas-surface: #141A23;
+    --hud-surface: #1A212B;
+    --hud-surface-elevated: #1E2632;
+    --accent-chartreuse: #D4F971;
+    --steel-slate: #7E8B9B;
+    --hairline-border: rgba(255, 255, 255, 0.08);
+  }
+
+  body {
+    background-color: var(--canvas-bg);
+    color: #F1F5F9;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Tactical Chartreuse Halo & Glow */
+.halo-chartreuse {
+  box-shadow: 0 0 16px rgba(212, 249, 113, 0.45), 0 0 2px rgba(212, 249, 113, 0.8);
+}
+
+.halo-chartreuse-sm {
+  box-shadow: 0 0 8px rgba(212, 249, 113, 0.35);
+}
+
+.halo-pulse {
+  animation: tactical-halo-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tactical-halo-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 14px rgba(212, 249, 113, 0.5);
   }
   50% {
-    transform: scale(1.4);
-    opacity: 0.2;
-  }
-  100% {
-    transform: scale(1.6);
-    opacity: 0;
+    opacity: 0.65;
+    box-shadow: 0 0 4px rgba(212, 249, 113, 0.2);
   }
 }
 
-.user-loc-pulse {
-  animation: pulse-ring 2.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+/* Tactical HUD Card Base */
+.hud-card {
+  background-color: rgba(26, 33, 43, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem; /* 16px - 20px */
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.52), 0 1px 2px rgba(255, 255, 255, 0.03) inset;
 }
 
-@keyframes pulse-ring-glow {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.9;
-  }
-  60% {
-    transform: scale(1.6);
-    opacity: 0.25;
-  }
-  100% {
-    transform: scale(2.2);
-    opacity: 0;
-  }
+.hud-card-elevated {
+  background-color: rgba(30, 38, 50, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 1.25rem;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
 }
 
-.user-loc-glow {
-  animation: pulse-ring-glow 2s cubic-bezier(0.165, 0.84, 0.44, 1) infinite;
+/* Primary Action Button - Electric Chartreuse Lime Accent */
+.btn-tactical-primary {
+  background-color: #D4F971;
+  color: #0E131A;
+  font-weight: 700;
+  border-radius: 9999px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 12px rgba(212, 249, 113, 0.35);
+}
+.btn-tactical-primary:hover {
+  background-color: #e2fca0;
+  box-shadow: 0 4px 18px rgba(212, 249, 113, 0.55);
+  transform: translateY(-1px);
+}
+.btn-tactical-primary:active {
+  transform: translateY(0);
 }
 
-/* Direction flashlight cone */
-.flashlight-cone {
-  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+/* Cartographic street map tiles */
+.tactical-dark-map-tiles,
+.apple-map-dark-tiles {
+  filter: contrast(105%) brightness(98%);
+  background-color: #0E131A !important;
 }
 
-/* Leaflet DivIcon Overrides - Prevent default borders or hidden overflow */
-.ios-user-marker,
-.ios-target-marker {
+.tactical-light-map-tiles,
+.apple-map-light-tiles {
+  filter: contrast(102%) brightness(100%);
+  background-color: #eef2f6 !important;
+}
+
+.osm-fallback-dark {
+  filter: invert(100%) hue-rotate(180deg) brightness(73%) contrast(88%) saturate(25%);
+}
+
+.osm-fallback-light {
+  filter: contrast(102%) brightness(100%);
+}
+
+/* Leaflet Container Overrides */
+.leaflet-container {
+  background: #0E131A !important;
+}
+
+#app-root[data-map-theme="light"] .leaflet-container {
+  background: #eef2f6 !important;
+}
+
+/* Tactical Map Markers */
+.tactical-marker {
   background: transparent !important;
   border: none !important;
   overflow: visible !important;
 }
 
-/* User GPS Marker - Apple Maps Style Pulse & Core */
-.user-beacon-container {
-  position: relative;
-  width: 52px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  user-select: none;
+/* Tactical Pulse Rings */
+@keyframes tactical-radar-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  60% {
+    transform: scale(1.8);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
 }
 
-.user-pulse-outer {
+.user-pulse-chartreuse {
   position: absolute;
   width: 48px;
   height: 48px;
   border-radius: 9999px;
-  background: rgba(0, 122, 255, 0.28);
-  animation: pulse-ring-glow 2s cubic-bezier(0.165, 0.84, 0.44, 1) infinite;
+  background: rgba(212, 249, 113, 0.22);
+  animation: tactical-radar-pulse 2.2s cubic-bezier(0.165, 0.84, 0.44, 1) infinite;
 }
 
-.user-pulse-inner {
-  position: absolute;
-  width: 30px;
-  height: 30px;
+/* Custom scrollbar */
+.hud-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.hud-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hud-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(126, 139, 155, 0.35);
   border-radius: 9999px;
-  background: rgba(0, 122, 255, 0.38);
-  animation: pulse-ring 2.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+.hud-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 249, 113, 0.5);
 }
 
-.user-dot-core {
-  position: relative;
-  width: 20px;
-  height: 20px;
-  border-radius: 9999px;
-  background: #007AFF;
-  border: 3.5px solid #ffffff;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4), 0 0 14px rgba(0, 122, 255, 0.8);
-  z-index: 10;
-}
-
-.user-badge-label {
-  position: absolute;
-  top: 44px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #007AFF;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1.5px 8px;
-  border-radius: 9999px;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-  border: 1.5px solid #ffffff;
-  letter-spacing: 0.02em;
-  z-index: 20;
-}
-
-.target-badge-label {
-  position: absolute;
-  top: 36px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #e11d48;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1.5px 8px;
-  border-radius: 9999px;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-  border: 1.5px solid #ffffff;
-  letter-spacing: 0.02em;
-  z-index: 20;
-}
-
-/* Apple Maps Dark Mode Tile Filter (No API Key required, crystal clear) */
-.apple-map-dark-tiles {
-  filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(95%) saturate(80%);
-}
-
-.apple-map-light-tiles {
-  filter: contrast(102%) brightness(98%);
-}
-
-/* Hide default leaflet attribution to match minimal Apple Maps look (keep small or custom) */
+/* Leaflet attribution minimal */
 .leaflet-control-attribution {
   font-size: 9px !important;
-  background: rgba(0, 0, 0, 0.4) !important;
-  color: #a0aec0 !important;
+  background: rgba(14, 19, 26, 0.8) !important;
+  color: #7E8B9B !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 6px !important;
   padding: 2px 6px !important;
   margin: 4px !important;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
 }
 .leaflet-control-attribution a {
-  color: #cbd5e1 !important;
+  color: #94a3b8 !important;
   text-decoration: none !important;
 }
 
-/* Custom scrollbar for drawer */
-.drawer-scrollbar::-webkit-scrollbar {
-  width: 4px;
+/* Tactical Map Popup Overrides */
+.tactical-map-popup .leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 1.25rem !important;
 }
-.drawer-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+
+.tactical-map-popup .leaflet-popup-tip {
+  background: #141A23 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
-.drawer-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.4);
-  border-radius: 9999px;
+
+.tactical-map-popup .leaflet-popup-content {
+  margin: 0 !important;
+  line-height: normal !important;
 }

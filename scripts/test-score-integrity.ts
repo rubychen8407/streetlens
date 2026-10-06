@@ -22,6 +22,8 @@ assert.equal(percentileAssessment.overallMode, "estimated");
 assert.equal(percentileAssessment.c2.mode, "estimated");
 assert.equal(percentileAssessment.c2.estimationMethod, "regional_real_data_prior");
 assert.equal(percentileAssessment.c2.estimationReferenceSampleSize, 19);
+const percentileValidation = validateAssessmentIntegrity(percentileAssessment);
+assert.equal(percentileValidation.valid, true, percentileValidation.errors.join("; "));
 
 const unavailableAssessment = {
   ...emptyAssessment,

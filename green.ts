@@ -155,6 +155,21 @@ function processNearbyRows(
   return { nearbyRows, coordinateRowCount };
 }
 
+interface CachedTreeData {
+  format: "json" | "csv";
+  rowCount: number;
+  coordinateRowCount: number;
+  coordinateColumns: string[];
+  points: Array<{ lat: number; lng: number }>;
+  cachedAt: number;
+}
+
+const memoryTreeCache: Record<string, CachedTreeData | null> = {
+  streetTrees: null,
+  parkTrees: null,
+};
+const TREE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 async function fetchDatasetResource(
   resource: "streetTrees" | "parkTrees",
   lat: number,
@@ -162,35 +177,66 @@ async function fetchDatasetResource(
   radiusMeters: number,
   signal: AbortSignal,
 ): Promise<DatasetRowsResult & { nearbyRows: any[] }> {
-  const url = resource === "streetTrees" ? STREET_TREE_URL : PARK_TREE_URL;
-  const response = await fetch(url, {
-    signal,
-    headers: { Accept: "application/json,text/csv,*/*", "User-Agent": "StreetLens/1.0" },
-  });
-  if (!response.ok) throw new Error(`${resource} resource HTTP ${response.status}`);
-  const text = await response.text();
+  let cached = memoryTreeCache[resource];
+  if (!cached || (Date.now() - cached.cachedAt) > TREE_CACHE_TTL_MS) {
+    const url = resource === "streetTrees" ? STREET_TREE_URL : PARK_TREE_URL;
+    const response = await fetch(url, {
+      signal,
+      headers: { Accept: "application/json,text/csv,*/*", "User-Agent": "StreetLens/1.0" },
+    });
+    if (!response.ok) throw new Error(`${resource} resource HTTP ${response.status}`);
+    const text = await response.text();
 
-  let rows: any[];
-  let format: "json" | "csv";
-  try {
-    rows = extractRows(JSON.parse(text));
-    format = "json";
-  } catch {
-    rows = parseCsv(text);
-    format = "csv";
+    let rows: any[];
+    let format: "json" | "csv";
+    try {
+      rows = extractRows(JSON.parse(text));
+      format = "json";
+    } catch {
+      rows = parseCsv(text);
+      format = "csv";
+    }
+
+    const coordinateColumns = rows.length
+      ? Object.keys(rows[0]).filter((key) => /^(TWD97X|TWD97Y|lat|latitude|lng|longitude)$/i.test(key))
+      : [];
+
+    const extractedPoints: Array<{ lat: number; lng: number }> = [];
+    for (const row of rows) {
+      const coord = findCoordinate(row);
+      if (coord) extractedPoints.push(coord);
+    }
+
+    cached = {
+      format,
+      rowCount: rows.length,
+      coordinateRowCount: extractedPoints.length,
+      coordinateColumns,
+      points: extractedPoints,
+      cachedAt: Date.now(),
+    };
+    memoryTreeCache[resource] = cached;
   }
 
-  const coordinateColumns = rows.length
-    ? Object.keys(rows[0]).filter((key) => /^(TWD97X|TWD97Y|lat|latitude|lng|longitude)$/i.test(key))
-    : [];
-  const processed = processNearbyRows(rows, lat, lng, radiusMeters);
+  const nearbyRows: any[] = [];
+  for (const point of cached.points) {
+    const distanceMeters = haversineDistanceMeters(lat, lng, point.lat, point.lng);
+    if (distanceMeters <= radiusMeters) {
+      nearbyRows.push({
+        lat: point.lat,
+        lng: point.lng,
+        distanceMeters,
+      });
+    }
+  }
+  nearbyRows.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   return {
-    format,
-    rowCount: rows.length,
-    coordinateRowCount: processed.coordinateRowCount,
-    coordinateColumns,
-    nearbyRows: processed.nearbyRows,
+    format: cached.format,
+    rowCount: cached.rowCount,
+    coordinateRowCount: cached.coordinateRowCount,
+    coordinateColumns: cached.coordinateColumns,
+    nearbyRows,
   };
 }
 

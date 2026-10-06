@@ -2,6 +2,10 @@
 #app-root .tactical-dock .dock-button[aria-pressed="true"] { background: rgba(212,249,113,.14); border-color: rgba(212,249,113,.45); color: #d4f971; box-shadow: inset 0 0 0 1px rgba(212,249,113,.08); }
 .dock-tooltip { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); white-space: nowrap; pointer-events: none; visibility: hidden; opacity: 0; background: var(--hud-surface); color: var(--hud-text); border: 1px solid var(--hud-border); border-radius: 8px; padding: 7px 10px; font-size: 14px; line-height: 1.4; box-shadow: var(--hud-shadow); z-index: 10; }
 .dock-button:hover .dock-tooltip, .dock-button:focus-visible .dock-tooltip { visibility: visible; opacity: 1; }
+@media (max-width: 1023px) {
+  .tactical-dock > *:nth-child(-n+3) .dock-tooltip { left: 0; transform: none; }
+  .tactical-dock > *:nth-last-child(-n+3) .dock-tooltip { left: auto; right: 0; transform: none; }
+}
 @media (min-width: 1024px) {
   .dock-tooltip { bottom: auto; top: 50%; left: calc(100% + 18px); transform: translateY(-50%); }
 }

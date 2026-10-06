@@ -1,6 +1,7 @@
 import { t, displayPlace } from '../i18n';
 import { DockButton } from './DockButton';
 import { ProfileSettings } from './ProfileSettings';
+import { useTheme, setTheme } from '../utils/theme';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
@@ -16,11 +17,22 @@ import {
   Key,
   ShieldCheck,
   AlertCircle,
-  Crosshair,
+  LocateFixed,
   Copy,
   ExternalLink,
   Database,
   UserRound,
+  Layers,
+  Sun,
+  Moon,
+  BarChart3,
+  Star,
+  Settings,
+  Store,
+  Train,
+  Trees,
+  Users,
+  Activity,
 } from 'lucide-react';
 import { LocationCoord } from '../types';
 import { PRESET_EXPLORATION_LOCATIONS } from '../data/indicators';
@@ -47,6 +59,16 @@ interface FloatingControlsProps {
   currentLocation: LocationCoord;
   targetLocation: LocationCoord;
   accuracyRadius?: number;
+  activeLayers?: {
+    c1Safety: boolean;
+    c2Amenity: boolean;
+    c3Transit: boolean;
+    c4Green: boolean;
+    c5Vitality: boolean;
+    streetScores: boolean;
+    walkingRadius: boolean;
+  };
+  onToggleLayer?: (layerKey: any) => void;
 }
 
 // Helper to parse coordinate string (e.g. "25.033, 121.564" or "25.033 121.564")
@@ -87,14 +109,33 @@ export function FloatingControls({
   accuracyRadius,
   onOpenSaved,
   onOpenSettings,
+  activeLayers,
+  onToggleLayer,
 }: FloatingControlsProps) {
+  const theme = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [showLayerMenu, setShowLayerMenu] = useState(false);
+  const layerButtonRef = useRef<HTMLDivElement>(null);
   const [statusDismissed, setStatusDismissed] = useState(false);
+
   useEffect(() => {
     setStatusDismissed(false);
     const timer = window.setTimeout(() => setStatusDismissed(true), 6000);
     return () => window.clearTimeout(timer);
   }, [targetLocation.lat, targetLocation.lng]);
+
+  // Click outside to close layer popover
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (layerButtonRef.current && !layerButtonRef.current.contains(e.target as Node)) {
+        setShowLayerMenu(false);
+      }
+    };
+    if (showLayerMenu) {
+      document.addEventListener('pointerdown', handleOutside);
+      return () => document.removeEventListener('pointerdown', handleOutside);
+    }
+  }, [showLayerMenu]);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -244,12 +285,48 @@ export function FloatingControls({
   return (
     <div data-panel-open={isSheetOpen} className="tactical-controls pointer-events-none absolute inset-0 z-[500] flex flex-col justify-between p-3 sm:p-4 select-none">
       <nav className="tactical-dock hud-card" aria-label={t("地點功能")}>
-        <DockButton label={t('個人設定')} active={profileOpen} expanded={profileOpen} onClick={() => setProfileOpen(true)}><UserRound size={21} /></DockButton>
+        <DockButton
+          label={t('個人設定')}
+          active={profileOpen}
+          expanded={profileOpen}
+          onClick={() => setProfileOpen(true)}
+        >
+          <UserRound size={21} />
+        </DockButton>
+
+        <DockButton
+          label={t('實勘')}
+          active={!profileOpen && activeDock === 'walk'}
+          onClick={onOpenWalk}
+        >
+          <Footprints size={21} />
+        </DockButton>
+
+        <DockButton
+          label={t('CLS 結果報告')}
+          active={!profileOpen && activeDock === 'report'}
+          onClick={onOpenReport}
+        >
+          <BarChart3 size={21} />
+        </DockButton>
+
         <div className="dock-divider" />
-        <DockButton label={t('實勘')} active={!profileOpen && activeDock === 'walk'} onClick={onOpenWalk}><Footprints size={21} /></DockButton>
-        <DockButton label={t('CLS 結果報告')} active={!profileOpen && activeDock === 'report'} onClick={onOpenReport}><ClipboardList size={21} /></DockButton>
-        <DockButton label={t('環境觀察')} active={!profileOpen && activeDock === 'field'} onClick={onOpenField}><NotebookPen size={21} /></DockButton>
-        <DockButton label={t('資料狀態')} active={!profileOpen && activeDock === 'settings'} onClick={onOpenSettings}><Database size={21} /></DockButton>
+
+        <DockButton
+          label={t('環境觀察')}
+          active={!profileOpen && activeDock === 'field'}
+          onClick={onOpenField}
+        >
+          <NotebookPen size={21} />
+        </DockButton>
+
+        <DockButton
+          label={t('資料狀態')}
+          active={!profileOpen && activeDock === 'settings'}
+          onClick={onOpenSettings}
+        >
+          <Database size={21} />
+        </DockButton>
       </nav>
       <ProfileSettings open={profileOpen} onClose={() => setProfileOpen(false)} />
       {/* LOCATION SELECTOR */}
@@ -275,18 +352,48 @@ export function FloatingControls({
               {PRESET_EXPLORATION_LOCATIONS.filter(preset => searchQuery && preset.name.toLowerCase().includes(searchQuery.toLowerCase())).map(preset => <button key={preset.name} type="button" onClick={() => handleSelectPreset(preset)} className="w-full px-3 py-2.5 border-t border-white/[0.08] text-left text-sm text-slate-300 hover:bg-white/10">{preset.name}</button>)}
             </div>}
           </div>
-          <button type="button" onClick={onLocateMe} disabled={isLocatingGPS} aria-label={t("定位到目前位置")} title={t("定位到目前位置")} className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center disabled:opacity-50">
-            {isLocatingGPS ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crosshair className="w-5 h-5" />}
+          <button type="button" onClick={onLocateMe} disabled={isLocatingGPS} aria-label={t("定位到目前位置")} title={t("定位到目前位置")} className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center disabled:opacity-50 hover:text-white transition-colors">
+            {isLocatingGPS ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
           </button>
-          <button type="button" onClick={onOpenSaved} aria-label={t("Street Library")} title={t("Street Library")} className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/70 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center">
+          <button type="button" onClick={onOpenSaved} aria-label={t("Street Library")} title={t("Street Library")} className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/70 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center hover:text-white transition-colors">
             <Library className="w-5 h-5" />
           </button>
         </div>
-      {clsScore == null && !isSheetOpen && !statusDismissed && <section className="cls-read-status hud-card" aria-label={t("CLS 載入狀態")}>
-        <div role="status"><strong>{isLoadingScore ? t("正在讀取 CLS…") : t("CLS 尚未就緒")}</strong><p>{isLoadingScore ? t("正在查詢此地點的已儲存資料。") : t(scoreStatus)}</p></div>
-        <button type="button" onClick={onRetryScore} disabled={isLoadingScore} aria-label={t("重試 CLS")}>{isLoadingScore ? <Loader2 className="w-4 h-4 animate-spin" /> : t("重試")}</button>
-        <button type="button" aria-label={t("關閉 CLS 提示")} title={t("關閉")} onClick={() => setStatusDismissed(true)}><X size={16} /></button>
-      </section>}
+      {clsScore == null && !isSheetOpen && !statusDismissed && (
+        <section
+          className="cls-read-status hud-card mt-2 flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md border border-white/[0.08] shadow-xl text-slate-200"
+          aria-label={t("CLS 載入狀態")}
+        >
+          <div role="status" className="min-w-0 flex-1">
+            <strong className="text-sm font-semibold text-white block">
+              {isLoadingScore ? t("正在讀取 CLS…") : t("CLS 尚未就緒")}
+            </strong>
+            <p className="text-xs text-slate-300 truncate mt-0.5">
+              {isLoadingScore ? t("正在查詢此地點的已儲存資料。") : t(scoreStatus)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onRetryScore}
+              disabled={isLoadingScore}
+              aria-label={t("重試 CLS")}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 transition-all disabled:opacity-50"
+            >
+              {isLoadingScore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t("重試")}
+            </button>
+            <button
+              type="button"
+              aria-label={t("關閉 CLS 提示")}
+              title={t("關閉")}
+              onClick={() => setStatusDismissed(true)}
+              className="p-1 rounded-lg text-slate-300 hover:text-white transition-colors"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </section>
+      )}
       </div>
 
       {/* CARTO Key Management & Test Modal */}
@@ -392,7 +499,7 @@ export function FloatingControls({
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-white/10 text-slate-300">
-                  <Crosshair className="w-5 h-5" />
+                  <LocateFixed className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">{t("GPS 經緯度座標與定位工具")}</h3>
@@ -472,7 +579,7 @@ export function FloatingControls({
                     </>
                   ) : (
                     <>
-                      <Crosshair className="w-3.5 h-3.5" />
+                      <LocateFixed className="w-3.5 h-3.5" />
                       <span>{t("重新偵測 GPS")}</span>
                     </>
                   )}
@@ -532,7 +639,7 @@ export function FloatingControls({
                 }}
                 className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 transition-all"
               >
-                <Crosshair className="w-3.5 h-3.5" />
+                <LocateFixed className="w-3.5 h-3.5" />
                 <span>{t("立即跳轉至此經緯度座標")}</span>
               </button>
             </div>

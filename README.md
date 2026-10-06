@@ -1,193 +1,164 @@
-# StreetLens
+# StreetLens · 社區宜居指數實勘系統
 
-**用真實資料理解街道，也留下自己的實勘紀錄。**
+> **用真實資料理解街道，也留下自己的實勘紀錄。**  
+> 整合開放地理資料、CLS 宜居綜合評分、現場觀察校正與實拍佐證，協助您探索、收藏與比較理想的生活街道。
 
-StreetLens 是街道層級的宜居評估地圖，整合外部資料、CLS 評分、現場觀察與照片，協助使用者探索、收藏及比較想居住的地點。
+[![App](https://img.shields.io/badge/Live%20App-Render%20Web%20Service-blue?style=flat-square)](https://streetlens-fokj.onrender.com/)
+[![React](https://img.shields.io/badge/Frontend-React%2019%20%2B%20Vite-61dafb?style=flat-square)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178c6?style=flat-square)](https://www.typescriptlang.org/)
+[![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2F%20Neon-336791?style=flat-square)](https://neon.tech/)
 
-[開啟應用程式](https://streetlens-fokj.onrender.com/) · [GitHub](https://github.com/rubychen8407/streetlens)
+---
 
-## 功能
+## 🌟 核心特色
 
-- **搜尋與地圖探索**：選擇地點，查看街道評估、指標來源與資料狀態。
-- **CLS 評估**：由後端依據已儲存的外部資料計算分數，呈現觀測或推估模式及信心水準。
-- **現場觀察**：以結構化環境觀察調整評分；調整由後端計算並限制幅度。
-- **收藏與歷史**：保存地點、評估與照片，並比較歷史紀錄；尚未取得分數的紀錄顯示「CLS 待補」。
-- **AI 解說**：Gemini 根據已儲存的評估解釋結果，不產生原始數據，也不決定分數。
+- **🗺️ 高效極簡介面**：全新戰術導航 Dock 設計，告別擁擠頂欄；地圖標記採用簡潔圖示，無雜訊干擾。
+- **📊 5 大維度 CLS 綜合指標**：
+  - 🛡️ **C1 安全熱點**（交通事故、安全防護與災害風險）
+  - 🏪 **C2 生活機能**（超市、便利商店、診所、文教設施距離與密度）
+  - 🚇 **C3 大眾交通**（捷運、公車站點、班次頻率與步行友善度）
+  - 🌳 **C4 綠意環境**（樹木覆蓋率、公園綠地可達性、空氣品質指標）
+  - 👥 **C5 社區活力**（商業活力、多元公共設施與鄰里互信氛圍）
+- **👟 實勘模式（Field Walk Mode）**：現場步行感受即時反饋、拍照留存佐證，並支援鍵盤快捷鍵（`1` 喜歡、`2` 待改善、`c` 拍照）。
+- **⭐ Street Library（街道資料庫）**：離線優先儲存收藏地點、歷次評估歷程與實勘照片，輕鬆比較不同街區。
+- **🤖 Gemini AI 專業分析**：基於已保存的客觀資料生成街道宜居優缺點解讀，不捏造數據，亦不擅自竄改評分。
 
-### 使用流程
+---
 
-1. 搜尋地點或在地圖上選擇位置。
-2. 查看 CLS、資料來源、更新時間與缺資料狀態。
-3. 開啟環境觀察面板，確認正在評估的地點。
-4. 填寫現場觀察，於儲存步驟加入筆記或佐證照片。
-5. 在收藏、歷史與比較畫面回顧紀錄。
+## 🧭 左側導航 Dock 結構
 
-## 資料與評分原則
+介面主要功能整合於左側垂直 Dock（行動端自適應於底部），直覺易用：
 
-StreetLens 不使用隨機分數、合成 POI 數量或 AI 生成的外部測量值。
+| 圖示 | 功能項目 | 說明 |
+| :---: | :--- | :--- |
+| <img src="https://api.iconify.design/lucide:layers.svg" width="18"/> | **圖層開關 (Layers)** | 隨選切換步行半徑圈 (300m/500m)、街道評分線與 C1~C5 圖層 |
+| <img src="https://api.iconify.design/lucide:bar-chart-3.svg" width="18"/> | **街道數據 (Street Data)** | 瀏覽當前街道的 CLS 綜合分數、圖像化類別進度條與指標來源明細 |
+| <img src="https://api.iconify.design/lucide:star.svg" width="18"/> | **我的最愛 (Street Library)** | 管理收藏地點、回顧歷史實勘紀錄與比對評估 |
+| <img src="https://api.iconify.design/lucide:footprints.svg" width="18"/> | **實勘模式 (Walk Mode)** | 開啟即時實地探查，記錄行經街道時的現場感受與相片 |
+| <img src="https://api.iconify.design/lucide:notebook-pen.svg" width="18"/> | **環境觀察 (Observations)** | 填寫 1–4 級結構化環境評分，由後端演算法計算合理的現場校正值 |
+| <img src="https://api.iconify.design/lucide:database.svg" width="18"/> | **資料狀態 (Data Status)** | 查看外部資料庫連線、各來源更新時戳與資料庫容量報告 |
+| <img src="https://api.iconify.design/lucide:sun.svg" width="18"/> | **淺色/深色切換 (Theme)** | 一鍵切換高對比 Apple Maps 風格深色模式與清新淺色模式 |
+| <img src="https://api.iconify.design/lucide:settings.svg" width="18"/> | **個人設定 (Settings)** | 雙語切換（繁體中文 / English）與個人化偏好管理 |
 
-- 評估 API 讀取 PostgreSQL 已儲存的資料快照，不在使用者評估請求中爬取評分資料。
-- 查詢會登記待更新座標，外部資料由獨立的批次更新流程取得並寫入資料庫。
-- 尚未取得所需快照時，API 可回傳 HTTP `202`；畫面提供等待、重試與錯誤狀態。
-- 缺少觀測值不等於數值為 `0`。有足夠真實參考資料時，部分類別可使用區域資料先驗推估，並標示 `estimated`、方法與參考樣本數；推估不代表該街道的實測值。
-- 若仍有類別無法取得分數，總分維持 `null`，不以假資料補齊。
-- 外部資料保留來源與時間等資訊；實勘調整由伺服器重新計算。
-- 已有分數的歷史紀錄不因待補分數流程被覆寫。
+---
 
-目前分類涵蓋安全、生活機能、交通、綠意與環境，以及社區相關指標。計算與完整性規則見 [`scoring.ts`](scoring.ts)。
+## 🔒 資料原則與評分嚴謹性
 
-### 外部資料來源
+StreetLens 嚴格遵循**真實資料防偽與高完整性原則**：
 
-| 來源 | 用途 |
-| --- | --- |
-| Google Places、OpenStreetMap / Overpass | POI、生活機能及部分街道與設施資料 |
-| TDX | 大眾運輸資料 |
-| 臺北市官方開放資料 | 行道樹、公園樹木、交通事故、淹水潛勢與歷史淹水等 |
-| 臺北市公共設施資料 | YouBike、醫療、路燈、公車站、捷運、圖書館、公廁、公園、自行車道、人行道、市場、降溫點、AED、消防栓與消防站等 |
-| Open-Meteo、臺北市官方空品資料 | 空氣品質相關指標 |
+1. **拒絕隨機與假資料**：不使用合成 POI 或虛假隨機評分。
+2. **快照先行架構**：評估 API 僅讀取 PostgreSQL 已保存的資料快照，不於使用者即時請求中發動脆弱的即時網頁爬蟲。
+3. **推估模式透明化**：缺少實測值時標註 `estimated` 並附帶參考樣本數，不將缺少資料誤算為 `0` 分。
+4. **現場微調邊界受限**：實勘感受與筆記僅在嚴格上限內調整分數，基準分數始終由真實客觀資料決定。
+5. **歷史紀錄不可竄改**：歷史快照不因背景待補分數流程而遭到非預期覆寫。
 
-資料涵蓋範圍、時間與完整度依來源而異；臺北市專屬資料不能視為其他城市也有相同覆蓋率。已接入資料來源不代表每個地點或每個欄位都可用。
+---
 
-## 技術架構
+## 🏛️ 外部資料來源
 
-| 層級 | 技術與責任 |
-| --- | --- |
-| 前端 | React 19、TypeScript、Vite、Tailwind CSS、Leaflet |
-| 後端 | Node.js、Express、TypeScript；評估與實勘調整計算 |
-| 資料庫 | PostgreSQL / Neon；已保存街道 CLS、分數、回饋與必要報告資料 |
-| AI 解說 | Google Gemini；解釋既有評估 |
-| 座標轉換 | proj4；處理官方資料的座標系統 |
-| 驗證 | TypeScript、回歸測試、Playwright、GitHub Actions |
-| 部署 | Render Web Service；設定見 `render.yaml` |
+| 來源類別 | 主要資料集 | 用途說明 |
+| :--- | :--- | :--- |
+| **地理與設施** | Google Places、OpenStreetMap (OSM) / Overpass | 商店、超市、診所、文教等生活機能設施 |
+| **大眾運輸** | 交通部 TDX 運輸資料流通服務 | 捷運路網、公車站點、即時班次與自行車站 |
+| **城市環境** | 臺北市官方開放資料 (Data.Taipei) | 行道樹分佈、公園綠地、路燈照明、降溫點 |
+| **安全防護** | 臺北市政府警察局、交通局開放資料 | 交通事故熱點統計、消防設施與防災潛勢 |
+| **氣象與空氣** | Open-Meteo、環境部空品監測網 | 即時氣溫、體感溫度、AQI、PM2.5 指標 |
 
-評分資料流：**外部來源 → 批次更新 → PostgreSQL 快照 → 評估 API → 地圖與 CLS**。實勘紀錄先保存在瀏覽器，再於背景同步到伺服器。
+---
 
-## 本機開發
+## 💻 本機開發指南
 
-### 需求
+### 1. 系統需求
+- **Node.js 22+** 與 **npm**
+- 可用的 **PostgreSQL** 資料庫（推薦使用免費 [Neon Serverless Postgres](https://neon.tech/)）
 
-- Node.js 22 與 npm（與目前 CI 使用版本一致）。
-- 可連線的 PostgreSQL 資料庫；可使用 Neon。
-- 需要使用特定外部來源或 Gemini 時，設定對應憑證。
-
+### 2. 安裝與設定
 ```bash
+# 複製專案
 git clone https://github.com/rubychen8407/streetlens.git
 cd streetlens
+
+# 安裝相依套件
 npm ci
+
+# 設定環境變數
 cp .env.example .env
 ```
 
-編輯 `.env` 後啟動：
+### 3. 環境變數說明 (`.env`)
+```ini
+DATABASE_URL="postgres://user:pass@host/dbname?sslmode=require"
+DATABASE_SSL="true"
+STREETLENS_REFRESH_TOKEN="your_secure_refresh_token_here"
+# 選填服務金鑰
+GEMINI_API_KEY=""
+GOOGLE_MAPS_API_KEY=""
+TDX_CLIENT_ID=""
+TDX_CLIENT_SECRET=""
+PORT=3000
+```
 
+### 4. 啟動開發伺服器
 ```bash
 npm run dev
 ```
+瀏覽器造訪 `http://localhost:3000` 即可進行開發與操作。
 
-開啟 `http://localhost:3000`。伺服器啟動時會建立目前原型所需的資料表。新資料庫尚無外部快照時，評估可能顯示待更新；請依下方流程執行資料更新。
+---
 
-### 環境變數
+## 🧪 常用指令與 CI 驗證
 
-| 變數 | 說明 |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL 連線字串；持久化資料所需 |
-| `DATABASE_SSL` | 範例預設 `true`；依資料庫連線需求設定 |
-| `STREETLENS_REFRESH_TOKEN` | 保護內部資料更新端點的長隨機 token；執行更新時必須設定 |
-| `GOOGLE_MAPS_API_KEY` | 選填；Google 資料來源憑證 |
-| `TDX_CLIENT_ID` / `TDX_CLIENT_SECRET` | 選填；TDX 資料來源憑證 |
-| `GEMINI_API_KEY` | 選填；AI 解說所需 |
-| `PORT` | 選填；伺服器預設 `3000` |
+| 指令 | 說明 |
+| :--- | :--- |
+| `npm run dev` | 啟動全端開發環境（前端 Vite + 後端 Express） |
+| `npm run lint` | 執行 TypeScript 型別檢查（`tsc --noEmit`） |
+| `npm run build` | 建置前端 SPA 與後端 Node.js Bundle |
+| `npm start` | 執行建置後的正式環境伺服器 |
+| `npm run ci` | 完整 CI 驗證門禁（含型別、建置、分數完整性、儲存預算與多斷點 Playwright 測試） |
+| `npm run refresh:data` | 執行外部資料批次更新流程 |
+| `npm run check:external-data` | 檢查外部 API 來源健康狀態 |
+| `npm run db:storage` | 產出資料庫使用容量與預算報告 |
 
-API 憑證與資料庫連線字串只放在伺服器環境，請勿提交 `.env` 或放進前端程式碼。未設定選填憑證時，對應功能可能不可用。
+---
 
-## 外部資料更新
+## 📦 部署說明
 
-先啟動伺服器、查詢需要評估的位置以登記更新目標，再執行：
+專案提供完整的 **Render Web Service** 藍圖（`render.yaml`），搭配 Neon PostgreSQL：
 
-```bash
-STREETLENS_REFRESH_URL=http://localhost:3000 \
-STREETLENS_REFRESH_TOKEN=your-refresh-token \
-npm run refresh:data
+1. 於 [Neon](https://neon.tech/) 建立 PostgreSQL 資料庫並取得連線字串。
+2. 於 [Render](https://render.com/) 連結此 GitHub Repository。
+3. 設定環境變數 `DATABASE_URL` 與 `STREETLENS_REFRESH_TOKEN`。
+4. 建置指令：`npm ci && npm run build`；啟動指令：`npm start`。
+5. 服務提供健康檢查端點：`GET /api/health`。
+
+詳細說明請參閱 [`docs/deployment-free.md`](docs/deployment-free.md)。
+
+---
+
+## 📁 專案結構
+
+```
+streetlens/
+├── src/
+│   ├── components/       # 地圖 (ScoutMap)、導航控制 (FloatingControls)、報告 (StreetReport)
+│   ├── data/             # 5 大維度指標定義與權重預設值
+│   ├── hooks/            # 導航狀態機、Street Library 儲存管理
+│   ├── i18n/             # 繁體中文 / 英文雙語多國語系字典
+│   ├── styles/           # 戰術 HUD 樣式、深淺色主題
+│   └── utils/            # 評分計算、相片快取、離線儲存
+├── server.ts             # Express 全端 API 服務
+├── scoring.ts            # CLS 綜合評分、推估演算法與完整性政策
+├── db.ts                 # PostgreSQL 資料庫連線池與快照存取
+├── scripts/              # CI 驗證、Playwright 瀏覽器測試、批次更新腳本
+└── docs/                 # 架構圖、資料管線、儲存預算說明文件
 ```
 
-請將 `your-refresh-token` 換成與伺服器相同的值。這支腳本直接讀取程序環境變數，不會自動載入 `.env`。
+---
 
-- `STREETLENS_REFRESH_URL` 也可替換為部署後的服務網址；腳本亦支援 `STREETLENS_BASE_URL`。
-- 腳本依來源呼叫 `POST /api/internal/refresh-data`，輸出更新、跳過與錯誤數量。
-- 伺服器依各來源的更新週期判斷是否到期；內容雜湊未變更時避免重複寫入。
-- 目前 `scheduled-data-refresh.yml` 每六小時觸發一次（UTC cron `17 */6 * * *`），實際來源更新由伺服器判斷。Actions 排程並非即時保證。
-- GitHub Actions 需設定 `STREETLENS_REFRESH_URL`（或 `STREETLENS_BASE_URL`）與 `STREETLENS_REFRESH_TOKEN` secrets。
+## 📜 延伸文件
 
-外部服務、憑證或網路失敗可能導致更新不完整；請查看腳本摘要及各來源狀態。
-
-## 開發與驗證指令
-
-| 指令 | 用途 |
-| --- | --- |
-| `npm run dev` | 啟動開發伺服器 |
-| `npm run lint` | TypeScript 型別檢查（`tsc --noEmit`） |
-| `npm run build` | 建置前端與後端 |
-| `npm start` | 啟動建置後的服務 |
-| `npm run ci` | 型別檢查、建置、評分完整性、評估政策、快照保存與實勘回歸測試 |
-| `npm run check:external-data` | 外部資料來源健康檢查；需另外確認網路與憑證 |
-| `npm run refresh:data` | 執行外部資料批次更新 |
-| `npm run db:storage` | 唯讀資料庫容量報告 |
-
-首次執行瀏覽器測試前：
-
-```bash
-npx playwright install --with-deps chromium --only-shell
-npm run ci
-```
-
-外部資料健康檢查與確定性的 CI 分開執行；CI 通過不代表所有外部 API 都正常。原生相機與 HEIC 照片仍需實機驗證。開發協作規則見 [`AGENTS.md`](AGENTS.md)。
-
-## 部署
-
-目前專案提供 Render Blueprint，搭配 Neon PostgreSQL：
-
-1. 建立 PostgreSQL 資料庫並取得連線字串。
-2. 在 Render 連接此 GitHub repository，使用 `render.yaml` 建立服務。
-3. 設定 `DATABASE_URL`、`STREETLENS_REFRESH_TOKEN` 與所需 API 憑證。
-4. Blueprint 使用 `npm ci && npm run build` 建置，使用 `npm start` 啟動。
-5. 檢查 `/api/health`，再確認地圖、資料更新、評估保存與重新載入流程。
-
-詳細操作見 [`docs/deployment-free.md`](docs/deployment-free.md)。服務休眠或冷啟動可能增加首次載入時間；資料庫與部署方案的額度請以供應商目前條件為準。
-
-## 紀錄保存與限制
-
-- 目前使用瀏覽器產生的匿名 `workspaceId` 識別紀錄，尚非正式帳號登入與跨裝置同步機制。
-- 實勘紀錄先寫入 localStorage，照片先寫入 IndexedDB；成功同步後才有伺服器副本。
-- 「已存於此裝置，等待同步」代表尚未確認伺服器保存。清除瀏覽器資料可能刪除未同步紀錄。
-- 新照片只存於瀏覽器 IndexedDB，PostgreSQL 僅保存照片說明與索引；換裝置或清除網站資料後，快取照片可能無法取回。容量規劃見 [`docs/storage-budget.md`](docs/storage-budget.md)。
-- 本應用程式不提供離線地圖或 iOS 原生背景紀錄。
-- CLS 是依現有資料與方法計算的探索工具；判讀時應一併查看資料時效、缺值與推估標示。
-
-## 專案結構
-
-| 路徑 | 內容 |
-| --- | --- |
-| `src/App.tsx`、`src/components/` | 地圖、評估面板、實勘與介面元件 |
-| `src/hooks/`、`src/utils/` | 面板狀態、保存、照片與 API 邏輯 |
-| `src/data/` | 指標與結構化實勘定義 |
-| `server.ts` | Express API 與資料更新協調 |
-| `scoring.ts` | 評分、推估、實勘調整與完整性規則 |
-| `db.ts`、`assessmentDb.ts` | 外部快照及評估持久化 |
-| `green.ts`、`safety.ts`、`transit.ts`、`official.ts` | 外部來源與官方資料處理 |
-| `scripts/` | 更新、健康檢查、容量報告與測試 |
-| `.github/workflows/` | CI、健康檢查與資料更新工作流程 |
-| `docs/` | 架構、部署、設計、實勘與儲存文件 |
-
-## 延伸文件
-
-- [系統架構](docs/architecture.md)
-- [資料更新架構](docs/data-refresh.md)
-- [部署設定](docs/deployment-free.md)
-- [環境觀察與延遲 CLS](docs/walk-moments.md)
-- [儲存容量規劃](docs/storage-budget.md)
-- [介面設計規範](docs/tactical-design.md)
-
-若文件與程式碼存在差異，請以目前程式碼及 workflow 設定為準。此 README 的更新排程與推估說明依主分支實作整理。
-
-## 授權
-
-目前 repository 未提供專案 `LICENSE`。外部資料、地圖服務、字型與第三方套件各自適用其授權及使用條款。
+- [系統架構概覽 (Architecture)](docs/architecture.md)
+- [資料更新管線 (Data Refresh)](docs/data-refresh.md)
+- [實勘模式與現場觀察 (Walk Moments)](docs/walk-moments.md)
+- [儲存容量預算 (Storage Budget)](docs/storage-budget.md)
+- [介面設計原則 (Tactical Design)](docs/tactical-design.md)

@@ -964,7 +964,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
+      {/* 2. Floating Tactical Left Dock & Search Bar */}
       <FloatingControls
         activeDock={isWalkOpen ? 'walk' : !isSheetOpen ? null : workspaceView === 'assessment' || workspaceView === 'report' ? 'report' : workspaceView === 'field' || workspaceView === 'settings' ? workspaceView : null}
         onOpenWalk={() => { navigation.go('walk'); }}
@@ -997,6 +997,8 @@ export default function App() {
         currentLocation={currentLocation}
         targetLocation={targetLocation}
         accuracyRadius={accuracyRadius}
+        activeLayers={activeLayers}
+        onToggleLayer={(key: any) => setActiveLayers(prev => ({ ...prev, [key]: !prev[key as keyof typeof activeLayers] }))}
       />
 
       {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{t(saveError || savedStorageError || '')}</div>}

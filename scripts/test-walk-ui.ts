@@ -169,10 +169,20 @@ try {
       assert.ok(dock.x < search.x && entry.x < search.x, 'desktop dock remains on the left');
     }
     assert.ok(Math.abs(search.y - tools.y) <= 1 && search.height === tools.height, 'search and location action align');
-    for (const label of ['CLS 結果報告', '環境觀察', 'Street Library', '實勘', '資料與設定']) {
+    for (const label of ['CLS 結果報告', '環境觀察', 'Street Library', '實勘', '資料狀態']) {
       const box = await view.getByRole('button', { name: label, exact: true }).boundingBox();
       assert.ok(box && box.width >= 44 && box.height >= 44, label + ' needs a touch target');
     }
+    assert.equal(await dockLocator.getByRole('button', { name: 'Street Library', exact: true }).count(), 0);
+    const library = view.getByRole('button', { name: 'Street Library', exact: true });
+    const libraryBox = await library.boundingBox();
+    assert.ok(libraryBox && Math.abs(libraryBox.y - tools.y) <= 1 && libraryBox.height === tools.height);
+    await view.getByRole('button', { name: '資料狀態', exact: true }).click();
+    const dataStatus = view.getByRole('complementary', { name: '資料狀態' });
+    await dataStatus.getByRole('heading', { name: '目前地點資料', exact: true }).waitFor();
+    assert.equal(await dataStatus.getByText('Settings', { exact: true }).count(), 0);
+    await dataStatus.getByRole('button', { name: '返回評估', exact: true }).click();
+    await view.getByRole('button', { name: '關閉報告', exact: true }).click();
     assert.equal(await view.getByRole('button', { name: '圖層', exact: true }).count(), 0);
     await view.getByRole('button', { name: '實勘', exact: true }).click();
     await view.getByRole('region', { name: '步行感受' }).waitFor();

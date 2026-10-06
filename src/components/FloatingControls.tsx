@@ -15,7 +15,7 @@ import {
   Crosshair,
   Copy,
   ExternalLink,
-  SlidersHorizontal,
+  Database,
 } from 'lucide-react';
 import { StreetTelemetry } from './StreetTelemetry';
 import { LocationCoord, StreetAssessmentResponse } from '../types';
@@ -246,9 +246,8 @@ export function FloatingControls({
         <button type="button" onClick={onOpenWalk} aria-label="實勘" title="實勘"><Footprints size={21} /></button>
         <button type="button" onClick={onOpenReport} aria-label="CLS 結果報告" title="CLS 結果報告"><ClipboardList size={21} /></button>
         <button type="button" onClick={onOpenField} aria-label="環境觀察" title="環境觀察"><Crosshair size={21} /></button>
-        <button type="button" onClick={onOpenSaved} aria-label="Street Library" title="Street Library"><Library size={21} /></button>
         <div className="dock-spacer" />
-        <button type="button" onClick={onOpenSettings} aria-label="資料與設定" title="資料與設定"><SlidersHorizontal size={21} /></button>
+        <button type="button" onClick={onOpenSettings} aria-label="資料狀態" title="資料狀態"><Database size={21} /></button>
       </nav>
       <StreetTelemetry streetName={currentStreetName} district={district} city={city} location={targetLocation} score={clsScore} grade={grade} assessment={assessment} onOpen={onOpenReport} />
       {/* LOCATION SELECTOR */}
@@ -276,6 +275,9 @@ export function FloatingControls({
           </div>
           <button type="button" onClick={onLocateMe} disabled={isLocatingGPS} aria-label="定位到目前位置" title="定位到目前位置" className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/92 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center disabled:opacity-50">
             {isLocatingGPS ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crosshair className="w-5 h-5" />}
+          </button>
+          <button type="button" onClick={onOpenSaved} aria-label="Street Library" title="Street Library" className="location-action h-12 w-12 shrink-0 rounded-2xl bg-[#1A212B]/70 backdrop-blur-md border border-white/[0.08] text-slate-200 shadow-xl flex items-center justify-center">
+            <Library className="w-5 h-5" />
           </button>
         </div>
       {clsScore == null && !isSheetOpen && !statusDismissed && <section className="cls-read-status hud-card" aria-label="CLS 載入狀態">

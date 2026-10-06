@@ -140,12 +140,12 @@ export function AssessmentWorkspace({
   const unavailableCategoryCount = categoryScores.filter((category) => category.score === null).length;
 
   return (
-    <aside ref={panelRef} aria-label={view === 'report' ? '街道結果報告' : view === 'saved' ? 'Street Library' : '街道評估面板'} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
+    <aside ref={panelRef} aria-label={view === 'report' ? '街道結果報告' : view === 'saved' ? 'Street Library' : view === 'settings' ? '資料狀態' : '街道評估面板'} className="assessment-panel absolute z-[600] top-3 right-3 bottom-3 w-[min(440px,calc(100vw-24px))] flex flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#141A23]/95 backdrop-blur-md shadow-2xl text-white">
       <header className="shrink-0 px-5 pt-4 pb-3 border-b border-white/[0.08]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <button onClick={() => view === 'assessment' ? onClose() : view === 'report' ? onViewChange('saved') : view === 'saved' ? onClose() : onViewChange('assessment')} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10" title={view === 'assessment' ? 'Close assessment' : 'Back to assessment'} aria-label={view === 'assessment' ? '關閉報告' : view === 'report' ? '返回 Street Library' : view === 'saved' ? '關閉 Street Library' : '返回評估'}><ArrowLeft className="w-4 h-4" /></button>
-            <div><div className="text-sm font-bold">{view === 'field' ? '環境觀察' : view === 'report' ? '街道結果報告' : view === 'saved' ? 'Street Library' : 'CLS 街道報告'}</div><div className="text-[10px] text-slate-500">{view === 'field' ? '現場觀察與佐證' : view === 'report' ? streetName + ' · ' + district + ' ' + city : view === 'saved' ? '收藏、街道與歷次評估' : 'CLS · 資料來源 · 歷史比較'}</div></div>
+            <div><div className="text-sm font-bold">{view === 'field' ? '環境觀察' : view === 'report' ? '街道結果報告' : view === 'saved' ? 'Street Library' : view === 'settings' ? '資料狀態' : 'CLS 街道報告'}</div><div className="text-[10px] text-slate-500">{view === 'field' ? '現場觀察與佐證' : view === 'report' || view === 'settings' ? streetName + ' · ' + district + ' ' + city : view === 'saved' ? '收藏、街道與歷次評估' : 'CLS · 資料來源 · 歷史比較'}</div></div>
           </div>
           {(view === 'assessment' || view === 'report') && <button onClick={onToggleFavorite} title={isFavorite ? '取消最愛' : '加入最愛'} aria-label={isFavorite ? '取消最愛' : '加入最愛'} className={`w-9 h-9 rounded-full border flex items-center justify-center ${isFavorite ? 'bg-amber-400/15 border-amber-300/40 text-amber-300' : 'bg-white/5 border-white/[0.08] text-slate-400'}`}><Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /></button>}
         </div>
@@ -729,15 +729,15 @@ export function AssessmentWorkspace({
         {view === 'settings' && (
           <div className="space-y-4">
             <div>
-              <h2 className="text-xl font-bold">Settings</h2>
-              <p className="text-xs text-slate-500 mt-1">System and data-source diagnostics live here, away from the assessment workflow.</p>
+              <h2 className="text-xl font-bold">目前地點資料</h2>
+              <p className="text-xs text-slate-500 mt-1">查看此地點的資料來源、可用性與更新時間。</p>
             </div>
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
               <div className="flex items-center gap-3">
                 <Database className="w-5 h-5 text-slate-300" />
                 <div>
-                  <div className="text-sm font-semibold">Data sources & system status</div>
-                  <div className="text-[11px] text-slate-500 mt-1">Read-only diagnostics for the currently loaded assessment.</div>
+                  <div className="text-sm font-semibold">資料來源與可用性</div>
+                  <div className="text-[11px] text-slate-500 mt-1">目前地點已載入的評估資料。</div>
                 </div>
               </div>
               <div className="mt-3 space-y-2">
@@ -750,13 +750,13 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
                 {(!assessment?.sourceStatus || assessment.sourceStatus.length === 0) && (
-                  <div className="text-[10px] text-slate-500">No source status is available for this assessment yet.</div>
+                  <div className="text-[10px] text-slate-500">此地點尚無可顯示的資料來源狀態。</div>
                 )}
               </div>
             </div>
             <div className="p-4 rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-              <div className="text-xs font-bold text-slate-300">Assessment model</div>
-              <div className="text-[11px] text-slate-500 mt-1">External data and field observations remain distinct. Score changes should be persisted as explicit observation adjustments.</div>
+              <div className="text-xs font-bold text-slate-300">評估依據</div>
+              <div className="text-[11px] text-slate-500 mt-1">CLS 以已儲存的外部資料計算；現場環境觀察另記為實勘調整。</div>
             </div>
           </div>
         )}
@@ -782,4 +782,3 @@ export function AssessmentWorkspace({
     </aside>
   );
 }
-

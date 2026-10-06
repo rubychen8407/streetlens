@@ -1,5 +1,20 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+🎯 評估地點|🎯 Assessment location
+最愛可追蹤街道；地點紀錄保留實勘感受、照片與環境觀察。|Favorites track streets; place records preserve walk impressions, photos and environment observations.
+返回地圖|Back to map
+返回實勘|Back to field walk
+返回環境觀察|Back to environment observations
+返回資料狀態|Back to data status
+1–4 級環境評分、筆記與佐證|1–4 environment ratings, notes and evidence
+喜歡、不喜歡與拍照；不影響 CLS 分數。|Like, dislike and capture photos; does not affect CLS scores.
+查看此地全部紀錄（照片、筆記與感受保留）|View all records here (photos, notes and impressions preserved)
+CLS 以已儲存的外部資料計算；環境觀察另記為觀察調整。|CLS uses persisted external data; environment observations are recorded separately as observation adjustments.
+觀察筆記|Observation notes
+街道紀錄照片|Street record photo
+將評估地點設在目前 GPS 位置|Set the assessment location to the current GPS position
+🎯 設為評估地點|🎯 Set assessment location
+快速選取熱門評估地點：|Quick assessment location presets:
 個人設定|Profile settings
 語言|Language
 外觀|Appearance

@@ -41,6 +41,9 @@ jobs:
       - name: Snapshot preservation tests
         run: npm run test:snapshot-preservation
 
+      - name: Optional PostGIS compatibility tests
+        run: npm run test:postgis-optional
+
       - name: Walk and saved CLS regression tests
         run: npm run test:walk-moments
 

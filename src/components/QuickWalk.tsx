@@ -1,5 +1,4 @@
 import { t, bilingual, displayPlace, errorText } from '../i18n';
-import { LanguageSwitch } from './LanguageSwitch';
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Heart, Loader2, LocateFixed, ThumbsDown, X } from 'lucide-react';
 import { usePanelFocus } from '../hooks/usePanelFocus';
@@ -176,11 +175,12 @@ export function QuickWalk({ onOpenDetailed, source, onPreview, onSave, onClose }
     </div>}
     <header className="absolute top-0 left-0 right-0 p-4 pt-[max(16px,env(safe-area-inset-top))] bg-gradient-to-b from-black/60 to-transparent flex items-start justify-between gap-3">
       <div className="min-w-0 rounded-2xl border border-white/10 bg-[#141A23]/40 backdrop-blur-md p-3">
-        <h1 className="text-xs text-slate-300">{t("實勘模式")}</h1><p className="text-sm font-semibold mt-1 truncate">{displayPlace(address.streetName) || t("正在定位…")}</p>
+        <h1 className="text-base text-slate-100">{t("實勘模式")}</h1><p className="text-sm font-semibold mt-1 truncate">{displayPlace(address.streetName) || t("正在定位…")}</p>
+        <p className="text-sm text-slate-100 mt-1">{t("喜歡、不喜歡與拍照；不影響 CLS 分數。")}</p>
         <p className="text-[11px] text-slate-300 mt-1">{gpsError ? t(gpsError) : (fix ? `${bilingual('定位誤差', 'GPS accuracy')} ±${Math.round(fix.accuracy)} m${ready ? '' : t(" · 等待有效定位")}` : t("正在取得 GPS 位置…"))}</p>
         {!ready && <button type="button" onClick={() => { setFix(null); setLocateAttempt(value => value + 1); }} className="min-h-11 mt-1 flex items-center gap-2 text-xs"><LocateFixed size={16} />{t("重新定位")}</button>}
       </div>
-      <div className="flex items-center gap-2"><LanguageSwitch /><button type="button" onClick={onClose} disabled={busy} title={t("結束步行")} aria-label={t("結束步行")} className="w-11 h-11 shrink-0 rounded-full border border-white/10 bg-[#141A23]/50 backdrop-blur-md grid place-items-center disabled:opacity-40"><X size={22} /></button></div>
+      <div className="flex items-center gap-2"><button type="button" onClick={onClose} disabled={busy} title={t("結束步行")} aria-label={t("結束步行")} className="w-11 h-11 shrink-0 rounded-full border border-white/10 bg-[#141A23]/50 backdrop-blur-md grid place-items-center disabled:opacity-40"><X size={22} /></button></div>
     </header>
     <footer className="absolute bottom-0 left-0 right-0 px-3 pt-10 pb-[max(12px,env(safe-area-inset-bottom))] bg-gradient-to-t from-black/70 to-transparent">
       <div className="max-w-lg mx-auto">

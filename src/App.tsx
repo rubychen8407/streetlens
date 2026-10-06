@@ -1,5 +1,6 @@
 import { t, bilingual, useLanguage, errorText } from './i18n';
 import { useTheme } from './utils/theme';
+import { backLabels, useNavigation } from './hooks/useNavigation';
 import { QuickWalk } from './components/QuickWalk';
 import { sameFieldPlace, upsertFieldRecord } from './utils/fieldRecordMerge';
 /**
@@ -77,13 +78,14 @@ export default function App() {
   const [realStreetSegments, setRealStreetSegments] = useState<StreetSegmentScore[]>([]);
 
   // Map theme: default to dark to match the Apple Maps dark screenshot
-  const [isWalkOpen, setIsWalkOpen] = useState(false);
+  const navigation = useNavigation();
+  const isWalkOpen = navigation.current === 'walk';
   const [walkLocation, setWalkLocation] = useState<LocationCoord | null>(null);
   const mapTheme = useTheme();
 
   // Bottom Sheet Visibility
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<'assessment' | 'report' | 'field' | 'saved' | 'settings'>('assessment');
+  const isSheetOpen = navigation.current !== 'map' && navigation.current !== 'walk';
+  const workspaceView = isSheetOpen ? navigation.current as 'assessment' | 'report' | 'field' | 'saved' | 'settings' : 'assessment';
   const [favoriteLocations, setFavoriteLocations] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cls_favorite_locations') || '[]'); } catch { return []; }
   });
@@ -965,7 +967,7 @@ export default function App() {
       {/* 2. Floating iOS Style Overlays (Weather, Score Pill, Search Bar, Action Buttons) */}
       <FloatingControls
         activeDock={isWalkOpen ? 'walk' : !isSheetOpen ? null : workspaceView === 'assessment' || workspaceView === 'report' ? 'report' : workspaceView === 'field' || workspaceView === 'settings' ? workspaceView : null}
-        onOpenWalk={() => { setIsSheetOpen(false); setIsWalkOpen(true); }}
+        onOpenWalk={() => { navigation.go('walk'); }}
         isLoadingScore={isLoadingBaseline}
         scoreStatus={baselineSummary}
         onRetryScore={() => activeSavedAssessmentId ? retrySavedScores() : handleAutoFetchBaseline()}
@@ -987,10 +989,10 @@ export default function App() {
           if (c) setCity(c);
           fetchLocationData(coord, newDist, newCity, name, true);
         }}
-        onOpenField={() => { setWorkspaceView('field'); setIsSheetOpen(true); }}
-        onOpenReport={() => { setWorkspaceView('assessment'); setIsSheetOpen(true); }}
-        onOpenSaved={() => { setWorkspaceView('saved'); setIsSheetOpen(true); }}
-        onOpenSettings={() => { setWorkspaceView('settings'); setIsSheetOpen(true); }}
+        onOpenField={() => { navigation.go('field'); }}
+        onOpenReport={() => { navigation.go('assessment'); }}
+        onOpenSaved={() => { navigation.go('saved'); }}
+        onOpenSettings={() => { navigation.go('settings'); }}
         isSheetOpen={isSheetOpen}
         currentLocation={currentLocation}
         targetLocation={targetLocation}
@@ -999,13 +1001,14 @@ export default function App() {
 
       {(saveError || savedStorageError) && <div role="alert" className="absolute z-[700] top-20 left-3 right-3 rounded-xl bg-rose-950 p-3 text-sm text-white" onClick={() => setSaveError(null)}>{t(saveError || savedStorageError || '')}</div>}
 
-      {isWalkOpen && <QuickWalk source="walk" onPreview={setWalkLocation} onSave={handleSaveFavorite} onClose={() => setIsWalkOpen(false)} onOpenDetailed={coord => { setTargetLocation(coord); void fetchAddressFromCoords(coord); setIsWalkOpen(false); setWorkspaceView('field'); setIsSheetOpen(true); }} />}
+      {isWalkOpen && <QuickWalk source="walk" onPreview={setWalkLocation} onSave={handleSaveFavorite} onClose={() => navigation.back()} onOpenDetailed={coord => { setTargetLocation(coord); void fetchAddressFromCoords(coord); navigation.go('field'); }} />}
       <AssessmentWorkspace
-        onOpenField={() => { setWorkspaceView('field'); setIsSheetOpen(true); }}
+        onOpenField={() => { navigation.go('field'); }}
         isOpen={isSheetOpen}
-        onClose={() => setIsSheetOpen(false)}
+        onClose={navigation.close}
+        onBack={navigation.back}
+        backLabel={t(backLabels[navigation.history.at(-1) ?? 'map'])}
         view={workspaceView}
-        onViewChange={setWorkspaceView}
         streetName={streetName}
         district={district}
         city={city}
@@ -1046,10 +1049,10 @@ export default function App() {
         savedLocations={savedLocations}
         onSelectSaved={(saved) => {
           handleSelectSavedLocation(saved);
-          setWorkspaceView('report');
+          navigation.go('report');
         }}
         onDeleteSaved={handleDeleteSaved}
-        onOpenDataLogs={() => setWorkspaceView('settings')}
+        onOpenDataLogs={() => navigation.go('settings')}
         isFavorite={isFavorite}
         onToggleFavorite={handleToggleFavorite}
         favoriteLocationKeys={favoriteLocations}

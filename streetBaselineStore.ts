@@ -4,7 +4,8 @@ import { distanceMeters, streetIdentity, STREET_ANCHOR_RADIUS_METERS, rebaseSave
 import type { SavedLocation, StreetAssessmentResponse } from './src/types';
 import type { AssessmentReadResult } from './savedScoreBackfill';
 
-export const BASELINE_SCORING_VERSION = 'street-anchor-v2-no-aed';
+import { CLS_STANDARD_VERSION } from './src/data/clsStandards';
+export const BASELINE_SCORING_VERSION = `street-anchor-v3-${CLS_STANDARD_VERSION}`;
 type Location = { lat: number; lng: number; city: string; district: string; streetName: string };
 type Anchor = { id: string; lat: number; lng: number; street_identity: string };
 

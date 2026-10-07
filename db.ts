@@ -713,8 +713,8 @@ export async function getSafetyReference(excludeScopeKey?: string): Promise<{
       if (Number.isFinite(count)) accidentsByScope.set(row.scopeKey, count);
     } else {
       const cells = Array.isArray(row.payload?.cells) ? row.payload.cells : Array.isArray(row.payload?.riskCells) ? row.payload.riskCells : [];
-      const depths = cells.map((cell: any) => Number(cell?.depthCm)).filter(Number.isFinite);
-      floodByScope.set(row.scopeKey, depths.length ? Math.max(...depths) : 0);
+      const depths = cells.map((cell: any) => cell?.depthCm).filter((v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0);
+      if (depths.length) floodByScope.set(row.scopeKey, Math.max(...depths));
     }
   }
   return {
@@ -1482,7 +1482,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     if (excludeScopeKey && row.scopeKey === excludeScopeKey) continue;
 
     if (row.sourceKey === "open_meteo_air_quality") {
-      const aqi = Number(row.payload?.aqi);
+      const aqi = row.payload?.aqi;
       if (Number.isFinite(aqi)) c4Aqi.push(aqi);
       continue;
     }
@@ -1490,7 +1490,7 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     if (row.sourceKey === "taipei_official_aqi") {
       const points = Array.isArray(row.payload?.points) ? row.payload.points : [];
       for (const point of points) {
-        const aqi = Number(point?.properties?.aqi);
+        const aqi = point?.properties?.aqi;
         if (Number.isFinite(aqi)) c4Aqi.push(aqi);
       }
       continue;

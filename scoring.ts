@@ -1,6 +1,7 @@
 export type Category = "C1" | "C2" | "C3" | "C4" | "C5";
 
 import { FieldObservationAdjustment } from "./src/types";
+import { calculateFixedScores, validObservation, type FixedInput } from './fixedScoring';
 import { FIELD_OBSERVATION_DEFINITIONS } from "./src/data/fieldIndicators";
 
 export interface ScoreFactor {
@@ -15,7 +16,11 @@ export interface ScoreFactor {
   status?: "available" | "unavailable";
   retrievedAt?: string;
   referenceSampleSize?: number;
-  scoringMethod?: "empirical_percentile" | "raw_observation" | "not_scored";
+  scoringMethod?: "empirical_percentile" | "raw_observation" | "not_scored" | "fixed_standard";
+  normalizedScore?: number | null;
+  indicatorWeight?: number;
+  estimatedValue?: number | null;
+  referencePercentile?: number;
   availabilityReason?: "insufficient_reference_data" | "source_unavailable" | "no_observation";
   estimationMethod?: "regional_real_data_prior";
 }
@@ -28,9 +33,14 @@ export interface CategoryScore {
   mode: ScoreMode;
   estimationMethod?: "regional_real_data_prior";
   estimationReferenceSampleSize?: number;
+  completeness?: number;
+  provisional?: boolean;
 }
 
 export interface AssessmentScores {
+  completeness?: number;
+  provisional?: boolean;
+  scoringStandard?: string;
   c1: CategoryScore;
   c2: CategoryScore;
   c3: CategoryScore;
@@ -146,15 +156,6 @@ export function average(values: number[]): number {
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
 }
 
-function empiricalPercentileScore(value: number | undefined, referenceValues: number[] | undefined, direction: "higher_is_better" | "lower_is_better" = "higher_is_better"): number | null {
-  if (!Number.isFinite(value) || !referenceValues) return null;
-  const sorted = referenceValues.filter(Number.isFinite).sort((a, b) => a - b);
-  if (sorted.length < 20) return null;
-  const rank = sorted.filter((candidate) => candidate <= Number(value)).length;
-  const percentile = (rank / sorted.length) * 100;
-  return clampScore(direction === "lower_is_better" ? 100 - percentile : percentile);
-}
-
 const OBSERVATION_CATEGORY_CAP = 10;
 const OBSERVATION_WEIGHTS: Record<Category, number> = DEFAULT_WEIGHTS;
 const FIELD_OBSERVATION_IMPACTS: Record<string, { category: Category; scoreImpact: number }> =
@@ -212,58 +213,6 @@ export function applyFieldObservationAdjustment(
     itemAdjustments,
     ratedItemCount,
   };
-}
-
-function confidenceRank(value: "high" | "medium" | "low"): number {
-  return value === "high" ? 3 : value === "medium" ? 2 : 1;
-}
-
-function overallConfidence(factors: ScoreFactor[]): "high" | "medium" | "low" {
-  if (!factors.length) return "low";
-  const avg = average(factors.map((factor) => confidenceRank(factor.confidence)));
-  return avg >= 2.6 ? "high" : avg >= 1.8 ? "medium" : "low";
-}
-
-function medianValue(values: number[] | undefined): number | null {
-  if (!values) return null;
-  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
-  if (!sorted.length) return null;
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[middle]
-    : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function referenceRelativeScore(
-  value: number | undefined,
-  referenceValues: number[] | undefined,
-  direction: "higher_is_better" | "lower_is_better",
-  fallbackMedian?: number,
-): number | null {
-  if (!Number.isFinite(value)) return null;
-  let median = medianValue(referenceValues);
-  if (median == null && fallbackMedian != null) {
-    median = fallbackMedian;
-  }
-  if (median == null) return null;
-
-  const numericValue = Number(value);
-  if (median <= 0) {
-    if (direction === "lower_is_better") return numericValue <= 0 ? 100 : 0;
-    return numericValue > 0 ? 100 : 0;
-  }
-
-  const ratioScore = direction === "lower_is_better"
-    ? (100 * median) / (median + Math.max(0, numericValue))
-    : (100 * Math.max(0, numericValue)) / (Math.max(0, numericValue) + median);
-  return clampScore(ratioScore);
-}
-
-const MIN_REGIONAL_PRIOR_SAMPLES = 5;
-
-function regionalPriorScore(candidates: Array<number | null>): number | null {
-  const valid = candidates.filter((value): value is number => Number.isFinite(value));
-  return valid.length ? clampScore(average(valid)) : null;
 }
 
 export function validateAssessmentIntegrity(assessment: AssessmentScores): { valid: boolean; errors: string[] } {
@@ -330,765 +279,57 @@ export function calculateAssessment(
   },
 ): AssessmentScores {
 
-  // C1 uses only source-backed accident and official flood-hazard observations.
-  const c1AccidentCount = c1SafetyMetrics?.accidentCount500m;
-  const c1FatalCount = c1SafetyMetrics?.fatalAccidentCount500m;
-  const c1InjuryCount = c1SafetyMetrics?.injuryAccidentCount500m;
-  const c1Source = c1SafetyMetrics?.source || "unavailable";
-  const c1Factors: ScoreFactor[] = [
-    {
-      category: "C1",
-      indicator: "trafficAccidentCount500m",
-      value: Number.isFinite(Number(c1AccidentCount)) ? Number(c1AccidentCount) : null,
-      unit: "accidents",
-      direction: "lower_is_better",
-      source: Number.isFinite(Number(c1AccidentCount)) ? c1Source : "unavailable",
-      method: Number.isFinite(Number(c1AccidentCount)) ? c1SafetyMetrics?.method || "official" : "calculated",
-      confidence: Number.isFinite(Number(c1AccidentCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
-      status: Number.isFinite(Number(c1AccidentCount)) ? "available" : "unavailable",
-      retrievedAt: c1SafetyMetrics?.retrievedAt,
-      referenceSampleSize: c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: "raw_observation",
-    },
-    {
-      category: "C1",
-      indicator: "fatalTrafficAccidentCount500m",
-      value: Number.isFinite(Number(c1FatalCount)) ? Number(c1FatalCount) : null,
-      unit: "accidents",
-      direction: "lower_is_better",
-      source: Number.isFinite(Number(c1FatalCount)) ? c1Source : "unavailable",
-      method: Number.isFinite(Number(c1FatalCount)) ? c1SafetyMetrics?.method || "official" : "calculated",
-      confidence: Number.isFinite(Number(c1FatalCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
-      status: Number.isFinite(Number(c1FatalCount)) ? "available" : "unavailable",
-      retrievedAt: c1SafetyMetrics?.retrievedAt,
-      referenceSampleSize: c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: "raw_observation",
-    },
-    {
-      category: "C1",
-      indicator: "injuryTrafficAccidentCount500m",
-      value: Number.isFinite(Number(c1InjuryCount)) ? Number(c1InjuryCount) : null,
-      unit: "accidents",
-      direction: "lower_is_better",
-      source: Number.isFinite(Number(c1InjuryCount)) ? c1Source : "unavailable",
-      method: Number.isFinite(Number(c1InjuryCount)) ? c1SafetyMetrics?.method || "official" : "calculated",
-      confidence: Number.isFinite(Number(c1InjuryCount)) ? c1SafetyMetrics?.confidence || "low" : "low",
-      status: Number.isFinite(Number(c1InjuryCount)) ? "available" : "unavailable",
-      retrievedAt: c1SafetyMetrics?.retrievedAt,
-      referenceSampleSize: c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: "raw_observation",
-    },
-  ];
+  const inputs: Record<string, FixedInput> = {};
+  const add = (indicator: string, value: unknown, reference: number[] | undefined, metadata: Partial<FixedInput> = {}) => {
+    inputs[indicator] = { ...metadata, value, reference };
+  };
+  const safety = { source: c1SafetyMetrics?.source, method: c1SafetyMetrics?.method, confidence: c1SafetyMetrics?.confidence, retrievedAt: c1SafetyMetrics?.retrievedAt };
+  add('trafficAccidentCount500m', c1SafetyMetrics?.accidentCount500m, c1SafetyMetrics?.accidentCountReference, safety);
   const floodCells = c1SafetyMetrics?.floodHazard || [];
-  const floodDepths = floodCells.map((cell) => Number(cell.depthCm)).filter(Number.isFinite);
-  const maxFloodDepth = floodDepths.length ? Math.max(...floodDepths) : undefined;
-  const accidentScore = empiricalPercentileScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference, "lower_is_better")
-    ?? referenceRelativeScore(c1AccidentCount, c1SafetyMetrics?.accidentCountReference, "lower_is_better");
-  const floodScore = empiricalPercentileScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference, "lower_is_better")
-    ?? referenceRelativeScore(maxFloodDepth, c1SafetyMetrics?.floodDepthReference, "lower_is_better");
-  for (const cell of floodCells) {
-    c1Factors.push({
-      category: "C1",
-      indicator: `floodHazard_${cell.scenarioMmPerHour}mmh`,
-      value: cell.depthCm,
-      unit: "cm",
-      direction: "lower_is_better",
-      source: cell.source,
-      method: "official",
-      confidence: "high",
-      status: cell.depthCm != null ? "available" : "unavailable",
-      retrievedAt: cell.retrievedAt,
-      referenceSampleSize: c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: (c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0) >= 20
-        ? "empirical_percentile"
-        : "not_scored",
-      availabilityReason: cell.depthCm == null
-        ? "no_observation"
-        : ((c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0) < 20
-          ? "insufficient_reference_data"
-          : undefined),
-    });
+  const validFloods = floodCells.filter(cell => validObservation(cell.depthCm));
+  const maxFlood = validFloods.reduce<(typeof floodCells)[number] | undefined>((max, cell) => !max || cell.depthCm! > max.depthCm! ? cell : max, undefined);
+  add('maxFloodDepthCm', maxFlood?.depthCm, c1SafetyMetrics?.floodDepthReference, { source: maxFlood?.source, retrievedAt: maxFlood?.retrievedAt, method: 'official' });
+  add('streetLightCount300m', c1SafetyMetrics?.streetLightCount300m, c1SafetyMetrics?.streetLightCountReference, safety);
+  add('fireHydrantCount500m', c1SafetyMetrics?.fireHydrantCount500m, c1SafetyMetrics?.fireHydrantCountReference, safety);
+
+  const poi = { source: c2PoiMetrics?.source, method: c2PoiMetrics?.method, confidence: c2PoiMetrics?.confidence, retrievedAt: c2PoiMetrics?.retrievedAt };
+  for (const key of ['supermarketDist', 'convenienceDist', 'clinicDist', 'schoolDist', 'bankPostDist', 'marketDist'] as const) {
+    add(key, c2PoiMetrics?.[key], normalization?.c2Distances?.[key], poi);
   }
+  add('poiDensityCount', c2PoiMetrics?.poiDensityCount, c2PoiDensityReference, poi);
 
-  const streetLightCount = c1SafetyMetrics?.streetLightCount300m;
-  const streetLightReference = c1SafetyMetrics?.streetLightCountReference;
-  const streetLightReferenceSize = streetLightReference?.filter(Number.isFinite).length ?? 0;
-  const streetLightScore = Number.isFinite(Number(streetLightCount))
-    ? (empiricalPercentileScore(Number(streetLightCount), streetLightReference, "higher_is_better")
-      ?? referenceRelativeScore(Number(streetLightCount), streetLightReference, "higher_is_better"))
-    : null;
-  c1Factors.push({
-    category: "C1",
-    indicator: "streetLightCount300m",
-    value: Number.isFinite(Number(streetLightCount)) ? Number(streetLightCount) : null,
-    unit: "lights",
-    direction: "higher_is_better",
-    source: Number.isFinite(Number(streetLightCount))
-      ? (c1SafetyMetrics?.source || "unavailable")
-      : "unavailable",
-    method: Number.isFinite(Number(streetLightCount))
-      ? (c1SafetyMetrics?.method || "calculated")
-      : "calculated",
-    confidence: streetLightScore != null ? "medium" : (Number.isFinite(Number(streetLightCount)) ? "low" : "low"),
-    status: Number.isFinite(Number(streetLightCount)) ? "available" : "unavailable",
-    retrievedAt: c1SafetyMetrics?.retrievedAt,
-    referenceSampleSize: streetLightReferenceSize,
-    scoringMethod: streetLightScore != null && streetLightReferenceSize >= 20 ? "empirical_percentile" : "not_scored",
-    availabilityReason: Number.isFinite(Number(streetLightCount)) ? (streetLightScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
+  const transit = { source: c3TransitMetrics?.source, method: c3TransitMetrics?.method, confidence: c3TransitMetrics?.confidence, retrievedAt: c3TransitMetrics?.retrievedAt };
+  add('mrtOrRailDist', c3TransitMetrics?.mrtOrRailDist, normalization?.c3RailDistances, transit);
+  add('busStopDist', c3TransitMetrics?.busStopDist, normalization?.c3BusDistances, transit);
+  add('youBikeNearestDist', c3TransitMetrics?.youBikeNearestDist, normalization?.c3YouBikeDistances, transit);
+  add('bikeLaneLength500m', c3TransitMetrics?.bikeLaneLength500m, normalization?.c3BikeLaneLengths, transit);
+  add('sidewalkCoverage500mPct', c3TransitMetrics?.sidewalkCoverage500mPct, normalization?.c3SidewalkCoveragePcts, transit);
+
+  const green = { source: c4GreenMetrics?.source, method: c4GreenMetrics?.method, confidence: c4GreenMetrics?.confidence, retrievedAt: c4GreenMetrics?.retrievedAt };
+  add('aqi', weather?.aqi, normalization?.c4Aqi, { source: weather?.source, retrievedAt: weather?.retrievedAt, method: 'api' });
+  add('streetTreeDensityPerKm2', c4GreenMetrics?.streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference, green);
+  add('parkTreeDensityPerKm2', c4GreenMetrics?.parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference, green);
+  add('nearestParkDist', c4GreenMetrics?.nearestParkDist, normalization?.c4NearestParkDistances, {
+    ...green, source: provenance?.c4NearestParkSource || green.source, retrievedAt: provenance?.c4NearestParkRetrievedAt || green.retrievedAt,
   });
+  add('coolingPointCount1200m', c4GreenMetrics?.coolingPointCount1200m, c4GreenMetrics?.coolingPointCountReference || normalization?.c4CoolingPointCounts, green);
+  const community = { source: provenance?.c5Source, retrievedAt: provenance?.c5RetrievedAt };
+  add('communityCulturalPoiCount800m', c5CommunityCount, c5CommunityReference, community);
+  add('nearestCommunityCulturalFacilityDist', c5NearestCommunityDistance, normalization?.c5NearestCommunityDistances, community);
 
-  const fireHydrantCount = c1SafetyMetrics?.fireHydrantCount500m;
-  const fireHydrantReference = c1SafetyMetrics?.fireHydrantCountReference;
-  const fireHydrantScore = Number.isFinite(Number(fireHydrantCount))
-    ? (empiricalPercentileScore(Number(fireHydrantCount), fireHydrantReference, "higher_is_better")
-      ?? referenceRelativeScore(Number(fireHydrantCount), fireHydrantReference, "higher_is_better"))
-    : null;
-  c1Factors.push({
-    category: "C1",
-    indicator: "fireHydrantCount500m",
-    value: Number.isFinite(Number(fireHydrantCount)) ? Number(fireHydrantCount) : null,
-    unit: "hydrants",
-    direction: "higher_is_better",
-    source: Number.isFinite(Number(fireHydrantCount)) ? c1Source : "unavailable",
-    method: "official",
-    confidence: fireHydrantScore != null ? "medium" : "low",
-    status: Number.isFinite(Number(fireHydrantCount)) ? "available" : "unavailable",
-    retrievedAt: c1SafetyMetrics?.retrievedAt,
-    referenceSampleSize: fireHydrantReference?.filter(Number.isFinite).length ?? 0,
-    scoringMethod: fireHydrantScore != null && (fireHydrantReference?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
-    availabilityReason: Number.isFinite(Number(fireHydrantCount)) ? (fireHydrantScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
-  });
-
-  const c1ComponentScores = [accidentScore, floodScore, streetLightScore, fireHydrantScore]
-    .filter((value): value is number => value !== null);
-  const c1Observed: number | null = c1ComponentScores.length
-    ? clampScore(average(c1ComponentScores))
-    : null;
-
-
-  // C2 is calculated only from source-backed POI distances/counts. Missing POI types
-  // remain unavailable; they are never replaced by regional benchmark distances.
-  const c2Definitions = [
-    ["supermarketDist", c2PoiMetrics?.supermarketDist],
-    ["convenienceDist", c2PoiMetrics?.convenienceDist],
-    ["clinicDist", c2PoiMetrics?.clinicDist],
-    ["schoolDist", c2PoiMetrics?.schoolDist],
-    ["bankPostDist", c2PoiMetrics?.bankPostDist],
-    ["marketDist", c2PoiMetrics?.marketDist],
-  ] as const;
-  const c2Source = c2PoiMetrics?.source || "unavailable";
-  const c2Method = c2PoiMetrics?.method || "calculated";
-  const c2Confidence = c2PoiMetrics?.confidence || "low";
-
-  const c2Factors: ScoreFactor[] = c2Definitions.map(([indicator, raw]) => ({
-    category: "C2" as Category,
-    indicator,
-    value: Number.isFinite(Number(raw)) ? Number(raw) : null,
-    unit: "m",
-    direction: "lower_is_better" as const,
-    source: Number.isFinite(Number(raw)) ? c2Source : "unavailable",
-    method: Number.isFinite(Number(raw)) ? c2Method : "calculated",
-    confidence: Number.isFinite(Number(raw)) ? c2Confidence : "low",
-    status: Number.isFinite(Number(raw)) ? "available" : "unavailable",
-  }));
-
-  const poiDensity = c2PoiMetrics?.poiDensityCount;
-  c2Factors.push({
-    category: "C2",
-    indicator: "poiDensityCount",
-    value: Number.isFinite(Number(poiDensity)) ? Number(poiDensity) : null,
-    unit: "POIs",
-    direction: "higher_is_better",
-    source: Number.isFinite(Number(poiDensity)) ? c2Source : "unavailable",
-    method: Number.isFinite(Number(poiDensity)) ? c2Method : "calculated",
-    confidence: Number.isFinite(Number(poiDensity)) ? c2Confidence : "low",
-    status: Number.isFinite(Number(poiDensity)) ? "available" : "unavailable",
-    retrievedAt: c2PoiMetrics?.retrievedAt,
-    referenceSampleSize: c2PoiDensityReference?.filter(Number.isFinite).length ?? 0,
-    scoringMethod: "not_scored",
-    availabilityReason: Number.isFinite(Number(poiDensity)) ? "insufficient_reference_data" : "no_observation",
-  });
-
-  for (const factor of c2Factors) {
-    const reference = normalization?.c2Distances?.[factor.indicator as keyof NonNullable<typeof normalization.c2Distances>];
-    factor.referenceSampleSize = reference?.filter(Number.isFinite).length ?? 0;
-    factor.retrievedAt = c2PoiMetrics?.retrievedAt;
-    factor.scoringMethod = factor.value != null
-      ? (factor.referenceSampleSize >= 20 ? "empirical_percentile" : "raw_observation")
-      : "not_scored";
-    if (factor.value != null && factor.referenceSampleSize < 20) {
-      factor.availabilityReason = undefined;
-    }
-  }
-
-  const poiDensityScore = empiricalPercentileScore(poiDensity, c2PoiDensityReference);
-  const c2ComponentScores = c2Definitions
-    .map(([indicator, value]) => {
-      if (!Number.isFinite(Number(value))) return null;
-      const percentile = empiricalPercentileScore(
-        Number(value),
-        normalization?.c2Distances?.[indicator],
-        "lower_is_better",
-      );
-      return percentile
-        ?? referenceRelativeScore(
-          Number(value),
-          normalization?.c2Distances?.[indicator],
-          "lower_is_better",
-        )
-        ?? inverseDistanceScore(Number(value), 500);
-    }).filter((value): value is number => value !== null);
-  c2Factors.forEach((factor) => {
-    if (factor.value == null) factor.availabilityReason = "no_observation";
-  });
-  if (poiDensityScore !== null) {
-    c2ComponentScores.push(poiDensityScore);
-  }
-  const c2Observed: number | null = c2ComponentScores.length
-    ? clampScore(average(c2ComponentScores))
-    : null;
-
-  // C3 uses only actual transit POIs. Frequency, walkability and bike-lane scores
-  // are intentionally omitted until backed by real transit/infrastructure datasets.
-  const c3Factors: ScoreFactor[] = [
-    {
-      category: "C3",
-      indicator: "mrtOrRailDist",
-      value: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? Number(c3TransitMetrics?.mrtOrRailDist) : null,
-      unit: "m",
-      direction: "lower_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.source || "unavailable") : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist))
-        ? ((normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
-        : "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.mrtOrRailDist)) ? undefined : "no_observation",
-    },
-    {
-      category: "C3",
-      indicator: "busStopDist",
-      value: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? Number(c3TransitMetrics?.busStopDist) : null,
-      unit: "m",
-      direction: "lower_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.source || "unavailable") : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.method || "calculated") : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? (c3TransitMetrics?.confidence || "low") : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.busStopDist))
-        ? ((normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
-        : "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.busStopDist)) ? undefined : "no_observation",
-    },
-    {
-      category: "C3",
-      indicator: "youBikeNearestDist",
-      value: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? Number(c3TransitMetrics?.youBikeNearestDist) : null,
-      unit: "m",
-      direction: "lower_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
-        ? (c3TransitMetrics?.source || "unavailable")
-        : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
-        ? (c3TransitMetrics?.method || "calculated")
-        : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
-        ? (c3TransitMetrics?.confidence || "low")
-        : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist))
-        ? ((normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
-        : "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.youBikeNearestDist)) ? undefined : "no_observation",
-    },
-    {
-      category: "C3",
-      indicator: "bikeLaneLength500m",
-      value: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? Number(c3TransitMetrics?.bikeLaneLength500m) : null,
-      unit: "m",
-      direction: "higher_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
-        ? (c3TransitMetrics?.source || "unavailable")
-        : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
-        ? (c3TransitMetrics?.method || "calculated")
-        : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
-        ? (c3TransitMetrics?.confidence || "low")
-        : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m))
-        ? ((normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
-        : "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.bikeLaneLength500m)) ? undefined : "no_observation",
-    },
-    {
-      category: "C3",
-      indicator: "sidewalkCoverage500mPct",
-      value: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? Number(c3TransitMetrics?.sidewalkCoverage500mPct) : null,
-      unit: "%",
-      direction: "higher_is_better",
-      source: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
-        ? (c3TransitMetrics?.source || "unavailable")
-        : "unavailable",
-      method: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
-        ? (c3TransitMetrics?.method || "calculated")
-        : "calculated",
-      confidence: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
-        ? (c3TransitMetrics?.confidence || "low")
-        : "low",
-      status: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? "available" : "unavailable",
-      retrievedAt: c3TransitMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c3SidewalkCoveragePcts?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct))
-        ? ((normalization?.c3SidewalkCoveragePcts?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "raw_observation")
-        : "not_scored",
-      availabilityReason: Number.isFinite(Number(c3TransitMetrics?.sidewalkCoverage500mPct)) ? undefined : "no_observation",
-    },  ];
-  const c3ComponentScores = c3Factors
-.filter((factor) => ["mrtOrRailDist", "busStopDist", "youBikeNearestDist", "bikeLaneLength500m", "sidewalkCoverage500mPct"].includes(factor.indicator))
-    .map((factor) => {
-      if (factor.value == null) return null;
-      const reference = factor.indicator === "busStopDist"
-        ? normalization?.c3BusDistances
-        : factor.indicator === "mrtOrRailDist"
-          ? normalization?.c3RailDistances
-          : factor.indicator === "youBikeNearestDist"
-            ? normalization?.c3YouBikeDistances
-            : factor.indicator === "bikeLaneLength500m"
-              ? normalization?.c3BikeLaneLengths
-              : factor.indicator === "sidewalkCoverage500mPct"
-                ? normalization?.c3SidewalkCoveragePcts
-                : undefined;
-      const direction = ["bikeLaneLength500m", "sidewalkCoverage500mPct"].includes(factor.indicator)
-        ? "higher_is_better"
-        : "lower_is_better";
-      const percentile = empiricalPercentileScore(factor.value, reference, direction);
-      return percentile
-        ?? referenceRelativeScore(factor.value, reference, direction)
-        ?? inverseDistanceScore(factor.value, 500);
-    })
-    .filter((value): value is number => value !== null);
-  const c3Observed: number | null = c3ComponentScores.length
-    ? clampScore(average(c3ComponentScores))
-    : null;
-
-  // C4 combines only source-backed air quality and official green inventory metrics.
-  const airScore = weather?.aqi != null
-    ? (empiricalPercentileScore(weather.aqi, normalization?.c4Aqi, "lower_is_better")
-      ?? referenceRelativeScore(weather.aqi, normalization?.c4Aqi, "lower_is_better"))
-    : null;
-  const c4Factors: ScoreFactor[] = [{
-    category: "C4",
-    indicator: "airQualityScore",
-    value: airScore,
-    unit: "score",
-    direction: "higher_is_better",
-    source: airScore != null ? (weather?.source || "Open-Meteo Air Quality") : "unavailable",
-    method: airScore != null ? "api" : "calculated",
-    confidence: airScore != null ? "medium" : "low",
-    status: airScore != null ? "available" : "unavailable",
-    retrievedAt: weather?.retrievedAt,
-    referenceSampleSize: normalization?.c4Aqi?.filter(Number.isFinite).length ?? 0,
-    scoringMethod: airScore != null ? "empirical_percentile" : (weather?.aqi != null ? "not_scored" : "not_scored"),
-    availabilityReason: weather?.aqi == null ? "no_observation" : (airScore == null ? "insufficient_reference_data" : undefined),
-  }];
-  const streetTreeCount = c4GreenMetrics?.streetTreeCount800m;
-  const parkTreeCount = c4GreenMetrics?.parkTreeCount800m;
-  const nearestParkDist = c4GreenMetrics?.nearestParkDist;
-  const parkCount800m = c4GreenMetrics?.parkCount800m;
-  const streetTreeDensityPerKm2 = c4GreenMetrics?.streetTreeDensityPerKm2;
-  const parkTreeDensityPerKm2 = c4GreenMetrics?.parkTreeDensityPerKm2;
-  c4Factors.push(
-    {
-      category: "C4", indicator: "streetTreeCount800m", value: Number.isFinite(Number(streetTreeCount)) ? Number(streetTreeCount) : null,
-      unit: "trees", direction: "higher_is_better", source: Number.isFinite(Number(streetTreeCount)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: Number.isFinite(Number(streetTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(streetTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(streetTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
-    },
-    {
-      category: "C4", indicator: "parkTreeCount800m", value: Number.isFinite(Number(parkTreeCount)) ? Number(parkTreeCount) : null,
-      unit: "trees", direction: "higher_is_better", source: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.method || "calculated" : "calculated", confidence: Number.isFinite(Number(parkTreeCount)) ? c4GreenMetrics?.confidence || "low" : "low", status: Number.isFinite(Number(parkTreeCount)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
-    },
-  );
-  const streetTreeDensityScore = empiricalPercentileScore(streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference)
-    ?? referenceRelativeScore(streetTreeDensityPerKm2, c4GreenMetrics?.streetTreeDensityReference, "higher_is_better");
-  const parkTreeDensityScore = empiricalPercentileScore(parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference)
-    ?? referenceRelativeScore(parkTreeDensityPerKm2, c4GreenMetrics?.parkTreeDensityReference, "higher_is_better");
-  c4Factors.push(
-    {
-      category: "C4", indicator: "streetTreeDensityPerKm2", value: Number.isFinite(Number(streetTreeDensityPerKm2)) ? Number(streetTreeDensityPerKm2) : null,
-      unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(streetTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: "calculated", confidence: streetTreeDensityScore != null ? "medium" : "low", status: Number.isFinite(Number(streetTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
-      referenceSampleSize: c4GreenMetrics?.streetTreeDensityReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: streetTreeDensityScore != null ? "empirical_percentile" : "not_scored",
-      availabilityReason: Number.isFinite(Number(streetTreeDensityPerKm2)) ? (streetTreeDensityScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
-    },
-    {
-      category: "C4", indicator: "parkTreeDensityPerKm2", value: Number.isFinite(Number(parkTreeDensityPerKm2)) ? Number(parkTreeDensityPerKm2) : null,
-      unit: "trees/km²", direction: "higher_is_better", source: Number.isFinite(Number(parkTreeDensityPerKm2)) ? c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: "calculated", confidence: parkTreeDensityScore != null ? "medium" : "low", status: Number.isFinite(Number(parkTreeDensityPerKm2)) ? "available" : "unavailable", retrievedAt: c4GreenMetrics?.retrievedAt,
-      referenceSampleSize: c4GreenMetrics?.parkTreeDensityReference?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: parkTreeDensityScore != null ? "empirical_percentile" : "not_scored",
-      availabilityReason: Number.isFinite(Number(parkTreeDensityPerKm2)) ? (parkTreeDensityScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
-    },
-    {
-      category: "C4", indicator: "nearestParkDist", value: Number.isFinite(Number(nearestParkDist)) ? Number(nearestParkDist) : null,
-      unit: "m", direction: "lower_is_better", source: Number.isFinite(Number(nearestParkDist)) ? provenance?.c4NearestParkSource || c4GreenMetrics?.source || "unavailable" : "unavailable",
-      method: "calculated", confidence: Number.isFinite(Number(nearestParkDist)) ? "medium" : "low", status: Number.isFinite(Number(nearestParkDist)) ? "available" : "unavailable", retrievedAt: provenance?.c4NearestParkRetrievedAt || c4GreenMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: Number.isFinite(Number(nearestParkDist)) && (normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0) >= 20 ? "empirical_percentile" : "not_scored",
-      availabilityReason: Number.isFinite(Number(nearestParkDist)) ? ((normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0) < 20 ? "insufficient_reference_data" : undefined) : "no_observation",
-    },
-    {
-      category: "C4", indicator: "parkCount800m", value: Number.isFinite(Number(parkCount800m)) ? Number(parkCount800m) : null,
-      unit: "parks", direction: "higher_is_better",
-      source: Number.isFinite(Number(parkCount800m)) ? (provenance?.c4ParkSource || "unavailable") : "unavailable",
-      method: Number.isFinite(Number(parkCount800m)) ? "osm" : "calculated",
-      confidence: Number.isFinite(Number(parkCount800m)) ? "medium" : "low",
-      status: Number.isFinite(Number(parkCount800m)) ? "available" : "unavailable",
-      retrievedAt: provenance?.c4ParkRetrievedAt,
-      scoringMethod: "raw_observation",
-      availabilityReason: Number.isFinite(Number(parkCount800m)) ? undefined : "no_observation",
-    },
-  );
-  // Raw counts are preserved as facts. Density is calculated from the fixed 800m
-  // observation radius (2.0106 km²). Nearest-park distance is scored only when
-  // a real reference distribution contains at least 20 observations.
-  const nearestParkScore = nearestParkDist == null
-    ? null
-    : (empiricalPercentileScore(nearestParkDist, normalization?.c4NearestParkDistances, "lower_is_better")
-      ?? referenceRelativeScore(nearestParkDist, normalization?.c4NearestParkDistances, "lower_is_better"));
-  if (nearestParkScore !== null) {
-    c4Factors.push({
-      category: "C4",
-      indicator: "nearestParkDistanceScore",
-      value: nearestParkScore,
-      unit: "score",
-      direction: "higher_is_better",
-      source: provenance?.c4NearestParkSource || c4GreenMetrics?.source || "unavailable",
-      method: "calculated",
-      confidence: "medium",
-      status: "available",
-      retrievedAt: provenance?.c4NearestParkRetrievedAt || c4GreenMetrics?.retrievedAt,
-      referenceSampleSize: normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
-      scoringMethod: "empirical_percentile",
-    });
-  }
-  const coolingPointCount = c4GreenMetrics?.coolingPointCount1200m;
-  const coolingPointReference = c4GreenMetrics?.coolingPointCountReference;
-  const coolingPointScore = Number.isFinite(Number(coolingPointCount))
-    ? (empiricalPercentileScore(Number(coolingPointCount), coolingPointReference, "higher_is_better")
-      ?? referenceRelativeScore(Number(coolingPointCount), coolingPointReference, "higher_is_better"))
-    : null;
-  c4Factors.push({
-    category: "C4",
-    indicator: "coolingPointCount1200m",
-    value: Number.isFinite(Number(coolingPointCount)) ? Number(coolingPointCount) : null,
-    unit: "places",
-    direction: "higher_is_better",
-    source: Number.isFinite(Number(coolingPointCount))
-      ? c4GreenMetrics?.source || "unavailable"
-      : "unavailable",
-    method: "official",
-    confidence: coolingPointScore != null ? "medium" : "low",
-    status: Number.isFinite(Number(coolingPointCount)) ? "available" : "unavailable",
-    retrievedAt: c4GreenMetrics?.retrievedAt,
-    referenceSampleSize: coolingPointReference?.filter(Number.isFinite).length ?? 0,
-    scoringMethod: coolingPointScore != null && (coolingPointReference?.filter(Number.isFinite).length ?? 0) >= 20
-      ? "empirical_percentile"
-      : "not_scored",
-    availabilityReason: Number.isFinite(Number(coolingPointCount))
-      ? (coolingPointScore == null ? "insufficient_reference_data" : undefined)
-      : "no_observation",
-  });
-  const greenScores = [streetTreeDensityScore, parkTreeDensityScore, nearestParkScore, coolingPointScore]
-    .filter((value): value is number => value !== null);
-  const c4Components = [airScore, ...greenScores].filter((value): value is number => value !== null);
-  const c4Observed: number | null = c4Components.length ? clampScore(average(c4Components)) : null;
-
-  // C5 measures source-backed community/cultural access only. It does not
-  // claim to measure subjective social trust or civic participation.
-  const communityScore = empiricalPercentileScore(c5CommunityCount, c5CommunityReference)
-    ?? referenceRelativeScore(c5CommunityCount, c5CommunityReference, "higher_is_better");
-  const communityReferenceSize = c5CommunityReference?.filter(Number.isFinite).length ?? 0;
-  const c5NearestDistanceReferenceSize = normalization?.c5NearestCommunityDistances?.filter(Number.isFinite).length ?? 0;
-  const c5NearestDistanceScore = c5NearestCommunityDistance == null
-    ? null
-    : (empiricalPercentileScore(
-      c5NearestCommunityDistance,
-      normalization?.c5NearestCommunityDistances,
-      "lower_is_better",
-    ) ?? referenceRelativeScore(
-      c5NearestCommunityDistance,
-      normalization?.c5NearestCommunityDistances,
-      "lower_is_better",
-    ));
-  const c5Factors: ScoreFactor[] = [{
-    category: "C5",
-    indicator: "communityCulturalPoiCount800m",
-    value: Number.isFinite(Number(c5CommunityCount)) ? Number(c5CommunityCount) : null,
-    unit: "POIs",
-    direction: "higher_is_better",
-    source: Number.isFinite(Number(c5CommunityCount))
-      ? (provenance?.c5Source || "unavailable")
-      : "unavailable",
-    method: "calculated",
-    confidence: communityScore != null ? "medium" : "low",
-    status: Number.isFinite(Number(c5CommunityCount)) ? "available" : "unavailable",
-    retrievedAt: provenance?.c5RetrievedAt,
-    referenceSampleSize: communityReferenceSize,
-    scoringMethod: communityScore != null ? "empirical_percentile" : "not_scored",
-    availabilityReason: Number.isFinite(Number(c5CommunityCount)) ? (communityScore == null ? "insufficient_reference_data" : undefined) : "no_observation",
-  }];
-  const c5Components = [communityScore, c5NearestDistanceScore].filter((value): value is number => value !== null);
-  if (c5NearestDistanceScore !== null) {
-    c5Factors.push({
-      category: "C5",
-      indicator: "nearestCommunityCulturalFacilityDistanceScore",
-      value: c5NearestDistanceScore,
-      unit: "score",
-      direction: "higher_is_better",
-      source: provenance?.c5Source || "unavailable",
-      method: "calculated",
-      confidence: "medium",
-      status: "available",
-      retrievedAt: provenance?.c5RetrievedAt,
-      referenceSampleSize: c5NearestDistanceReferenceSize,
-      scoringMethod: "empirical_percentile",
-    });
-  }
-  const c5Observed: number | null = c5Components.length ? clampScore(average(c5Components)) : null;
-
-  const regionalPriors: Record<Category, { score: number | null; sampleSize: number }> = {
-    C1: {
-      score: regionalPriorScore([
-        referenceRelativeScore(
-          medianValue(c1SafetyMetrics?.accidentCountReference) ?? undefined,
-          c1SafetyMetrics?.accidentCountReference,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(c1SafetyMetrics?.floodDepthReference) ?? undefined,
-          c1SafetyMetrics?.floodDepthReference,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(c1SafetyMetrics?.fireHydrantCountReference) ?? undefined,
-          c1SafetyMetrics?.fireHydrantCountReference,
-          "higher_is_better",
-        ),
-      ]),
-      sampleSize: Math.max(
-        c1SafetyMetrics?.accidentCountReference?.filter(Number.isFinite).length ?? 0,
-        c1SafetyMetrics?.floodDepthReference?.filter(Number.isFinite).length ?? 0,
-        c1SafetyMetrics?.fireHydrantCountReference?.filter(Number.isFinite).length ?? 0,
-      ),
-    },
-    C2: {
-      score: regionalPriorScore([
-        ...c2Definitions.map(([indicator]) =>
-          referenceRelativeScore(
-            medianValue(normalization?.c2Distances?.[indicator]) ?? undefined,
-            normalization?.c2Distances?.[indicator],
-            "lower_is_better",
-          ),
-        ),
-        referenceRelativeScore(
-          medianValue(c2PoiDensityReference) ?? undefined,
-          c2PoiDensityReference,
-          "higher_is_better",
-        ),
-      ]),
-      sampleSize: Math.max(
-        ...c2Definitions.map(([indicator]) => normalization?.c2Distances?.[indicator]?.filter(Number.isFinite).length ?? 0),
-        c2PoiDensityReference?.filter(Number.isFinite).length ?? 0,
-      ),
-    },
-    C3: {
-      score: regionalPriorScore([
-        referenceRelativeScore(
-          medianValue(normalization?.c3RailDistances) ?? undefined,
-          normalization?.c3RailDistances,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c3BusDistances) ?? undefined,
-          normalization?.c3BusDistances,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c3YouBikeDistances) ?? undefined,
-          normalization?.c3YouBikeDistances,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c3BikeLaneLengths) ?? undefined,
-          normalization?.c3BikeLaneLengths,
-          "higher_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c3SidewalkCoveragePcts) ?? undefined,
-          normalization?.c3SidewalkCoveragePcts,
-          "higher_is_better",
-        ),
-      ]),
-      sampleSize: Math.max(
-        normalization?.c3RailDistances?.filter(Number.isFinite).length ?? 0,
-        normalization?.c3BusDistances?.filter(Number.isFinite).length ?? 0,
-        normalization?.c3YouBikeDistances?.filter(Number.isFinite).length ?? 0,
-        normalization?.c3BikeLaneLengths?.filter(Number.isFinite).length ?? 0,
-        normalization?.c3SidewalkCoveragePcts?.filter(Number.isFinite).length ?? 0,
-      ),
-    },
-    C4: {
-      score: regionalPriorScore([
-        referenceRelativeScore(
-          medianValue(normalization?.c4Aqi) ?? undefined,
-          normalization?.c4Aqi,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(c4GreenMetrics?.streetTreeDensityReference) ?? undefined,
-          c4GreenMetrics?.streetTreeDensityReference,
-          "higher_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(c4GreenMetrics?.parkTreeDensityReference) ?? undefined,
-          c4GreenMetrics?.parkTreeDensityReference,
-          "higher_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c4NearestParkDistances) ?? undefined,
-          normalization?.c4NearestParkDistances,
-          "lower_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c4CoolingPointCounts) ?? undefined,
-          normalization?.c4CoolingPointCounts,
-          "higher_is_better",
-        ),
-      ]),
-      sampleSize: Math.max(
-        normalization?.c4Aqi?.filter(Number.isFinite).length ?? 0,
-        c4GreenMetrics?.streetTreeDensityReference?.filter(Number.isFinite).length ?? 0,
-        c4GreenMetrics?.parkTreeDensityReference?.filter(Number.isFinite).length ?? 0,
-        normalization?.c4NearestParkDistances?.filter(Number.isFinite).length ?? 0,
-        normalization?.c4CoolingPointCounts?.filter(Number.isFinite).length ?? 0,
-      ),
-    },
-    C5: {
-      score: regionalPriorScore([
-        referenceRelativeScore(
-          medianValue(c5CommunityReference) ?? undefined,
-          c5CommunityReference,
-          "higher_is_better",
-        ),
-        referenceRelativeScore(
-          medianValue(normalization?.c5NearestCommunityDistances) ?? undefined,
-          normalization?.c5NearestCommunityDistances,
-          "lower_is_better",
-        ),
-      ]),
-      sampleSize: Math.max(
-        c5CommunityReference?.filter(Number.isFinite).length ?? 0,
-        normalization?.c5NearestCommunityDistances?.filter(Number.isFinite).length ?? 0,
-      ),
-    },
+  const evidence: ScoreFactor[] = [];
+  const raw = (category: Category, indicator: string, value: unknown, unit: string, metadata: Partial<FixedInput>, direction: ScoreFactor['direction'] = 'higher_is_better') => {
+    const valid = validObservation(value);
+    evidence.push({ category, indicator, value: valid ? value : null, unit, direction,
+      source: valid ? metadata.source || 'unavailable' : 'unavailable', method: metadata.method || 'calculated',
+      confidence: valid ? metadata.confidence || 'medium' : 'low', status: valid ? 'available' : 'unavailable',
+      retrievedAt: valid ? metadata.retrievedAt : undefined, scoringMethod: 'raw_observation' });
   };
-
-  const observedScores: Record<Category, number | null> = {
-    C1: c1Observed,
-    C2: c2Observed,
-    C3: c3Observed,
-    C4: c4Observed,
-    C5: c5Observed,
-  };
-
-  const factorSets: Record<Category, ScoreFactor[]> = {
-    C1: c1Factors,
-    C2: c2Factors,
-    C3: c3Factors,
-    C4: c4Factors,
-    C5: c5Factors,
-  };
-
-  const categories: Record<Category, CategoryScore> = {} as Record<Category, CategoryScore>;
-  for (const category of Object.keys(observedScores) as Category[]) {
-    const observed = observedScores[category];
-    const prior = regionalPriors[category];
-    const canEstimate = prior.sampleSize >= MIN_REGIONAL_PRIOR_SAMPLES;
-
-    if (observed != null) {
-      categories[category] = {
-        score: observed,
-        factors: factorSets[category],
-        mode: "observed",
-      };
-      continue;
-    }
-
-    if (canEstimate && prior.score != null) {
-      factorSets[category].push({
-        category,
-        indicator: "regionalReferencePrior",
-        value: prior.score,
-        unit: "score",
-        direction: "higher_is_better",
-        source: "StreetLens persisted real reference observations",
-        method: "estimated",
-        confidence: "low",
-        status: "available",
-        referenceSampleSize: prior.sampleSize,
-        scoringMethod: "not_scored",
-        estimationMethod: "regional_real_data_prior",
-      });
-    }
-
-    categories[category] = {
-      score: canEstimate ? prior.score : null,
-      factors: factorSets[category],
-      mode: canEstimate && prior.score != null ? "estimated" : "observed",
-      estimationMethod: canEstimate && prior.score != null ? "regional_real_data_prior" : undefined,
-      estimationReferenceSampleSize: canEstimate && prior.score != null ? prior.sampleSize : undefined,
-    };
-  }
-
-  const allFactors = Object.values(categories).flatMap((category) => category.factors);
-  const scoredCategories = Object.values(categories)
-    .map((category) => category.score)
-    .filter((score): score is number => score !== null);
-  const estimatedCategoryCount = Object.values(categories)
-    .filter((category) => category.mode === "estimated")
-    .length;
-  const overall: number | null = scoredCategories.length
-    ? clampScore(average(scoredCategories))
-    : null;
-  const overallMode: ScoreMode = estimatedCategoryCount > 0 ? "estimated" : "observed";
-  const baseConfidence = overallConfidence(allFactors);
-  const confidence = estimatedCategoryCount > 0 && baseConfidence === "high"
-    ? "medium"
-    : baseConfidence;
-
-  return {
-    c1: categories.C1,
-    c2: categories.C2,
-    c3: categories.C3,
-    c4: categories.C4,
-    c5: categories.C5,
-    overall,
-    overallMode,
-    estimatedCategoryCount,
-    weights: DEFAULT_WEIGHTS,
-    confidence,
-  };
+  raw('C1', 'fatalTrafficAccidentCount500m', c1SafetyMetrics?.fatalAccidentCount500m, 'accidents', safety, 'lower_is_better');
+  raw('C1', 'injuryTrafficAccidentCount500m', c1SafetyMetrics?.injuryAccidentCount500m, 'accidents', safety, 'lower_is_better');
+  for (const cell of floodCells) raw('C1', `floodHazard_${cell.scenarioMmPerHour}mmh`, cell.depthCm, 'cm', { source: cell.source, retrievedAt: cell.retrievedAt, method: 'official' }, 'lower_is_better');
+  raw('C4', 'streetTreeCount800m', c4GreenMetrics?.streetTreeCount800m, 'trees', green);
+  raw('C4', 'parkTreeCount800m', c4GreenMetrics?.parkTreeCount800m, 'trees', green);
+  raw('C4', 'parkCount800m', c4GreenMetrics?.parkCount800m, 'parks', { ...green, source: provenance?.c4ParkSource || green.source, retrievedAt: provenance?.c4ParkRetrievedAt || green.retrievedAt });
+  return calculateFixedScores(inputs, evidence);
 }

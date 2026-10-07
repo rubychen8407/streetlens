@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { AssessmentEvidence, AssessmentExplanation, FieldObservationAdjustment, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
+import { ClsMethod } from './ClsMethod';
 
 interface Props {
   saved: SavedLocation | null; streetName: string; district: string; city: string;
@@ -43,7 +44,7 @@ function LivabilityRadar({ scores }: { scores?: { c1?: number | null; c2?: numbe
   ];
 
   const points = axes.map(axis => {
-    const val = Math.min(100, Math.max(10, scores?.[axis.key] ?? 50));
+    const val = Math.min(100, Math.max(0, scores?.[axis.key] ?? 0));
     const r = (val / 100) * radius;
     const x = cx + r * Math.cos(axis.angle);
     const y = cy + r * Math.sin(axis.angle);
@@ -80,14 +81,15 @@ function LivabilityRadar({ scores }: { scores?: { c1?: number | null; c2?: numbe
             strokeWidth="1"
           />
         ))}
-        <polygon
+        {axes.every(axis => scores?.[axis.key] != null) && <polygon
           points={points}
           fill="rgba(212, 249, 113, 0.22)"
           stroke="#d4f971"
           strokeWidth="2.5"
-        />
+        />}
         {axes.map(axis => {
-          const val = Math.min(100, Math.max(10, scores?.[axis.key] ?? 50));
+          if (scores?.[axis.key] == null) return null;
+          const val = Math.min(100, Math.max(0, scores[axis.key]!));
           const r = (val / 100) * radius;
           const x = cx + r * Math.cos(axis.angle);
           const y = cy + r * Math.sin(axis.angle);
@@ -175,12 +177,13 @@ export function StreetReport(props: Props) {
               )}
             </div>
             <div className="text-sm text-slate-300 mt-0.5">
-              {score == null ? t("待補") : assessment?.scores.overallMode === 'estimated' ? t("推估數據") : t("實測綜合")}
+              {score == null ? t("待補") : assessment?.scores.provisional ? t('暫定分數') : assessment?.scores.overallMode === 'estimated' ? t("推估數據") : t("實測綜合")}
             </div>
           </div>
         </div>
 
         {/* Stats Grid */}
+        {assessment && <ClsMethod scores={assessment.scores} />}
         {assessment?.baseline && <div className="text-sm leading-relaxed text-slate-300 mt-3">{t('外部 CLS 以路段共用取樣點計算；總分另加此筆實勘調整。')}</div>}
         <div className="grid grid-cols-3 gap-2 mt-4">
           <div className="rounded-xl bg-black/20 border border-white/[0.06] p-3">
@@ -282,6 +285,9 @@ export function StreetReport(props: Props) {
                   </div>
 
                   {/* Progress bar visualizer */}
+                  {item.score?.completeness != null && <div className="text-sm text-slate-300">
+                    {t('資料完整度')} {item.score.completeness}%{item.score.provisional ? ` · ${t('暫定')}` : ''}
+                  </div>}
                   <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${item.barColor}`}
@@ -303,7 +309,12 @@ export function StreetReport(props: Props) {
               {visibleFactors(assessment.factors).map((factor, index) => (
                 <div key={factor.indicator + '-' + index} className="flex justify-between gap-3 text-sm py-1 border-b border-white/[0.03] last:border-0">
                   <span className="text-slate-300">{factor.category} · {t(factor.indicator)}</span>
-                  <span className="text-right text-slate-200 font-mono">{formatNumber(factor.value)} {t(factor.unit)} · {t(factor.source)}</span>
+                  <span className="text-right text-slate-200">
+                    <span className="font-mono">{formatNumber(factor.value)} {t(factor.unit)}</span> · {t(factor.source)}
+                    {factor.estimatedValue != null && <span className="block text-amber-300">{t('區域中位數估計')} {formatNumber(factor.estimatedValue)} {t(factor.unit)} · n={factor.referenceSampleSize}</span>}
+                    {factor.normalizedScore != null && <span className="block">{t('指標分數')} {formatNumber(factor.normalizedScore)} · {t('類內權重')} {formatNumber((factor.indicatorWeight ?? 0) * 100)}%</span>}
+                    {factor.referencePercentile != null && <span className="block text-slate-300">{t('參考樣本百分位')} {factor.referencePercentile} · n={factor.referenceSampleSize}</span>}
+                  </span>
                 </div>
               ))}
             </div>

@@ -1,3 +1,4 @@
+import { normalizeSpatialInventory } from './spatialInventory';
 import "dotenv/config";
 import pg from "pg";
 import crypto from "node:crypto";
@@ -889,6 +890,7 @@ export async function replaceExternalSpatialPoints(
   metadata: { fetchedAt?: string; sourceUpdatedAt?: string | null; sourceVersion?: string | null } = {},
 ): Promise<void> {
   if (!dataDb) return;
+  points = normalizeSpatialInventory(points);
 
   const client = await dataDb.connect();
   try {
@@ -967,7 +969,7 @@ export async function replaceExternalSpatialAreas(
     const fetchedAt = metadata.fetchedAt || new Date().toISOString();
     const sourceUpdatedAt = metadata.sourceUpdatedAt ?? null;
     const sourceVersion = metadata.sourceVersion ?? null;
-    const validAreas = areas.filter((area) => area?.geometry?.coordinates);
+    const validAreas = normalizeSpatialInventory(areas.filter((area) => area?.geometry?.coordinates));
 
     for (let start = 0; start < validAreas.length; start += 100) {
       const batch = validAreas.slice(start, start + 100);
@@ -984,7 +986,7 @@ export async function replaceExternalSpatialAreas(
           sourceVersion,
           JSON.stringify(area.geometry),
         );
-        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}::jsonb, ${offset + 5}, ${offset + 6}, ${offset + 7}, ST_SetSRID(ST_GeomFromGeoJSON(${offset + 8}), 4326))`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}::jsonb, $${offset + 5}, $${offset + 6}, $${offset + 7}, ST_SetSRID(ST_GeomFromGeoJSON($${offset + 8}), 4326))`;
       });
       if (!rows.length) continue;
       await client.query(
@@ -1106,8 +1108,7 @@ export async function replaceExternalSpatialLines(
     const sourceUpdatedAt = metadata.sourceUpdatedAt ?? null;
     const sourceVersion = metadata.sourceVersion ?? null;
     const values: unknown[] = [];
-    const rows = lines
-      .filter((line) => line.coordinates.length >= 2)
+    const rows = normalizeSpatialInventory(lines.filter((line) => line.coordinates.length >= 2))
       .map((line, index) => {
         const offset = index * 8;
         const coordinateText = line.coordinates
@@ -1123,7 +1124,7 @@ export async function replaceExternalSpatialLines(
           sourceVersion,
           `LINESTRING(${coordinateText})`,
         );
-        return `(${offset + 1}, ${offset + 2}, ${offset + 3}, ${offset + 4}::jsonb, ${offset + 5}, ${offset + 6}, ${offset + 7}, ST_SetSRID(ST_GeomFromText(${offset + 8}), 4326))`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}::jsonb, $${offset + 5}, $${offset + 6}, $${offset + 7}, ST_SetSRID(ST_GeomFromText($${offset + 8}), 4326))`;
       });
 
     for (let start = 0; start < rows.length; start += 200) {
@@ -1132,7 +1133,7 @@ export async function replaceExternalSpatialLines(
       if (!rowBatch.length) continue;
       const renumbered = rowBatch.map((row, index) => {
         const currentOffset = index * 8;
-        return `(${currentOffset + 1}, ${currentOffset + 2}, ${currentOffset + 3}, ${currentOffset + 4}::jsonb, ${currentOffset + 5}, ${currentOffset + 6}, ${currentOffset + 7}, ST_SetSRID(ST_GeomFromText(${currentOffset + 8}), 4326))`;
+        return `($${currentOffset + 1}, $${currentOffset + 2}, $${currentOffset + 3}, $${currentOffset + 4}::jsonb, $${currentOffset + 5}, $${currentOffset + 6}, $${currentOffset + 7}, ST_SetSRID(ST_GeomFromText($${currentOffset + 8}), 4326))`;
       });
       await client.query(
         `INSERT INTO external_spatial_lines
@@ -1456,10 +1457,9 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   c3SidewalkCoveragePcts: number[];
   c4Aqi: number[];
   c4CoolingPointCounts: number[];
-  c1AedCounts: number[];
   c1HydrantCounts: number[];
 }> {
-  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [], c4CoolingPointCounts: [], c1AedCounts: [], c1HydrantCounts: [] };
+  if (!dataDb) return { c2Distances: {}, c3RailDistances: [], c3BusDistances: [], c3YouBikeDistances: [], c3BikeLaneLengths: [], c3SidewalkCoveragePcts: [], c4Aqi: [], c4CoolingPointCounts: [], c1HydrantCounts: [] };
 
   const result = await dataDb.query(
     `SELECT scope_key AS "scopeKey", source_key AS "sourceKey", payload
@@ -1476,7 +1476,6 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
   const c3SidewalkByScope = new Map<string, number>();
   const c4Aqi: number[] = [];
   const c4CoolingByScope = new Map<string, number>();
-  const c1AedByScope = new Map<string, number>();
   const c1HydrantByScope = new Map<string, number>();
 
   for (const row of result.rows) {
@@ -1589,8 +1588,6 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     const coolingPoints = await getNearbyExternalSpatialPoints("taipei_cooling_points", target.latitude, target.longitude, 1200, 300);
     c4CoolingByScope.set(target.scopeKey, coolingPoints.length);
 
-    const aedPoints = await getNearbyExternalSpatialPoints("taipei_aed", target.latitude, target.longitude, 500, 500);
-    c1AedByScope.set(target.scopeKey, aedPoints.length);
 
     const hydrants = await getNearbyExternalSpatialPoints("taipei_fire_hydrants", target.latitude, target.longitude, 500, 1000);
     c1HydrantByScope.set(target.scopeKey, hydrants.length);
@@ -1605,7 +1602,6 @@ export async function getDistanceAndAirQualityReferences(excludeScopeKey?: strin
     c3SidewalkCoveragePcts: [...c3SidewalkByScope.values()],
     c4Aqi,
     c4CoolingPointCounts: [...c4CoolingByScope.values()],
-    c1AedCounts: [...c1AedByScope.values()],
     c1HydrantCounts: [...c1HydrantByScope.values()],
   };
 }

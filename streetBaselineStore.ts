@@ -4,7 +4,7 @@ import { distanceMeters, streetIdentity, STREET_ANCHOR_RADIUS_METERS, rebaseSave
 import type { SavedLocation, StreetAssessmentResponse } from './src/types';
 import type { AssessmentReadResult } from './savedScoreBackfill';
 
-export const BASELINE_SCORING_VERSION = 'street-anchor-v1';
+export const BASELINE_SCORING_VERSION = 'street-anchor-v2-no-aed';
 type Location = { lat: number; lng: number; city: string; district: string; streetName: string };
 type Anchor = { id: string; lat: number; lng: number; street_identity: string };
 
@@ -45,7 +45,7 @@ export async function sourceRevision(db: Pick<Pool, 'query'>): Promise<string> {
        CASE source_key WHEN 'osm_static_taipei' THEN INTERVAL '30 days'
        WHEN 'taipei_official_aqi' THEN INTERVAL '24 hours' ELSE INTERVAL '48 hours' END)::text
     ELSE '' END, '|' ORDER BY source_key, scope_key), '')) AS revision
-    FROM external_data_snapshots`);
+    FROM external_data_snapshots WHERE source_key NOT IN ('taipei_aed','taipei_public_toilets')`);
   return `${BASELINE_SCORING_VERSION}:${rows.rows[0].revision}`;
 }
 

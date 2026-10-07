@@ -4,5 +4,5 @@ export function formatNumber(value: number | null | undefined, fallback = '—')
 }
 
 export function visibleFactors<T extends { indicator: string }>(factors: T[]): T[] {
-  return factors.filter(factor => !['youBikeAvailableBikes', 'youBikeAvailableDocks'].includes(factor.indicator));
+  return factors.filter(factor => !['youBikeAvailableBikes', 'youBikeAvailableDocks', 'aedCount500m', 'publicToiletCount800m'].includes(factor.indicator));
 }

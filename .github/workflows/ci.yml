@@ -58,6 +58,9 @@ jobs:
       - name: Optional PostGIS compatibility tests
         run: npm run test:postgis-optional
 
+      - name: Spatial inventory and refresh client regression tests
+        run: npm run test:spatial-inventory && npm run test:refresh-client
+
       - name: Walk and saved CLS regression tests
         run: npm run test:walk-moments
 

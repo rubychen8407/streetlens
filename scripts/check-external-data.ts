@@ -9,13 +9,11 @@ import {
   fetchTaipeiStreetLights,
   fetchTaipeiBusStops,
   fetchTaipeiLibraries,
-  fetchTaipeiPublicToilets,
   fetchTaipeiParks,
   fetchTaipeiBikeLanes,
   fetchTaipeiSidewalkAreas,
   fetchTaipeiMarkets,
   fetchTaipeiCoolingPoints,
-  fetchTaipeiAed,
   fetchTaipeiFireHydrants,
   fetchTaipeiOfficialAirQuality,
   fetchTaipeiFireStations,
@@ -102,7 +100,6 @@ async function main() {
     OFFICIAL_SOURCE_URLS.taipeiStreetLights,
     OFFICIAL_SOURCE_URLS.taipeiBusStops,
     OFFICIAL_SOURCE_URLS.taipeiLibraries,
-    OFFICIAL_SOURCE_URLS.taipeiPublicToilets,
     OFFICIAL_SOURCE_URLS.taipeiParks,
     OFFICIAL_SOURCE_URLS.taipeiBikeLanes,
     OFFICIAL_SOURCE_URLS.wheelRouteFacility11,
@@ -125,7 +122,7 @@ async function main() {
   // Some data.taipei CSV endpoints can reject/timeout generic CI fetches even
   // though the adapter request succeeds, so do not fail before exercising it.
 
-  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, publicToilets, parks, bikeLanes, sidewalks, markets, coolingPoints, aed, hydrants, officialAqi, fireStations] = await Promise.all([
+  const [green, transit, safety, youBike, medical, streetLights, busStops, libraries, parks, bikeLanes, sidewalks, markets, coolingPoints, hydrants, officialAqi, fireStations] = await Promise.all([
     fetchTaipeiGreenData(TEST_LAT, TEST_LNG),
     fetchTaiwanTransitData(TEST_LAT, TEST_LNG),
     fetchTaipeiSafetyData(TEST_LAT, TEST_LNG, 500),
@@ -134,13 +131,11 @@ async function main() {
     fetchOfficialWithRetry("streetLights", fetchTaipeiStreetLights),
     fetchOfficialWithRetry("busStops", fetchTaipeiBusStops),
     fetchOfficialWithRetry("libraries", fetchTaipeiLibraries),
-    fetchOfficialWithRetry("publicToilets", fetchTaipeiPublicToilets),
     fetchOfficialWithRetry("parks", fetchTaipeiParks),
     fetchOfficialWithRetry("bikeLanes", fetchTaipeiBikeLanes),
     fetchOfficialWithRetry("sidewalks", fetchTaipeiSidewalkAreas),
     fetchOfficialWithRetry("markets", fetchTaipeiMarkets),
     fetchOfficialWithRetry("coolingPoints", fetchTaipeiCoolingPoints),
-    fetchOfficialWithRetry("AED", fetchTaipeiAed),
     fetchOfficialWithRetry("hydrants", fetchTaipeiFireHydrants),
     fetchOfficialWithRetry("officialAQI", fetchTaipeiOfficialAirQuality),
     fetchOfficialWithRetry("fireStations", fetchTaipeiFireStations),
@@ -176,13 +171,11 @@ async function main() {
       streetLights: { status: streetLights.status, points: streetLights.points.length, error: streetLights.error || null },
       busStops: { status: busStops.status, points: busStops.points.length, error: busStops.error || null },
       libraries: { status: libraries.status, points: libraries.points.length, error: libraries.error || null },
-      publicToilets: { status: publicToilets.status, points: publicToilets.points.length, error: publicToilets.error || null },
       parks: { status: parks.status, points: parks.points.length, error: parks.error || null },
       bikeLanes: { status: bikeLanes.status, lines: bikeLanes.lines?.length || 0, error: bikeLanes.error || null },
       sidewalks: { status: sidewalks.status, areas: sidewalks.areas?.length || 0, error: sidewalks.error || null },
       markets: { status: markets.status, points: markets.points.length, error: markets.error || null },
       coolingPoints: { status: coolingPoints.status, points: coolingPoints.points.length, error: coolingPoints.error || null },
-      aed: { status: aed.status, points: aed.points.length, error: aed.error || null },
       hydrants: { status: hydrants.status, points: hydrants.points.length, error: hydrants.error || null },
       officialAqi: {
         status: officialAqi.status,
@@ -218,13 +211,11 @@ async function main() {
     ["streetLights", streetLights],
     ["busStops", busStops],
     ["libraries", libraries],
-    ["publicToilets", publicToilets],
     ["parks", parks],
     ["bikeLanes", bikeLanes],
     ["sidewalks", sidewalks],
     ["markets", markets],
     ["coolingPoints", coolingPoints],
-    ["aed", aed],
     ["hydrants", hydrants],
     ["officialAQI", officialAqi],
     ["fireStations", fireStations],
@@ -238,11 +229,9 @@ async function main() {
     "streetLights",
     "busStops",
     "libraries",
-    "publicToilets",
     "bikeLanes",
     "markets",
     "coolingPoints",
-    "aed",
     "hydrants",
     "fireStations",
   ]);
@@ -262,13 +251,11 @@ async function main() {
   assert(Array.isArray(streetLights.points), "Street light adapter returned invalid points");
   assert(Array.isArray(busStops.points), "Bus stop adapter returned invalid points");
   assert(Array.isArray(libraries.points), "Library adapter returned invalid points");
-  assert(Array.isArray(publicToilets.points), "Public toilet adapter returned invalid points");
   assert(Array.isArray(parks.points), "Park adapter returned invalid points");
   assert(Array.isArray(bikeLanes.lines), "Bike lane adapter returned invalid lines");
   assert(Array.isArray(sidewalks.areas), "Sidewalk adapter returned invalid areas");
   assert(Array.isArray(markets.points), "Market adapter returned invalid points");
   assert(Array.isArray(coolingPoints.points), "Cooling point adapter returned invalid points");
-  assert(Array.isArray(aed.points), "AED adapter returned invalid points");
   assert(Array.isArray(hydrants.points), "Hydrant adapter returned invalid points");
   assert(Array.isArray(officialAqi.points), "Official AQI adapter returned invalid points");
   assert(Array.isArray(fireStations.points), "Fire station adapter returned invalid points");

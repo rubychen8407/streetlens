@@ -34,13 +34,11 @@ const sourceKeys = [
   "taipei_bus_stops",
   "taipei_mrt_stations",
   "taipei_libraries",
-  "taipei_public_toilets",
   "taipei_parks",
   "taipei_bike_lanes",
   "taipei_sidewalk_areas",
   "taipei_markets",
   "taipei_cooling_points",
-  "taipei_aed",
   "taipei_fire_hydrants",
   "taipei_official_aqi",
   "taipei_fire_stations",
@@ -70,10 +68,12 @@ async function requestRefresh(sourceKey: string): Promise<Response> {
       const retryable = response.status === 429 || response.status >= 500;
       if (!retryable || attempt === maxAttempts) return response;
 
+      await response.body?.cancel();
+
       const retryAfter = Number(response.headers.get("retry-after"));
       const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
         ? retryAfter * 1000
-        : 1000 * 2 ** (attempt - 1);
+        : (response.status === 502 || response.status === 503 ? 5000 : 1000) * 2 ** (attempt - 1);
 
       console.warn(
         `Refresh source ${sourceKey} returned HTTP ${response.status}; retrying in ${delayMs}ms (${attempt}/${maxAttempts})`,
@@ -103,18 +103,19 @@ for (const sourceKey of sourceKeys) {
     const response = await requestRefresh(sourceKey);
     const raw = await response.text();
 
+    if (!response.ok) {
+      // Gateways return HTML with large embedded assets; log status, not assets.
+      let detail = '';
+      try { detail = String(JSON.parse(raw)?.error || '').slice(0, 300); } catch {}
+      throw new Error(`Refresh endpoint for ${sourceKey} returned HTTP ${response.status}${detail ? ': ' + detail : ''}`);
+    }
+
     let payload: any;
     try {
       payload = raw ? JSON.parse(raw) : {};
     } catch {
       throw new Error(
-        `Refresh endpoint returned non-JSON for ${sourceKey}: ${raw.slice(0, 1000)}`,
-      );
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `Refresh endpoint for ${sourceKey} returned HTTP ${response.status}: ${raw.slice(0, 1000)}`,
+        `Refresh endpoint returned non-JSON for ${sourceKey} (HTTP ${response.status})`,
       );
     }
 

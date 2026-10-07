@@ -61,6 +61,9 @@ jobs:
       - name: Spatial inventory and refresh client regression tests
         run: npm run test:spatial-inventory && npm run test:refresh-client
 
+      - name: WheelRoute sidewalk parsing tests
+        run: npm run test:wheelroute-parser
+
       - name: Walk and saved CLS regression tests
         run: npm run test:walk-moments
 

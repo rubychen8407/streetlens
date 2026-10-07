@@ -38,7 +38,7 @@ test('saved map badges use the latest valid completed score without mutating his
   assert.deepEqual(savedScoreLocations([pending,older]),[older],'a pending visit does not hide an older real score');
   assert.deepEqual(savedScoreLocations([pending]),[],'pending scores never fabricate a badge');
   assert.equal(savedScoreLocations([visit('a',10,81),visit('b',10,82)])[0].id,'b','timestamp ties are deterministic');
-  const points = Array.from({length:300},(_,i)=>({...visit('point-'+i,i,80),coords:{lat:25+i/10000,lng:121}}));
+  const points = Array.from({length:300},(_,i)=>({...visit('point-'+i,i,80),streetName:`街道 ${i}`,coords:{lat:25+i/10000,lng:121}}));
   const selected = savedScoreLocations(points);
   assert.equal(visibleSavedScores(selected,{south:24,north:26,west:120,east:122}).length,200,'rendered badge count is bounded');
   assert.equal(visibleSavedScores(selected,{south:20,north:21,west:120,east:122}).length,0,'offscreen records render no DOM');
@@ -78,7 +78,7 @@ const snapshot = (score = 50): StreetAssessmentResponse => ({
   factors: [], poiCount: 0, dataSources: ['test fixture'], generatedAt: '2026-09-25T00:00:00Z',
 });
 
-test('library groups coordinates, not names, without deleting or changing visits', () => {
+test('library preserves exact-coordinate reverse-geocoding aliases and every visit', () => {
   const first = { ...saved(), id: 'first', timestamp: 1, clsScore: 0 };
   const second = { ...saved(), id: 'second', timestamp: 2, streetName: 'different geocoded name' };
   const other = { ...saved(), id: 'other', coords: { lat: 25.04, lng: 121.53 } };
@@ -89,6 +89,27 @@ test('library groups coordinates, not names, without deleting or changing visits
   assert.deepEqual(grouped[0].map(item => item.id), ['second', 'first']);
   assert.equal(grouped[0][1].clsScore, 0);
   assert.equal(JSON.stringify(input), before);
+});
+
+test('map and library share bounded, deterministic street groups despite GPS drift', () => {
+  const first = { ...saved(), id: 'first', timestamp: 1, clsScore: 80 };
+  const jitter = { ...first, id: 'jitter', timestamp: 2, city: '台北市', streetName: '臺北市 大安區 永康街',
+    coords: { lat: first.coords.lat + 0.0005, lng: first.coords.lng }, clsScore: 78 };
+  const nearbyOther = { ...jitter, id: 'other', streetName: '青田街', coords: { ...jitter.coords, lng: jitter.coords.lng + 0.0001 } };
+  const far = { ...first, id: 'far', coords: { lat: first.coords.lat + 0.006, lng: first.coords.lng } };
+  const chain = { ...jitter, id: 'chain', timestamp: 3, coords: { lat: first.coords.lat + 0.003, lng: first.coords.lng } };
+  const input = [jitter, far, nearbyOther, chain, first];
+  const before = structuredClone(input);
+  const groups = groupSavedStreets(input);
+  assert.equal(groups.length, 4, 'different roads, distant portions and radius chains stay separate');
+  assert.deepEqual(groups.find(visits => visits.some(v => v.id === 'first'))?.map(v => v.id), ['jitter', 'first']);
+  assert.deepEqual(groupSavedStreets([...input].reverse()), groups, 'input order cannot change anchors');
+  assert.equal(savedScoreLocations(input).length, groups.length);
+  assert.deepEqual(input, before, 'grouping never rewrites records');
+  const meta = { streetIdentity: '臺北市:永康街', segmentId: 'one', anchor: first.coords, version: '1', scoringVersion: '1' };
+  const known = { ...first, assessmentSnapshot: { ...snapshot(), baseline: meta } };
+  const distinct = { ...jitter, assessmentSnapshot: { ...snapshot(), baseline: { ...meta, segmentId: 'two' } } };
+  assert.equal(groupSavedStreets([known, distinct]).length, 2, 'distinct canonical segments stay separate');
 });
 
 test('legacy walk metadata survives validation without creating new records', () => {

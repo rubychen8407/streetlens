@@ -916,7 +916,7 @@ export function AssessmentWorkspace({
                 {(locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length || 0) > 1 && <details className="mt-2 border-t border-white/10 pt-2">
                   <summary className="text-sm text-slate-300 cursor-pointer">{t("歷次紀錄")} · {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.length}</summary>
                   {locationGroups.find(visits => visits.some(visit => visit.id === saved.id))?.map(visit => <button key={visit.id} type="button" onClick={() => onSelectSaved(visit)} className="block w-full text-left text-sm text-slate-300 py-3">
-                    {new Date(visit.timestamp).toLocaleString(dateLocale())} · CLS {visit.clsScore ?? t("待補")} · {visit.walkMoment?.feeling === 'good' ? t("喜歡") : visit.walkMoment?.feeling === 'bad' ? t("不喜歡") : t("環境觀察")}  {t("· 照片")} {(visit.evidence || []).filter(item => item.type === 'photo').length}
+                    {new Date(visit.timestamp).toLocaleString(dateLocale())} · CLS {formatNumber(visit.clsScore, t("待補"))} · {visit.walkMoment?.feeling === 'good' ? t("喜歡") : visit.walkMoment?.feeling === 'bad' ? t("不喜歡") : t("環境觀察")}  {t("· 照片")} {(visit.evidence || []).filter(item => item.type === 'photo').length}
                   </button>)}
                 </details>}
               </div>

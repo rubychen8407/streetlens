@@ -50,10 +50,10 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   const before = {history:count('/api/assessments'),assessment:count('/api/assessment'),address:count('/api/reverse-geocode')};
   // Keyboard panning uses Leaflet's own view handling, not selecting a location.
   const map = page.locator('.leaflet-container');
-  const beforePosition = await marker.getAttribute('style');
+  const beforePosition = (await marker.boundingBox())!.x;
   await marker.evaluate(element => { (window as any).savedBadgeElement = element; });
   await map.focus(); await page.keyboard.press('ArrowRight');
-  await page.waitForFunction(position => document.querySelector('.saved-score-marker[data-saved-assessment-id="map-latest"]')?.getAttribute('style') !== position,beforePosition);
+  await page.waitForFunction(position => document.querySelector('.saved-score-marker[data-saved-assessment-id="map-latest"]')?.getBoundingClientRect().x !== position,beforePosition);
   assert.equal(await marker.evaluate(element => element === (window as any).savedBadgeElement),true,
     'panning keeps visible badge DOM stable so keyboard focus is not destroyed');
   assert.deepEqual({history:count('/api/assessments'),assessment:count('/api/assessment'),address:count('/api/reverse-geocode')},before,
@@ -120,4 +120,40 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   }),true,'GPS and selected-point markers cannot obscure a saved score at the same location');
   await colorsPage.screenshot({path:'artifacts/walk-ui/saved-map-grades.png'});
   await colorsContext.close();
+
+  // Reproduce the production failure: old scored visits, an empty geometry
+  // cache, and an unavailable current CLS must still load persisted roads.
+  const legacyContext=await browser.newContext({viewport:{width:390,height:844}});
+  await prepare(legacyContext);
+  await legacyContext.addInitScript(()=> {
+    localStorage.removeItem('cls_street_geometry_v1');
+    localStorage.setItem('cls_saved_locations',JSON.stringify([{id:'legacy-road',coords:{lat:25.0326,lng:121.5298},
+      streetName:'永康街',name:'Legacy saved road',city:'臺北市',district:'大安區',timestamp:100,clsScore:76,
+      grade:'B',scores:{c1:76,c2:76,c3:76,c4:76,c5:76},evidence:[],fieldNotes:'Preserved legacy note',syncStatus:'synced'}]));
+  });
+  await legacyContext.route('**/api/assessment?**',route=>route.fulfill({status:503,contentType:'application/json',body:'{"dataStatus":"database_required"}'}));
+  let batches=0;
+  await legacyContext.route('**/api/saved-street-geometry',async route=> {
+    batches++;assert.equal(route.request().method(),'POST');
+    const locations=route.request().postDataJSON().locations;
+    assert.equal(locations.length,1,'legacy roads load in a bounded batch');
+    assert.equal(locations[0].streetName,'永康街');
+    await new Promise(resolve=>setTimeout(resolve,250));
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({dataStatus:'cached',roads:[{
+      id:'mapped-legacy-lane',name:'',coords:[[25.0317,121.5294],[25.0326,121.5298],[25.0332,121.5301]],
+      matchedIdentity:'臺北市:永康街',matchedAnchor:[25.0326,121.5298],
+    }]})});
+  });
+  const legacyPage=await legacyContext.newPage();await legacyPage.goto(baseURL);
+  const legacyLine=legacyPage.locator('.saved-street-line[data-saved-assessment-id="legacy-road"]');await legacyLine.waitFor();
+  assert.equal(batches,1,'road retrieval is independent of failed CLS loading');
+  const savedHistory=await legacyPage.evaluate(()=>localStorage.getItem('cls_saved_locations'));
+  await legacyPage.locator('.leaflet-container').focus();await legacyPage.keyboard.press('ArrowRight');
+  await legacyPage.waitForTimeout(350);
+  assert.equal(batches,1,'panning cannot trigger another batch or routing request');
+  assert.equal(await legacyPage.evaluate(()=>localStorage.getItem('cls_saved_locations')),savedHistory);
+  assert.ok(await legacyPage.evaluate(()=>JSON.parse(localStorage.getItem('cls_street_geometry_v1')!).roads[0].matchedIdentity),
+    'coordinate associations survive local geometry caching');
+  await legacyPage.screenshot({path:'artifacts/walk-ui/legacy-street-line.png'});
+  await legacyContext.close();
 }

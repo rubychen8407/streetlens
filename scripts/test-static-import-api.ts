@@ -13,6 +13,12 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.ok(ready, 'API test server must start');
+  const roads=await fetch(base+'/api/saved-street-geometry',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({locations:[{coords:{lat:25.03,lng:121.53},streetName:'永康街',district:'大安區',city:'臺北市'}]})});
+  assert.equal(roads.status,503,'road requests do not crawl routing sources when DB is unavailable');
+  assert.deepEqual((await roads.json()).roads,[]);
+  const invalidRoads=await fetch(base+'/api/saved-street-geometry',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"locations":[]}'});
+  assert.equal(invalidRoads.status,400);
   for (const sourceKey of ['taipei_public_toilets', 'taipei_aed']) {
     const retired = await fetch(base + '/api/internal/refresh-data?sourceKey=' + sourceKey, {
       method: 'POST', headers: { Authorization: 'Bearer local-test-token' },

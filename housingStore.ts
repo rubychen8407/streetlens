@@ -70,7 +70,8 @@ export function parseResidentialRow(row: Record<string, string>, cityInput: stri
     parking, parkingSeparated: separated, special: /親友|特殊|急買|急賣|持分|部分移轉|地上權|債務|法院|未登記|增建/.test(notes), notes };
 }
 const cache = new Map<string, { expires: number; data: HousingResult }>();
-export function invalidateHousingCache() { cache.clear(); }
+let cacheGeneration = 0;
+export function invalidateHousingCache() { cacheGeneration++; cache.clear(); }
 const columns = `id, city, district, street, address, traded_on::text AS "tradedOn", total_twd AS "totalTwd",
   area_ping AS "areaPing", unit_twd_ping AS "unitTwdPing", rooms, age_years AS "ageYears", floor, floors,
   building_type AS "buildingType", elevator, parking, special, parking_separated AS "parkingSeparated", notes`;
@@ -87,27 +88,34 @@ export function housingWhere(filters: HousingFilters, asOf = new Date().toISOStr
   if (!filters.includeSpecial) clauses.push('special = FALSE');
   return { sql: clauses.join(' AND '), values };
 }
-export async function readHousing(db: Pick<Pool, 'query'>, filters: HousingFilters): Promise<HousingResult> {
+export async function readHousing(db: Pick<Pool, 'connect'>, filters: HousingFilters): Promise<HousingResult> {
   const asOf = new Date().toISOString().slice(0, 10), key = asOf + JSON.stringify(filters);
   const hit = cache.get(key); if (hit && hit.expires > Date.now()) return hit.data;
   const { sql, values } = housingWhere(filters, asOf);
+  const generation = cacheGeneration, client = await db.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   const [stats, records, coverage, latest] = await Promise.all([
-    db.query(`SELECT count(*)::int AS count, avg(total_twd) AS "averageTotalTwd",
+    client.query(`SELECT count(*)::int AS count, avg(total_twd) AS "averageTotalTwd",
       percentile_cont(0.5) WITHIN GROUP (ORDER BY total_twd) AS "medianTotalTwd",
       avg(unit_twd_ping) AS "averageUnitTwdPing", count(unit_twd_ping)::int AS "unitSampleCount"
       FROM housing_transactions WHERE ${sql}`, values),
-    db.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT 21 OFFSET $${values.length + 1}`, [...values, filters.page * 20]),
-    db.query(`SELECT max(imported_at)::text AS "importedAt", min(oldest_date)::text AS "oldestTransaction",
+    client.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT 21 OFFSET $${values.length + 1}`, [...values, filters.page * 20]),
+    client.query(`SELECT max(imported_at)::text AS "importedAt", min(oldest_date)::text AS "oldestTransaction",
       max(newest_date)::text AS "newestTransaction" FROM housing_imports WHERE city=$1`, [filters.city]),
-    db.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT 1`, values),
+    client.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT 1`, values),
   ]);
   const data: HousingResult = { status: coverage.rows[0]?.importedAt ? 'available' : 'not_imported',
     scope: { city: filters.city, district: filters.district, street: filters.street, years: filters.years },
     coverage: coverage.rows[0], stats: stats.rows[0], latest: latest.rows[0] ?? null,
     records: records.rows.slice(0, 20), hasMore: records.rows.length > 20 };
   if (cache.size >= 128) cache.delete(cache.keys().next().value!);
-  cache.set(key, { data, expires: Date.now() + 10 * 60 * 1000 }); return data;
+  await client.query('COMMIT');
+  if (generation === cacheGeneration) cache.set(key, { data, expires: Date.now() + 10 * 60 * 1000 }); return data;
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
 }
+
 export async function importHousing(db: Pool, input: any) {
   const city = normalizeHousingText(typeof input?.city === 'string' ? input.city : '');
   if (!['臺北市', '新北市'].includes(city)) throw new Error('Only Taipei and New Taipei are enabled');

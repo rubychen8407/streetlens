@@ -34,6 +34,8 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByTestId('housing-stats').waitFor(); assert.equal(reads.length, 2, 'reopening reuses cache');
+    assert.equal(await panel.locator('[name="minPrice"]').inputValue(), '1000', 'reopened filters match cached results');
+    assert.equal(await panel.locator('[name="maxPrice"]').inputValue(), '1500');
     const bounds = await panel.boundingBox(); assert.ok(bounds && bounds.width <= width && bounds.x >= 0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     assert.equal(overflow, false, 'housing does not overflow narrow screens');

@@ -38,8 +38,9 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
       .finally(() => { clearTimeout(timeout); if (id === requestId.current) setLoading(false); });
     return () => { ++requestId.current; controller.abort(); clearTimeout(timeout); };
   }, [open, city, district, street, query, page, retry]);
-  const numberField = (name: string, label: string, max: number) => <label className="text-sm text-slate-300">{t(label)}<input className={inputStyle + ' mt-1'} name={name} type="number" min="0" max={max} step="any" /></label>;
-  const booleanField = (name: string, label: string) => <label className="text-sm text-slate-300">{t(label)}<select className={inputStyle + ' mt-1'} name={name}><option value="">{t('不限')}</option><option value="true">{t('有')}</option><option value="false">{t('無')}</option></select></label>;
+  const applied = new URLSearchParams(query);
+  const numberField = (name: string, label: string, max: number) => <label className="text-sm text-slate-300">{t(label)}<input className={inputStyle + ' mt-1'} name={name} defaultValue={applied.get(name) || ''} type="number" min="0" max={max} step={['rooms', 'minFloor', 'maxFloor'].includes(name) ? 1 : 'any'} /></label>;
+  const booleanField = (name: string, label: string) => <label className="text-sm text-slate-300">{t(label)}<select className={inputStyle + ' mt-1'} name={name} defaultValue={applied.get(name) || ''}><option value="">{t('不限')}</option><option value="true">{t('有')}</option><option value="false">{t('無')}</option></select></label>;
   return <section className="rounded-2xl border border-white/10 bg-white/[0.03] mb-4" data-testid="housing-panel">
     <button type="button" aria-expanded={open} onClick={() => setOpenKey(open ? '' : scopeKey)} className="flex w-full items-center justify-between gap-2 px-4 py-3 min-h-11 text-left text-base font-semibold">
       <span className="flex items-center gap-2"><Home size={18} />{t('住宅行情')}</span><ChevronDown size={18} className={open ? 'rotate-180' : ''} />
@@ -56,8 +57,8 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
         }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             {numberField('minPrice', '最低總價（萬）', 1e6)}{numberField('maxPrice', '最高總價（萬）', 1e6)}
-            <label className="text-sm text-slate-300">{t('成交期間')}<select className={inputStyle + ' mt-1'} name="years" defaultValue="3">{[1, 3, 5].map(n => <option key={n} value={n}>{bilingual(`近 ${n} 年`, `Last ${n} years`)}</option>)}</select></label>
-            <label className="text-sm text-slate-300">{t('房屋型態')}<select className={inputStyle + ' mt-1'} name="buildingType"><option value="">{t('不限')}</option>{HOUSING_TYPES.map(type => <option key={type} value={type}>{t(type)}</option>)}</select></label>
+            <label className="text-sm text-slate-300">{t('成交期間')}<select className={inputStyle + ' mt-1'} name="years" defaultValue={applied.get('years') || '3'}>{[1, 3, 5].map(n => <option key={n} value={n}>{bilingual(`近 ${n} 年`, `Last ${n} years`)}</option>)}</select></label>
+            <label className="text-sm text-slate-300">{t('房屋型態')}<select className={inputStyle + ' mt-1'} name="buildingType" defaultValue={applied.get('buildingType') || ''}><option value="">{t('不限')}</option>{HOUSING_TYPES.map(type => <option key={type} value={type}>{t(type)}</option>)}</select></label>
           </div>
           <details><summary className="text-sm text-slate-300 cursor-pointer py-2 min-h-11">{t('更多房屋條件')}</summary><div className="grid grid-cols-2 gap-2">
             {numberField('minArea', '最低建物坪數', 1e4)}{numberField('maxArea', '最高建物坪數', 1e4)}
@@ -65,7 +66,7 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
             {numberField('minFloor', '最低樓層', 100)}{numberField('maxFloor', '最高樓層', 100)}
             {booleanField('elevator', '電梯')}{booleanField('parking', '車位')}
           </div></details>
-          <label className="flex items-center gap-2 text-sm text-slate-300 min-h-11"><input type="checkbox" name="includeSpecial" value="true" />{t('包含特殊交易')}</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300 min-h-11"><input type="checkbox" name="includeSpecial" value="true" defaultChecked={applied.get('includeSpecial') === 'true'} />{t('包含特殊交易')}</label>
           <button className="w-full rounded-xl bg-[#D4F971] text-[#0E131A] text-sm font-semibold min-h-11" type="submit">{t('套用住宅篩選')}</button>
         </form>
         <div aria-live="polite" className="space-y-3">

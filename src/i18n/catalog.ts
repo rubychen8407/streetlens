@@ -1,5 +1,13 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+平均成交總價（萬）|Avg total (NT$10k)
+平均成交單價（萬／坪）|Avg unit (NT$10k/ping)
+萬|NT$10k
+年|yrs
+筆|sales
+有|Yes
+無|No
+
 住宅行情|Residential market
 純住宅成交|Residential sales only
 請先選擇有街道名稱及行政區的地點。|Select a named street and district first.

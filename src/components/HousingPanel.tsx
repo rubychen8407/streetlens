@@ -57,7 +57,7 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
         }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             {numberField('minPrice', '最低總價（萬）', 1e6)}{numberField('maxPrice', '最高總價（萬）', 1e6)}
-            <label className="text-sm text-slate-300">{t('成交期間')}<select className={inputStyle + ' mt-1'} name="years" defaultValue={applied.get('years') || '3'}>{[1, 3, 5].map(n => <option key={n} value={n}>{bilingual(`近 ${n} 年`, `Last ${n} years`)}</option>)}</select></label>
+            <label className="text-sm text-slate-300">{t('成交期間')}<select className={inputStyle + ' mt-1'} name="years" defaultValue={applied.get('years') || '3'}>{[1, 3, 5].map(n => <option key={n} value={n}>{bilingual(`近 ${n} 年`, `Last ${n} yrs`)}</option>)}</select></label>
             <label className="text-sm text-slate-300">{t('房屋型態')}<select className={inputStyle + ' mt-1'} name="buildingType" defaultValue={applied.get('buildingType') || ''}><option value="">{t('不限')}</option>{HOUSING_TYPES.map(type => <option key={type} value={type}>{t(type)}</option>)}</select></label>
           </div>
           <details><summary className="text-sm text-slate-300 cursor-pointer py-2 min-h-11">{t('更多房屋條件')}</summary><div className="grid grid-cols-2 gap-2">
@@ -75,8 +75,8 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
           {data?.status === 'not_imported' && <p className="text-sm text-slate-300">{t('此縣市住宅資料尚未匯入，尚無法提供成交行情。')}</p>}
           {data?.status === 'available' && <>
             <div className="grid grid-cols-2 gap-2" data-testid="housing-stats">
-              <div className="rounded-xl bg-black/20 p-3"><div className="text-sm text-slate-300">{t('平均成交總價')}</div><strong className="text-lg tabular-nums">{formatNumber(data.stats.averageTotalTwd == null ? null : data.stats.averageTotalTwd / 10000)} {t('萬')}</strong></div>
-              <div className="rounded-xl bg-black/20 p-3"><div className="text-sm text-slate-300">{t('平均成交單價')}</div><strong className="text-lg tabular-nums">{formatNumber(data.stats.averageUnitTwdPing == null ? null : data.stats.averageUnitTwdPing / 10000)} {t('萬／坪')}</strong></div>
+              <div className="rounded-xl bg-black/20 p-3"><div className="text-sm text-slate-300">{t('平均成交總價（萬）')}</div><strong className="text-lg tabular-nums">{formatNumber(data.stats.averageTotalTwd == null ? null : data.stats.averageTotalTwd / 10000)}</strong></div>
+              <div className="rounded-xl bg-black/20 p-3"><div className="text-sm text-slate-300">{t('平均成交單價（萬／坪）')}</div><strong className="text-lg tabular-nums">{formatNumber(data.stats.averageUnitTwdPing == null ? null : data.stats.averageUnitTwdPing / 10000)}</strong></div>
             </div>
             <p className="text-sm text-slate-300">{t('符合條件')} {data.stats.count} {t('筆')} · {t('單價樣本')} {data.stats.unitSampleCount} {t('筆')} · {t('總價中位數')} {formatNumber(data.stats.medianTotalTwd == null ? null : data.stats.medianTotalTwd / 10000)} {t('萬')}</p>
             {data.latest && <p className="text-sm">{t('最近符合篩選成交')} · {data.latest.tradedOn} · {formatNumber(data.latest.totalTwd / 10000)} {t('萬')}</p>}

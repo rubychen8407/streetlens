@@ -1,5 +1,6 @@
 import { t, bilingual, useLanguage, errorText } from './i18n';
 import { useTheme } from './utils/theme';
+import { formatNumber } from './utils/formatNumber';
 import { backLabels, useNavigation } from './hooks/useNavigation';
 import { QuickWalk } from './components/QuickWalk';
 import { sameFieldPlace, upsertFieldRecord } from './utils/fieldRecordMerge';
@@ -564,7 +565,7 @@ export default function App() {
     );
     fetchWeather(saved.coords);
     void fetchLocationData(saved.coords, saved.district, saved.city, saved.streetName, false);
-    setGpsSuccessMsg(bilingual('已切換至已存地點', 'Opened saved location') + ' · ' + (saved.name || saved.streetName) + ' · CLS ' + (saved.clsScore ?? '—'));
+    setGpsSuccessMsg(bilingual('已切換至已存地點', 'Opened saved location') + ' · ' + (saved.name || saved.streetName) + ' · CLS ' + formatNumber(saved.clsScore));
     setTimeout(() => setGpsSuccessMsg(null), 4000);
   };
 

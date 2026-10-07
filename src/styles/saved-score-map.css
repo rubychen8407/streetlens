@@ -1,25 +1,45 @@
-.saved-score-marker { background: none; border: 0; }
-.saved-score-badge {
-  box-sizing: border-box;
-  width: 64px;
-  min-height: 44px;
+.saved-score-marker, .ios-target-marker {
+  background: none;
+  border: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #1a212b;
-  color: #f1f5f9;
-  border: 1px solid #64748b;
-  border-radius: 14px;
-  box-shadow: 0 4px 14px #0006;
+}
+.saved-score-badge {
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0e131a;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px #0005;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: 1;
 }
-.saved-score-badge span { font-size: 14px; color: #cbd5e1; }
-.saved-score-badge strong { font-size: 16px; font-weight: 700; }
-.saved-score-marker:focus-visible { outline: 2px solid #d4f971; border-radius: 14px; outline-offset: 3px; }
-.saved-score-marker:hover .saved-score-badge { border-color: #d4f971; }
-[data-map-theme='light'] .saved-score-badge { background: #fff; color: #0e131a; border-color: #64748b; }
-[data-map-theme='light'] .saved-score-badge span { color: #475569; }
-.saved-score-tooltip { white-space: pre-line; font-size: 14px; }
+.saved-score-badge[data-grade='S'] { background: #d4f971; }
+.saved-score-badge[data-grade='A'] { background: #91dbaa; }
+.saved-score-badge[data-grade='B'] { background: #73c9f5; }
+.saved-score-badge[data-grade='C'] { background: #f2ce73; }
+.saved-score-badge[data-grade='D'] { background: #ee8e9c; }
+.saved-score-badge strong { font-size: 12px; font-weight: 800; }
+.saved-score-marker:focus-visible, .ios-target-marker:focus-visible {
+  outline: 2px solid #d4f971;
+  border-radius: 50%;
+  outline-offset: 1px;
+}
+.saved-score-marker:hover .saved-score-badge { box-shadow: 0 0 0 2px #0e131a, 0 2px 5px #0005; }
+.selected-point {
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #d4f971;
+  border-radius: 50%;
+  background: #1e2632;
+  box-shadow: 0 0 0 2px #fff, 0 2px 5px #0005;
+  cursor: grab;
+}
+.ios-target-marker:active .selected-point { cursor: grabbing; }

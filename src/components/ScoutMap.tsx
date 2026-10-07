@@ -4,6 +4,7 @@ import L from 'leaflet';
 import { LocationCoord, POIMarker, StreetSegmentScore, SavedLocation } from '../types';
 import { savedScoreLocations, visibleSavedScores } from '../utils/savedScoreMap';
 import { formatNumber } from '../utils/formatNumber';
+import { gradeForScore } from '../utils/savedLocations';
 
 interface ScoutMapProps {
   currentLocation: LocationCoord;
@@ -279,28 +280,15 @@ export function ScoutMap({
     }
   }, [mapInstance, currentLocation.lat, currentLocation.lng, accuracyRadius, heading]);
 
-  // Update Target Marker (Draggable Apple-style red pin with distinct label)
+  // Compact selected point with a generous drag/tap target.
   useEffect(() => {
     if (!mapInstance) return;
 
     const targetIcon = L.divIcon({
       className: 'ios-target-marker',
-      html: `
-        <div class="relative flex flex-col items-center cursor-grab active:cursor-grabbing select-none group" style="width: 36px; height: 44px;">
-          <!-- Drop Pin Head with subtle glow and crosshair target icon -->
-          <div class="w-8 h-8 rounded-full bg-[#1e2632] border-2 border-[#D4F971] shadow-[0_4px_16px_rgba(212,249,113,0.35),0_2px_8px_rgba(0,0,0,0.5)] flex items-center justify-center text-[#D4F971] transform group-hover:scale-115 transition-all">
-            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-            </svg>
-          </div>
-          <!-- Pin Needle Tip -->
-          <div style="width: 2px; height: 6px; background: #D4F971; margin-top: -1px; box-shadow: 0 0 4px rgba(212,249,113,0.6);"></div>
-          <!-- Ground Shadow -->
-          <div style="width: 12px; height: 4px; background: rgba(0, 0, 0, 0.45); border-radius: 9999px; filter: blur(0.5px); margin-top: 1px;"></div>
-        </div>
-      `,
-      iconSize: [36, 44],
-      iconAnchor: [18, 42],
+      html: '<div class="selected-point"></div>',
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
     });
 
     if (targetMarkerRef.current && mapInstance.hasLayer(targetMarkerRef.current)) {
@@ -395,11 +383,6 @@ export function ScoutMap({
           lineCap: 'round',
         });
 
-        poly.bindTooltip(
-          `<div class="text-xs font-bold px-1.5 py-0.5 bg-slate-900 text-white rounded">${segment.name} · ${segment.clsScore == null ? t('待補') : `${segment.clsScore} ${t('score')}`}</div>`,
-          { permanent: false, sticky: true, className: 'street-custom-tooltip' }
-        );
-
         streetLayersRef.current?.addLayer(poly);
       });
     }
@@ -422,20 +405,17 @@ export function ScoutMap({
       for (const record of records) {
         if (markers.has(record.id)) continue;
         const score = formatNumber(record.clsScore);
-        const label = bilingual('已儲存 CLS', 'Saved CLS') + ' ' + score + ' · ' + (record.name || record.streetName);
+        const grade = gradeForScore(record.clsScore);
+        const label = bilingual('已儲存 CLS', 'Saved CLS') + ' ' + score + ' ' + grade + ' · ' + (record.name || record.streetName);
         const badge = document.createElement('div');
         badge.className = 'saved-score-badge';
-        const caption = document.createElement('span'); caption.textContent = 'CLS';
-        const value = document.createElement('strong'); value.textContent = score;
-        badge.append(caption, value);
+        badge.dataset.grade = grade || '';
+        const value = document.createElement('strong'); value.textContent = String(Math.round(record.clsScore!));
+        badge.append(value);
         const marker = L.marker([record.coords.lat, record.coords.lng], {
-          icon:L.divIcon({ className:'saved-score-marker', html:badge, iconSize:[64,44], iconAnchor:[32,-8] }),
-          title:label, alt:label, keyboard:true, bubblingMouseEvents:false, zIndexOffset:1800,
+          icon:L.divIcon({ className:'saved-score-marker', html:badge, iconSize:[44,44], iconAnchor:[22,22] }),
+          alt:label, keyboard:true, bubblingMouseEvents:false, zIndexOffset:4000,
         });
-        const tooltip = document.createElement('div');
-        // User names are text, never HTML. No photo URLs or remote icons.
-        tooltip.textContent = label + '\n' + new Date(record.timestamp).toLocaleString(language === 'en' ? 'en' : 'zh-TW');
-        marker.bindTooltip(tooltip, { direction:'bottom', offset:[0,48], className:'saved-score-tooltip' });
         marker.on('click', () => savedSelectionHandler.current?.(record));
         layer.addLayer(marker);
         markers.set(record.id, marker);
@@ -500,16 +480,10 @@ export function ScoutMap({
         iconSize: [0, 0],
       });
 
-      const marker = L.marker([poi.lat, poi.lng], { icon: poiIcon });
-      marker.bindTooltip(
-        `<div class="text-xs font-semibold px-2 py-1 bg-black/85 backdrop-blur-md text-white rounded-lg shadow-lg border border-white/10">
-          <div class="font-bold text-slate-100">${poi.name}</div>
-          <div class="text-[10px] text-slate-300">${bilingual('約', 'About')} ${poi.distanceMeters}m · ${t(poi.note || '')}</div>
-        </div>`,
-        { direction: 'top', offset: [0, -10] }
-      );
-
+      const label = `${poi.name} · ${formatNumber(poi.distanceMeters)} m · ${t(poi.note || '')}`;
+      const marker = L.marker([poi.lat, poi.lng], { icon: poiIcon, alt: label });
       poiLayersRef.current?.addLayer(marker);
+      marker.getElement()?.setAttribute('aria-label', label);
     });
   }, [mapInstance, poiMarkers, activeLayers, language]);
 

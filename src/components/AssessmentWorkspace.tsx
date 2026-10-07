@@ -29,6 +29,7 @@ import {
 import { AssessmentEvidence, AssessmentExplanation, EvidencePhotoDraft, FieldObservationAdjustment, LocationCoord, SavedLocation, StreetAssessmentResponse } from '../types';
 import { FIELD_OBSERVATION_DEFINITIONS } from '../data/fieldIndicators';
 import { favoriteKey, groupSavedStreets } from '../utils/savedLocations';
+import { HousingPanel } from './HousingPanel';
 import { StreetReport } from './StreetReport';
 
 type View = 'assessment' | 'report' | 'field' | 'saved' | 'settings';
@@ -295,6 +296,9 @@ export function AssessmentWorkspace({
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
+        {(view === 'assessment' || view === 'report') && <HousingPanel city={city} district={district} streetName={streetName} />}
+
+
         {(view === 'assessment' || view === 'field') && (
           <div className="space-y-4 pb-4">
             {view === 'field' && <div className="grid grid-cols-2 gap-1.5">

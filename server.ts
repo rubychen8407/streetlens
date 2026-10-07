@@ -1,3 +1,5 @@
+import { ensureHousingSchema } from './housingStore';
+import { registerHousingImport, registerHousingReads } from './housingRoutes';
 import { normalizeSpatialInventory } from './spatialInventory';
 import { fetchMoenvAirQuality, shouldReplaceInventory, STATIC_OSM_SOURCE, STATIC_MAX_AGE_MS, AQI_MAX_AGE_MS, isSourceFresh, poiIdentity, withinStaticCoverage } from './sourceFallbacks';
 import { persistStaticImport, staticPointsToPois } from './staticOsm';
@@ -34,10 +36,12 @@ app.post('/api/internal/import-static-osm', (req, res, next) => {
   try { await schemaReady; res.json(await persistStaticImport(req.body)); }
   catch (error: any) { res.status(400).json({ error: error.message }); }
 });
+registerHousingImport(app, dataDb, () => schemaReady);
 app.use(express.json());
 
 // Assessment data is persisted first. User requests never crawl scoring sources.
-const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema()]).then(() => ensureStorageBudget(dataDb));
+const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema(), ensureHousingSchema(dataDb)]).then(() => ensureStorageBudget(dataDb));
+registerHousingReads(app, dataDb, schemaReady);
 schemaReady.catch((error) => console.error("Data schema initialization failed:", error));
 const DATA_REFRESH_TOKEN = process.env.STREETLENS_REFRESH_TOKEN || "";
 

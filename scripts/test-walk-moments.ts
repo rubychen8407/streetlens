@@ -8,9 +8,32 @@ import { resolveSavedScore } from '../src/utils/savedScoreApi';
 import { frameCrop } from '../src/utils/cameraFrame';
 import { mergeFieldRecord, upsertFieldRecord } from '../src/utils/fieldRecordMerge';
 import { savedScoreLocations, visibleSavedScores } from '../src/utils/savedScoreMap';
+import { mergeStreetGeometry, readStreetGeometry, savedStreetGeometry } from '../src/utils/savedStreetGeometry';
 import type { StreetAssessmentResponse } from '../src/types';
 
 const now = 1_800_000_000_000;
+test('street ribbons reuse valid real geometry, clip locally and never invent missing roads', () => {
+  const record = { ...createSavedStreet({ coords:{lat:25,lng:121},streetName:'永康街',district:'大安區',city:'臺北市' }), clsScore:73 };
+  const road = { id:'road', name:'台北市 大安區 永康街', coords:[[24.99,121],[25.01,121]] as [number,number][] };
+  const before = structuredClone(road);
+  const geometry = savedStreetGeometry(record,[road]);
+  assert.equal(geometry.paths.length,1,'clip even when both original endpoints are outside the radius');
+  assert.ok(Math.abs(geometry.paths[0][0][0]-25) < 0.0023);
+  assert.ok(Math.abs(geometry.paths[0][1][0]-25) < 0.0023);
+  assert.deepEqual(geometry.anchor,[25,121]);
+  assert.deepEqual(savedStreetGeometry(record,[{...road,name:'青田街'}]).paths,[],'nearby different roads cannot inherit a score');
+  assert.deepEqual(savedStreetGeometry(record,[{...road,coords:[[25,122],[25.01,122]]}]).anchor,[25,121],'distant same-name road does not move the fallback point');
+  assert.deepEqual(savedStreetGeometry(record,[]).paths,[],'no synthetic street geometry');
+  assert.deepEqual(road,before);
+  const many = Array.from({length:100},(_,i)=>({...road,id:String(i),name:`road ${i}`}));
+  assert.equal(mergeStreetGeometry([],many).length,80,'local geometry cache is bounded');
+  assert.equal(mergeStreetGeometry([road],[road]).length,1,'repeated fetches do not grow the cache');
+  assert.deepEqual(mergeStreetGeometry([],[{...road,coords:[[NaN,121],[25,121]]}]),[]);
+  const cache = (updatedAt:number) => ({getItem:()=>JSON.stringify({updatedAt,roads:[road]})});
+  assert.equal(readStreetGeometry(cache(now),now).length,1);
+  assert.deepEqual(readStreetGeometry(cache(now-31*86400000),now),[],'expired geometry does not render');
+  assert.deepEqual(readStreetGeometry({getItem:()=>{throw Error('Blocked');}},now),[]);
+});
 test('camera captures the visible cover crop in portrait and landscape, bounded to 1280', () => {
   const portrait = frameCrop(1920, 1080, 390, 844);
   assert.equal(portrait.y, 0);

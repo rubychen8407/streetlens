@@ -5,6 +5,7 @@ import { LocationCoord, POIMarker, StreetSegmentScore, SavedLocation } from '../
 import { savedScoreLocations, visibleSavedScores } from '../utils/savedScoreMap';
 import { formatNumber } from '../utils/formatNumber';
 import { gradeForScore } from '../utils/savedLocations';
+import { GRADE_COLORS, mergeStreetGeometry, readStreetGeometry, savedStreetGeometry, STREET_GEOMETRY_KEY } from '../utils/savedStreetGeometry';
 
 interface ScoutMapProps {
   currentLocation: LocationCoord;
@@ -88,6 +89,17 @@ export function ScoutMap({
 }: ScoutMapProps) {
   const language = useLanguage();
   const savedScores = useMemo(() => savedScoreLocations(savedLocations), [savedLocations]);
+  const [knownRoads, setKnownRoads] = useState(() => {
+    try { return readStreetGeometry(localStorage); } catch { return []; }
+  });
+  useEffect(() => {
+    if (!streetSegments.length) return;
+    setKnownRoads(previous => {
+      const roads = mergeStreetGeometry(previous, streetSegments);
+      try { localStorage.setItem(STREET_GEOMETRY_KEY, JSON.stringify({ updatedAt: Date.now(), roads })); } catch { /* Read-only/offline storage keeps the session overlay. */ }
+      return roads;
+    });
+  }, [streetSegments]);
   const savedSelectionHandler = useRef(onSelectSaved);
   savedSelectionHandler.current = onSelectSaved;
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -365,22 +377,15 @@ export function ScoutMap({
 
     if (activeLayers.streetScores) {
       streetSegments.forEach((segment) => {
-        const color =
-          segment.clsScore == null
-            ? '#64748b'
-            : segment.clsScore >= 85
-            ? '#10b981'
-            : segment.clsScore >= 75
-            ? '#6366f1'
-            : segment.clsScore >= 65
-            ? '#f59e0b'
-            : '#ef4444';
+        const grade = gradeForScore(segment.clsScore);
+        const color = grade ? GRADE_COLORS[grade] : '#64748b';
 
         const poly = L.polyline(segment.coords, {
           color,
-          weight: 5,
-          opacity: 0.75,
+          weight: grade ? 3 : 1,
+          opacity: grade ? 0.75 : 0.18,
           lineCap: 'round',
+          interactive: false,
         });
 
         streetLayersRef.current?.addLayer(poly);
@@ -393,7 +398,7 @@ export function ScoutMap({
   useEffect(() => {
     if (!mapInstance) return;
     const layer = L.layerGroup().addTo(mapInstance);
-    const markers = new Map<string, L.Marker>();
+    const markers = new Map<string, L.LayerGroup>();
     const draw = () => {
       if (!activeLayers.streetScores) return;
       const bounds = mapInstance.getBounds().pad(0.1);
@@ -406,23 +411,36 @@ export function ScoutMap({
         if (markers.has(record.id)) continue;
         const score = formatNumber(record.clsScore);
         const grade = gradeForScore(record.clsScore);
+        const color = GRADE_COLORS[grade!];
+        const geometry = savedStreetGeometry(record, knownRoads);
+        const group = L.layerGroup().addTo(layer);
+        for (const path of geometry.paths) {
+          L.polyline(path, { color:'#0e131a', weight:7, opacity:0.65, lineCap:'round', interactive:false }).addTo(group);
+          const line = L.polyline(path, { color, weight:3, opacity:0.9, lineCap:'round', interactive:false, className:'saved-street-line' }).addTo(group);
+          line.getElement()?.setAttribute('data-saved-assessment-id', record.id);
+          const hit = L.polyline(path, { weight:16, opacity:0, bubblingMouseEvents:false, className:'saved-street-hit' }).addTo(group);
+          hit.getElement()?.setAttribute('data-saved-assessment-id', record.id);
+          hit.on('click', () => savedSelectionHandler.current?.(record));
+        }
         const label = bilingual('已儲存 CLS', 'Saved CLS') + ' ' + score + ' ' + grade + ' · ' + (record.name || record.streetName);
         const badge = document.createElement('div');
         badge.className = 'saved-score-badge';
         badge.dataset.grade = grade || '';
+        badge.style.setProperty('--street-grade', color);
         const value = document.createElement('strong'); value.textContent = String(Math.round(record.clsScore!));
         badge.append(value);
-        const marker = L.marker([record.coords.lat, record.coords.lng], {
-          icon:L.divIcon({ className:'saved-score-marker', html:badge, iconSize:[44,44], iconAnchor:[22,22] }),
+        const marker = L.marker(geometry.anchor, {
+          icon:L.divIcon({ className:'saved-score-marker', html:badge, iconSize:[44,44], iconAnchor:[22,50] }),
           alt:label, keyboard:true, bubblingMouseEvents:false, zIndexOffset:4000,
         });
         marker.on('click', () => savedSelectionHandler.current?.(record));
-        layer.addLayer(marker);
-        markers.set(record.id, marker);
+        group.addLayer(marker);
+        markers.set(record.id, group);
         const element = marker.getElement();
         element?.setAttribute('aria-label',label);
         element?.setAttribute('role','button');
         element?.setAttribute('data-saved-assessment-id',record.id);
+        element?.setAttribute('data-street-geometry',geometry.paths.length ? 'road' : 'point');
         element?.addEventListener('keydown', event => {
           if (event.key === ' ' || event.key === 'Enter') {
             event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
@@ -433,7 +451,7 @@ export function ScoutMap({
     draw();
     mapInstance.on('moveend',draw);
     return () => { mapInstance.off('moveend',draw); layer.remove(); };
-  }, [mapInstance, savedScores, activeLayers.streetScores, language]);
+  }, [mapInstance, savedScores, knownRoads, activeLayers.streetScores, language]);
 
   // Update POI Markers (Apple Maps style icons)
   useEffect(() => {

@@ -4,7 +4,9 @@
   assessment reads, normalization queries or active UI metrics. Legacy optional
   fields remain readable; personal visits, notes and photos are not deleted.
 - AED no longer contributes to C1. `street-anchor-v2-no-aed` invalidates old
-  cached baselines. Retired snapshots do not invalidate current baselines.
+  cached baselines. Saved-history overlays accept only the current scoring
+  version; old payloads cannot overwrite current saved scores. Retired snapshots
+  do not invalidate current baselines.
 - Exact duplicate spatial rows collapse before replacement. Distinct rows
   sharing an upstream ID retain their content under deterministic hashed IDs.
   Snapshot inventory counts use the same normalization as database writes.

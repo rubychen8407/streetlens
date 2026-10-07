@@ -91,10 +91,13 @@ export async function overlaySavedBaselines<T extends SavedLocation>(db: Pick<Po
   if (!records.length) return records;
   const identities = [...new Set(records.map(record => streetIdentity(record.city, record.district, record.streetName)))];
   // One bounded query for the whole library; no per-visit assessment/source calls.
-  const rows = await db.query('SELECT payload FROM street_baselines WHERE street_identity = ANY($1::text[]) AND payload IS NOT NULL', [identities]);
+  const rows = await db.query(`SELECT payload FROM street_baselines
+    WHERE street_identity = ANY($1::text[]) AND payload IS NOT NULL
+      AND payload->'baseline'->>'scoringVersion' = $2`, [identities, BASELINE_SCORING_VERSION]);
   return records.map(record => {
     const candidates = rows.rows.map(row => row.payload as StreetAssessmentResponse)
-      .filter(snapshot => snapshot.baseline?.streetIdentity === streetIdentity(record.city, record.district, record.streetName)
+      .filter(snapshot => snapshot.baseline?.scoringVersion === BASELINE_SCORING_VERSION
+        && snapshot.baseline.streetIdentity === streetIdentity(record.city, record.district, record.streetName)
         && distanceMeters(record.coords, snapshot.baseline.anchor) <= STREET_ANCHOR_RADIUS_METERS)
       .sort((a, b) => distanceMeters(record.coords, a.baseline!.anchor) - distanceMeters(record.coords, b.baseline!.anchor));
     return (candidates[0] ? rebaseSavedStreet(record, candidates[0]) : record) as T;

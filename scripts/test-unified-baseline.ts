@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { loadUnifiedBaseline, overlaySavedBaselines } from '../streetBaselineStore';
+import { loadUnifiedBaseline, overlaySavedBaselines, BASELINE_SCORING_VERSION } from '../streetBaselineStore';
 import { streetIdentity, rebaseSavedStreet } from '../src/utils/streetBaseline';
 import { createSavedStreet } from '../src/utils/savedLocations';
 import { calculateAssessment } from '../scoring';
@@ -65,6 +65,30 @@ const overlay = await overlaySavedBaselines(db, [saved, { ...saved, id: 'visit-2
 assert.equal(statements.length - beforeQueries, 1);
 assert.equal(overlay[0].clsScore! - overlay[1].clsScore!, 5);
 assert.equal(overlay[0].baselineClsScore, overlay[1].baselineClsScore);
+// Upgrades must not overlay a retired AED-influenced baseline onto visits,
+// even if that old row is closer or advertises a later generated timestamp.
+const obsolete = { ...first, generatedAt: '2030-01-01T00:00:00Z',
+  scores: { ...first.scores, overall: 99 },
+  baseline: { ...first.baseline!, anchor: nearby, scoringVersion: 'street-anchor-v1', version: 'retired' } };
+let candidatePayloads: any[] = [obsolete, first];
+let upgradeReads = 0;
+const upgradeDb = { query: async (sql: string, values: any[]) => {
+  upgradeReads++;
+  assert.match(sql, /payload->'baseline'->>'scoringVersion' = \$2/);
+  assert.equal(values[1], BASELINE_SCORING_VERSION, 'filter obsolete payloads before transmission');
+  return { rows: candidatePayloads.map(payload => ({ payload })) };
+} } as any;
+const upgraded = await overlaySavedBaselines(upgradeDb, [saved, rebased]);
+assert.equal(upgraded[0].baselineClsScore, first.scores.overall);
+assert.equal(upgraded[1], rebased, 'a v1 payload cannot overwrite a visit already using the current baseline');
+assert.equal(upgraded[0].evidence, evidence);
+assert.equal(upgraded[0].fieldNotes, saved.fieldNotes);
+assert.equal(upgraded[0].fieldAdjustment, saved.fieldAdjustment);
+candidatePayloads = [obsolete, { ...obsolete, baseline: { ...obsolete.baseline, scoringVersion: undefined } }];
+const noCurrentBaseline = await overlaySavedBaselines(upgradeDb, [saved, rebased]);
+assert.equal(noCurrentBaseline[0], saved, 'retain original history until a current baseline is available; do not fabricate one');
+assert.equal(noCurrentBaseline[1], rebased);
+assert.equal(upgradeReads, 2, 'one bounded read per library, no per-visit recomputation');
 let persisted: any;
 const savedDb = { connect: async () => ({ release() {}, query: async (sql: string, values: any[] = []) => {
   if (sql.startsWith('SELECT payload')) return { rows: [{ payload: { ...saved, fieldAdjustment: 5 } }] };

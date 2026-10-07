@@ -10,15 +10,39 @@ const token = () => randomBytes(32).toString('base64url');
 function config() {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
-  const email = (process.env.STREETLENS_OWNER_EMAIL || '').trim().toLowerCase();
-  const sub = process.env.STREETLENS_OWNER_GOOGLE_SUB || '';
+  const legacyEmail = (process.env.STREETLENS_OWNER_EMAIL || '').trim().toLowerCase();
+  const plural = process.env.STREETLENS_PRIVATE_EMAILS;
+  const allowed = new Map<string, string>();
+  let valid = true;
+  try {
+    const emails = (plural === undefined ? legacyEmail : plural).split(/[,\n]/).map(email => email.trim().toLowerCase()).filter(Boolean);
+    if (!emails.length || emails.length > 100 || emails.some(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Invalid whitelist');
+    const pins = plural === undefined ? { [legacyEmail]: process.env.STREETLENS_OWNER_GOOGLE_SUB || '' }
+      : JSON.parse(process.env.STREETLENS_PRIVATE_GOOGLE_SUBS || '{}');
+    if (!pins || typeof pins !== 'object' || Array.isArray(pins)) throw new Error('Invalid subjects');
+    const subjects = new Map<string, string>();
+    for (const [email, sub] of Object.entries(pins)) {
+      if (typeof sub !== 'string' || sub.length > 255) throw new Error('Invalid subject');
+      const normalized = email.trim().toLowerCase();
+      if (subjects.has(normalized) && subjects.get(normalized) !== sub) throw new Error('Conflicting subjects');
+      subjects.set(normalized, sub);
+    }
+    for (const email of emails) {
+      const sub = subjects.get(email) || '';
+      if (!email.endsWith('@gmail.com') && !sub) throw new Error('External email requires subject');
+      allowed.set(email, sub);
+    }
+  } catch { valid = false; allowed.clear(); }
   let origin = '';
   try { const url = new URL(process.env.STREETLENS_PUBLIC_ORIGIN || '');
     if (url.protocol === 'https:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash) origin = url.origin;
   } catch { /* Unconfigured authentication denies all private access. */ }
   // Google is authoritative for Gmail. Other domains must also pin the stable Google subject.
-  return { clientId, clientSecret, email, sub, origin,
-    enabled: Boolean(clientId && clientSecret && origin && email && (email.endsWith('@gmail.com') || sub)) };
+  return { clientId, clientSecret, allowed, origin,
+    enabled: Boolean(clientId && clientSecret && origin && valid && allowed.size) };
+}
+function allowedIdentity(c: ReturnType<typeof config>, email: string, sub: string) {
+  return c.allowed.has(email) && (!c.allowed.get(email) || c.allowed.get(email) === sub);
 }
 function prune<T extends { expires: number }>(map: Map<string, T>, limit: number) {
   for (const [key, value] of map) if (value.expires <= Date.now()) map.delete(key);
@@ -32,7 +56,7 @@ function setCookie(res: Response, name: string, value: string, maxAge: number) {
 }
 function owner(req: Request) {
   const c = config(), key = cookie(req, SESSION), session = sessions.get(key);
-  if (!c.enabled || !session || session.expires <= Date.now() || session.email !== c.email || (c.sub && session.sub !== c.sub)) {
+  if (!c.enabled || !session || session.expires <= Date.now() || !allowedIdentity(c, session.email, session.sub)) {
     sessions.delete(key); return null;
   }
   return session;
@@ -81,12 +105,12 @@ export function registerPrivateHousingAuth(app: Express, fetcher: typeof fetch =
       if (!identityResponse.ok) throw new Error('Identity rejected');
       const identity = await identityResponse.json();
       if (identity.email_verified !== true || typeof identity.sub !== 'string' || !identity.sub
-        || typeof identity.email !== 'string' || identity.email.toLowerCase() !== c.email || (c.sub && identity.sub !== c.sub)) {
+        || typeof identity.email !== 'string' || !allowedIdentity(c, identity.email.toLowerCase(), identity.sub)) {
         res.sendStatus(403); return;
       }
       sessions.delete(cookie(req, SESSION)); prune(sessions, 32);
       const sessionId = token(), expires = Date.now() + 60 * 60000;
-      sessions.set(sessionId, { email: c.email, sub: identity.sub, expires });
+      sessions.set(sessionId, { email: identity.email.toLowerCase(), sub: identity.sub, expires });
       setCookie(res, SESSION, sessionId, 60 * 60000);
       res.redirect(c.origin + '/');
     } catch { res.status(502).send('Google sign-in failed. Please retry.'); }

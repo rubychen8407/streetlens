@@ -2,19 +2,34 @@
 
 ## Private owner access
 
+Private access supports multiple accounts. Prefer `STREETLENS_PRIVATE_EMAILS`
+(comma-separated emails; whitespace trimmed, case-insensitive, duplicates collapsed,
+maximum 100 entries). Setting this variable replaces, rather than extends, the
+legacy `STREETLENS_OWNER_EMAIL` and `STREETLENS_OWNER_GOOGLE_SUB` settings. An explicitly
+empty or malformed list fails closed. Actual emails belong only in server environment
+configuration, not Git. For non-Gmail accounts, supply per-account subject pins as
+JSON in `STREETLENS_PRIVATE_GOOGLE_SUBS`, e.g. `{"person@example.com":"google-sub"}`;
+Gmail accounts may also be pinned. Invalid pin JSON or an external email without a
+pin disables access. The old single-owner configuration remains compatible when
+the plural variable is absent. Every read rechecks current membership; removing
+an account revokes its session without revoking other accounts. Each session/logout
+is independent; no whitelist details are returned to the client and no DB lookup
+is added. Render environment changes require a service restart/redeploy, which
+also clears all in-memory sessions.
+
 Housing is not public. With missing OAuth configuration it is completely hidden
 and `/api/housing` rejects before database access. Profile settings offers Google
 sign-in only when the server is configured. The backend uses an authorization-code
 flow with PKCE, a random single-use state bound to an HttpOnly browser cookie,
-and Google UserInfo from the server-obtained access token. Only a verified owner
-email is allowed. Gmail accounts can use email alone; non-Gmail accounts must
-also pin `STREETLENS_OWNER_GOOGLE_SUB` because Google may not remain authoritative
+and Google UserInfo from the server-obtained access token. Only verified allowlisted
+accounts are allowed. Gmail accounts can use email alone; non-Gmail accounts must
+also pin their Google subject because Google may not remain authoritative
 for an external email's ownership. No email/sub is sent to unauthenticated clients.
 
 Configure server-only Render environment variables (never `VITE_*`):
-`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `STREETLENS_OWNER_EMAIL`,
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `STREETLENS_PRIVATE_EMAILS`,
 `STREETLENS_PUBLIC_ORIGIN=https://streetlens-fokj.onrender.com`, and optional/required
-`STREETLENS_OWNER_GOOGLE_SUB` as above. Create a Google OAuth **Web application**
+`STREETLENS_PRIVATE_GOOGLE_SUBS` as above. Create a Google OAuth **Web application**
 client with exact authorized redirect URI:
 `https://streetlens-fokj.onrender.com/api/private/google/callback`.
 For an External app in Testing, add the owner as a test user; only `openid email`

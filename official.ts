@@ -1,4 +1,6 @@
 import proj4 from "proj4";
+import { parseWheelRouteGeometry } from './wheelRouteGeometry';
+import { normalizeSpatialInventory } from './spatialInventory';
 
 export interface OfficialSpatialPoint {
   id: string;
@@ -290,6 +292,8 @@ function parseGeometry(value: unknown): OfficialSpatialArea["geometry"] | null {
       ? { type: candidate.type, coordinates: candidate.coordinates }
       : null;
   }
+  const wheelRouteGeometry = parseWheelRouteGeometry(candidate);
+  if (wheelRouteGeometry) return wheelRouteGeometry;
   if (candidate.geometry) return parseGeometry(candidate.geometry);
   if (candidate.GEOM4326) return parseGeometry(candidate.GEOM4326);
   if (candidate.geometry4326) return parseGeometry(candidate.geometry4326);
@@ -505,8 +509,6 @@ export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSource
       fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility12, 30_000),
     ]);
     const areas: OfficialSpatialArea[] = [];
-    const seen = new Set<string>();
-
     responses.forEach(({ text }, responseIndex) => {
       const facilityType = responseIndex === 0 ? 11 : 12;
       let payload: any;
@@ -515,6 +517,7 @@ export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSource
       for (const { row, geometry } of findSpatialAreas(payload)) {
         const name = String(
           row?.facilityName
+          ?? row?.kname
           ?? row?.name
           ?? row?.NAME
           ?? row?.設施名稱
@@ -523,16 +526,15 @@ export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSource
         const id = String(
           row?.ID
           ?? row?.id
+          ?? row?.kname
           ?? row?.KEYID
           ?? row?.keyid
           ?? (String(facilityType) + "|" + name + "|" + String(areas.length)),
         );
         const uniqueId = String(facilityType) + "|" + id;
-        if (seen.has(uniqueId)) continue;
-        seen.add(uniqueId);
-
         const widthCm = Number(row?.width ?? row?.WTH ?? row?.RDLBWT ?? row?.寬度);
         const slopePct = Number(row?.slope ?? row?.SLOPE ?? row?.坡度);
+        const nativeWheelRoute = typeof row?.location === 'string' && ['11', '12'].includes(String(row?.kind));
 
         areas.push({
           id: uniqueId,
@@ -540,8 +542,12 @@ export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSource
           geometry,
           properties: {
             facilityType,
-            widthCm: Number.isFinite(widthCm) ? widthCm : null,
-            slopePct: Number.isFinite(slopePct) ? slopePct : null,
+            // Keep native values without guessing their units or interpreting
+            // the provider's -1 sentinel as an observed width/slope.
+            widthCm: !nativeWheelRoute && Number.isFinite(widthCm) ? widthCm : null,
+            slopePct: !nativeWheelRoute && Number.isFinite(slopePct) ? slopePct : null,
+            sourceWidth: nativeWheelRoute ? row.width : undefined,
+            sourceSlope: nativeWheelRoute ? row.slope : undefined,
             roadId: row?.roadId ?? row?.ROADID ?? row?.RDCODE ?? null,
             lengthM: Number(row?.length ?? row?.LENGTH ?? row?.RDLBLG) || null,
           },
@@ -551,7 +557,7 @@ export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSource
 
     return {
       points: [],
-      areas,
+      areas: normalizeSpatialInventory(areas),
       source,
       status: areas.length ? "available" : "empty",
       retrievedAt,

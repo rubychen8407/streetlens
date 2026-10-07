@@ -7,31 +7,28 @@
 }
 .saved-score-badge {
   box-sizing: border-box;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0e131a;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  box-shadow: 0 2px 5px #0005;
+  color: #e8edf1;
+  background: rgba(14, 19, 26, 0.84);
+  border-bottom: 2px solid var(--street-grade);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px #0003;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.saved-score-badge[data-grade='S'] { background: #d4f971; }
-.saved-score-badge[data-grade='A'] { background: #91dbaa; }
-.saved-score-badge[data-grade='B'] { background: #73c9f5; }
-.saved-score-badge[data-grade='C'] { background: #f2ce73; }
-.saved-score-badge[data-grade='D'] { background: #ee8e9c; }
-.saved-score-badge strong { font-size: 12px; font-weight: 800; }
+.saved-score-badge strong { font-size: 12px; font-weight: 600; }
 .saved-score-marker:focus-visible, .ios-target-marker:focus-visible {
   outline: 2px solid #d4f971;
-  border-radius: 50%;
+  border-radius: 6px;
   outline-offset: 1px;
 }
-.saved-score-marker:hover .saved-score-badge { box-shadow: 0 0 0 2px #0e131a, 0 2px 5px #0005; }
+.saved-score-marker:hover .saved-score-badge { background: #1a212b; }
+.saved-street-line { filter: drop-shadow(0 1px 2px #0003); }
 .selected-point {
   box-sizing: border-box;
   width: 20px;

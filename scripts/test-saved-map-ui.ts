@@ -15,6 +15,9 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
       {...base,id:'map-latest',name:'Latest <img src=x onerror="window.mapXss=true">',timestamp:200,clsScore:73.456},
       {...base,id:'map-far',name:'Offscreen visit',coords:{lat:24,lng:120},timestamp:300,clsScore:80},
     ]));
+    localStorage.setItem('cls_street_geometry_v1',JSON.stringify({updatedAt:Date.now(),roads:[{
+      id:'real-road-fixture',name:'Map saved street',coords:[[25.0315,121.5285],[25.0322,121.5295],[25.0326,121.5298],[25.0333,121.5300]],
+    }]}));
   });
   const reads: string[] = [];
   context.on('request',request => { const url=new URL(request.url()); if(url.pathname.startsWith('/api/')) reads.push(url.pathname); });
@@ -28,7 +31,11 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   assert.equal(await marker.getAttribute('title'),null,'no native tooltip');
   assert.equal(await marker.locator('.saved-score-badge').getAttribute('data-grade'),'B');
   assert.equal((await marker.boundingBox())?.width,44,'tap target remains usable');
-  assert.equal((await marker.locator('.saved-score-badge').boundingBox())?.width,32,'visual marker is compact');
+  assert.equal((await marker.locator('.saved-score-badge').boundingBox())?.width,28,'visual label is compact');
+  assert.equal(await marker.getAttribute('data-street-geometry'),'road');
+  const ribbon = page.locator('.saved-street-line[data-saved-assessment-id="map-latest"]');
+  await ribbon.waitFor();
+  assert.equal(await ribbon.getAttribute('stroke-width'),'3','fine ribbon follows saved real road geometry');
   await marker.hover();
   assert.equal(await page.locator('.leaflet-tooltip').count(),0,'no map hover tooltip');
   await page.getByRole('button',{name:t('Street Library'),exact:true}).click();
@@ -61,6 +68,20 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   assert.equal(await page.evaluate(() => Boolean((window as any).mapXss)),false);
   await map.click({position:{x:4,y:4}});
   await report.waitFor({state:'hidden'});
+  const hit = page.locator('.saved-street-hit[data-saved-assessment-id="map-latest"]').first();
+  const point = await hit.evaluate(element => {
+    const path = element as SVGPathElement;
+    const position = path.getPointAtLength(path.getTotalLength()*0.25);
+    const point = new DOMPoint(position.x,position.y).matrixTransform(path.getScreenCTM()!);
+    return {x:point.x,y:point.y};
+  });
+  const beforeLine = count('/api/assessment');
+  await page.mouse.click(point.x,point.y);
+  await report.getByText('Keep this note',{exact:true}).waitFor();
+  assert.equal(count('/api/assessment'),beforeLine+1,'road tap opens saved report exactly once without bubbling');
+  assert.equal(await page.evaluate(() => localStorage.getItem('cls_saved_locations')),original);
+  await map.click({position:{x:4,y:4}});
+  await report.waitFor({state:'hidden'});
   await marker.focus(); await page.keyboard.press('Space');
   await report.waitFor();
   await map.click({position:{x:4,y:4}});
@@ -76,6 +97,12 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
       streetName:`Color street ${i}`,name:`Color street ${i}`,district:'',city:'',timestamp:i+1,
       clsScore:score,grade:'D',scores:{c1:score,c2:score,c3:score,c4:score,c5:score},evidence:[],syncStatus:'synced',
     }))));
+    localStorage.setItem('cls_street_geometry_v1',JSON.stringify({updatedAt:Date.now(),roads:[95,85,75,65,55].map((_,i)=>({
+      id:`real-grade-road-${i}`,name:`Color street ${i}`,coords:[
+        [25.0326+(i-2)*0.0006,121.5289],[25.0326+(i-2)*0.0006,121.5298+(i%2)*0.0008],
+        [25.0328+(i-2)*0.0006,121.5311],
+      ],
+    }))}));
   });
   const colorsPage = await colorsContext.newPage(); await colorsPage.goto(baseURL);
   await colorsPage.locator('.saved-score-badge[data-grade="S"]').waitFor();
@@ -83,9 +110,10 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   for (const grade of ['S','A','B','C','D']) {
     const badge = colorsPage.locator(`.saved-score-badge[data-grade="${grade}"]`);
     await badge.waitFor();
-    backgrounds.push(await badge.evaluate(element => getComputedStyle(element).backgroundColor));
+    backgrounds.push(await badge.evaluate(element => getComputedStyle(element).borderBottomColor));
   }
-  assert.equal(new Set(backgrounds).size,5,'each score grade has a distinct color, derived from score');
+  assert.equal(new Set(backgrounds).size,5,'each score grade has a distinct ribbon/underline color, derived from score');
+  assert.equal(await colorsPage.locator('.saved-street-line').count(),5,'all five saved scores follow their roads');
   assert.equal(await colorsPage.locator('.saved-score-marker[data-saved-assessment-id="grade-2"]').evaluate(element => {
     const badge = element.querySelector('.saved-score-badge')!.getBoundingClientRect();
     return document.elementFromPoint(badge.x + badge.width/2, badge.y + badge.height/2)?.closest('.saved-score-marker') === element;

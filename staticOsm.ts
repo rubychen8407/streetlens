@@ -1,5 +1,6 @@
 import { STATIC_MAX_AGE_MS, STATIC_OSM_SOURCE, isSourceFresh } from './sourceFallbacks';
 import { dataDb, hashPayload } from './db';
+import { persistRoadImport, validateRoadImport } from './streetGeometryStore';
 
 export function validateStaticImport(body: any) {
   if (!body || body.source !== 'https://download.geofabrik.de/asia/taiwan.html'
@@ -24,6 +25,7 @@ export function validateStaticImport(body: any) {
         coordinateMethod: point.properties.coordinateMethod, source: 'OpenStreetMap / Geofabrik' } };
   });
   if (!points.some((point: any) => point.properties.amenityType === 'park')) throw new Error('Static extract has no parks');
+  if (body.roads !== undefined) validateRoadImport(body.roads);
   return { points, sourceUpdatedAt: new Date(body.sourceUpdatedAt).toISOString() };
 }
 export async function persistStaticImport(body: unknown) {
@@ -36,13 +38,14 @@ export async function persistStaticImport(body: unknown) {
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(739202, 1)');
+    const roadResult = await persistRoadImport(client, (body as any).roads, extract.sourceUpdatedAt);
     const existing = await client.query('SELECT source_version, source_updated_at, payload FROM external_data_snapshots WHERE source_key = $1 AND scope_key = $2', [STATIC_OSM_SOURCE, '__citywide__']);
     if (existing.rows[0]?.source_updated_at && new Date(existing.rows[0].source_updated_at).getTime() > Date.parse(extract.sourceUpdatedAt)) throw new Error('Refusing older static extract');
     if (extract.points.length < (Number(existing.rows[0]?.payload?.pointCount) || 0) * 0.5) throw new Error('Refusing unexpectedly incomplete static extract');
     if (existing.rows[0]?.source_version === version) {
       await client.query('UPDATE external_data_snapshots SET checked_at = NOW(), source_updated_at = $2 WHERE source_key = $1 AND scope_key = $3', [STATIC_OSM_SOURCE, extract.sourceUpdatedAt, '__citywide__']);
       await client.query('COMMIT');
-      return { changed: false, pointCount: extract.points.length };
+      return { changed: false, pointCount: extract.points.length, ...roadResult };
     }
     // Only the replaceable external extract is replaced; personal history is untouched.
     await client.query('DELETE FROM external_spatial_points WHERE source_key = $1', [STATIC_OSM_SOURCE]);
@@ -52,7 +55,7 @@ export async function persistStaticImport(body: unknown) {
       VALUES ($1, '__citywide__', $2::jsonb, $3, 'available', NOW(), NOW(), $4, $5, 'source_updated_at')
       ON CONFLICT (source_key, scope_key) DO UPDATE SET payload = EXCLUDED.payload, content_hash = EXCLUDED.content_hash, status = 'available', fetched_at = NOW(), checked_at = NOW(), source_updated_at = EXCLUDED.source_updated_at, source_version = EXCLUDED.source_version, freshness_method = 'source_updated_at'`, [STATIC_OSM_SOURCE, JSON.stringify(payload), hashPayload(payload), extract.sourceUpdatedAt, version]);
     await client.query('COMMIT');
-    return { changed: true, pointCount: extract.points.length };
+    return { changed: true, pointCount: extract.points.length, ...roadResult };
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
 }

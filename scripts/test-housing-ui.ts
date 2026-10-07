@@ -15,6 +15,8 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     await context.addInitScript(language => localStorage.setItem('streetlens-language', language), language);
     const english = language === 'en';
     const reads: URL[] = [];
+    await context.route(url => url.pathname === '/api/private/access', route => route.fulfill({ status: 200,
+      contentType: 'application/json', body: JSON.stringify({ enabled: true, authorized: true, expiresAt: Date.now() + 3600000 }) }));
     await context.route(url => url.pathname === '/api/housing', route => {
       reads.push(new URL(route.request().url()));
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
@@ -41,7 +43,24 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     assert.equal(overflow, false, 'housing does not overflow narrow screens');
     assert.equal(await page.evaluate(() => localStorage.getItem('cls_saved_locations')), savedBefore, 'housing never changes saved scores or evidence');
     await panel.getByTestId('housing-stats').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `artifacts/walk-ui/housing-${width}-${language}.png` }); await context.close();
+    await page.screenshot({ path: `artifacts/walk-ui/housing-${width}-${language}.png` });
+    // Real sign-out UI must unmount the panel and discard cached results.
+    await context.route(url => url.pathname === '/api/private/logout', route => route.fulfill({ status: 204 }));
+    await page.getByRole('button', { name: english ? 'Profile settings' : '個人設定', exact: true }).click();
+    await page.getByRole('button', { name: english ? 'Sign out of private features' : '登出私人功能', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('[data-testid="housing-panel"]'));
+    assert.equal(reads.length, 2); await context.close();
   }
+  const publicContext = await browser.newContext({ viewport: { width: 390, height: 900 } }); await prepare(publicContext);
+  let publicReads = 0, accessReads = 0;
+  await publicContext.route(url => url.pathname === '/api/private/access', route => { ++accessReads; return route.fulfill({ status: 200,
+    contentType: 'application/json', body: JSON.stringify({ enabled: true, authorized: false, expiresAt: null }) }); });
+  await publicContext.route(url => url.pathname === '/api/housing', route => { ++publicReads; return route.abort(); });
+  const publicPage = await publicContext.newPage(); await publicPage.goto(baseURL);
+  await publicPage.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+  await publicPage.getByText('Start environment observations', { exact: true }).or(publicPage.getByText('開始環境觀察', { exact: true })).waitFor();
+  assert.equal(await publicPage.getByTestId('housing-panel').count(), 0); assert.equal(publicReads, 0);
+  assert.equal(accessReads, 1, 'permission read is deduplicated and never queries DB');
+  await publicContext.close();
   console.log('Housing UI passed: on-demand cached reads, explicit filters, no saved-data mutation and 320/390/1440px layouts.');
 }

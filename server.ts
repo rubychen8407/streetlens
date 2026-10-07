@@ -1,8 +1,10 @@
 import { ensureHousingSchema } from './housingStore';
 import { registerHousingImport, registerHousingReads } from './housingRoutes';
+import { registerPrivateHousingAuth } from './privateHousingAuth';
 import { normalizeSpatialInventory } from './spatialInventory';
 import { fetchMoenvAirQuality, shouldReplaceInventory, STATIC_OSM_SOURCE, STATIC_MAX_AGE_MS, AQI_MAX_AGE_MS, isSourceFresh, poiIdentity, withinStaticCoverage } from './sourceFallbacks';
 import { persistStaticImport, staticPointsToPois } from './staticOsm';
+import { ensureStreetGeometrySchema, loadSavedStreetGeometry, validateRoadLocations, ROAD_SOURCE } from './streetGeometryStore';
 import { backfillPendingPage } from './scheduledScoreBackfill';
 import { parseExplanationLanguage, explanationLanguageInstruction, explanationMatchesLanguage } from './src/utils/explanationLanguage';
 import { ensureStorageBudget } from './storageBudget';
@@ -26,6 +28,7 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+registerPrivateHousingAuth(app);
 
 app.post('/api/internal/import-static-osm', (req, res, next) => {
   if (!process.env.STREETLENS_REFRESH_TOKEN || req.headers.authorization !== 'Bearer ' + process.env.STREETLENS_REFRESH_TOKEN) {
@@ -40,9 +43,22 @@ registerHousingImport(app, dataDb, () => schemaReady);
 app.use(express.json());
 
 // Assessment data is persisted first. User requests never crawl scoring sources.
-const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema(), ensureHousingSchema(dataDb)]).then(() => ensureStorageBudget(dataDb));
+const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema(), ensureStreetGeometrySchema(), ensureHousingSchema(dataDb)]).then(() => ensureStorageBudget(dataDb));
 registerHousingReads(app, dataDb, schemaReady);
 schemaReady.catch((error) => console.error("Data schema initialization failed:", error));
+app.get('/api/street-geometry/status', async (_req,res) => {
+  if(!dataDb) {res.status(503).json({geometryPipeline:1,error:'Road database unavailable'});return;}
+  try { await schemaReady; const snapshot=await getCachedSnapshot(ROAD_SOURCE,'__citywide__');
+    res.json({geometryPipeline:1,roadCount:Number(snapshot?.payload?.roadCount)||0,sourceUpdatedAt:snapshot?.sourceUpdatedAt||null});
+  } catch { res.status(503).json({geometryPipeline:1,error:'Road database unavailable'}); }
+});
+app.post('/api/saved-street-geometry', async (req,res) => {
+  let locations;
+  try { locations=validateRoadLocations(req.body?.locations); } catch(error:any) {res.status(400).json({error:error.message});return;}
+  try { await schemaReady; const result=await loadSavedStreetGeometry(locations);
+    res.status(result.dataStatus==='cached' ? 200 : result.dataStatus==='database_required' ? 503 : 202).json(result);
+  } catch { res.status(503).json({roads:[],dataStatus:'database_required'}); }
+});
 const DATA_REFRESH_TOKEN = process.env.STREETLENS_REFRESH_TOKEN || "";
 
 // Lazy-initialized Gemini client
@@ -1351,162 +1367,16 @@ app.get("/api/nearby-pois", async (req: Request, res: Response) => {
   }
 });
 
-// Polyline decode helper for Google Routes API
-function decodeGooglePolyline(encoded: string): [number, number][] {
-  const points: [number, number][] = [];
-  let index = 0;
-  const len = encoded.length;
-  let lat = 0;
-  let lng = 0;
-  while (index < len) {
-    let b: number;
-    let shift = 0;
-    let result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
-    lat += dlat;
-    shift = 0;
-    result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
-    lng += dlng;
-    points.push([lat / 1e5, lng / 1e5]);
-  }
-  return points;
-}
-
-// 實時真實道路路網幾何端點 (以 Google Routes API + OSRM 取得精準貼路幾何 Polylines)
-app.get("/api/street-network", async (req: Request, res: Response) => {
-  try {
-    const lat = parseFloat((req.query.lat as string) || "25.0326");
-    const lng = parseFloat((req.query.lng as string) || "121.5298");
-        const streetName = (req.query.streetName as string) || "";
-
-    const delta = 0.0035; // ~350m
-    const corridorPairs = [
-      { origin: { lat: lat - delta, lng }, dest: { lat: lat + delta, lng } },
-      { origin: { lat, lng: lng - delta }, dest: { lat, lng: lng + delta } },
-      { origin: { lat: lat - delta * 0.7, lng: lng - delta * 0.7 }, dest: { lat: lat + delta * 0.7, lng: lng + delta * 0.7 } },
-      { origin: { lat: lat - delta * 0.7, lng: lng + delta * 0.7 }, dest: { lat: lat + delta * 0.7, lng: lng - delta * 0.7 } },
-    ];
-
-    const segments: any[] = [];
-    const seenRoads = new Set<string>();
-
-    if (GOOGLE_MAPS_API_KEY) {
-      for (const pair of corridorPairs) {
-        if (segments.length >= 8) break;
-        try {
-          const resp = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-              "X-Goog-FieldMask": "routes.legs.steps.navigationInstruction,routes.legs.steps.polyline",
-            },
-            body: JSON.stringify({
-              origin: { location: { latLng: { latitude: pair.origin.lat, longitude: pair.origin.lng } } },
-              destination: { location: { latLng: { latitude: pair.dest.lat, longitude: pair.dest.lng } } },
-              travelMode: "DRIVE",
-              polylineQuality: "HIGH_QUALITY",
-            }),
-          });
-
-          if (resp.ok) {
-            const data: any = await resp.json();
-            const steps = data.routes?.[0]?.legs?.[0]?.steps || [];
-            for (const s of steps) {
-              if (segments.length >= 8) break;
-              if (!s.polyline?.encodedPolyline) continue;
-              const pts = decodeGooglePolyline(s.polyline.encodedPolyline);
-              if (pts.length < 2) continue;
-
-              const instruction = s.navigationInstruction?.instructions || "";
-              const match = instruction.match(/(?:走|沿|向.+?轉入|進入|繼續行駛)([\u4e00-\u9fa5\w\s]+?)(?:朝|前進|目的地|向|\d+巷|\d+弄|,|$)/);
-              const rawName = match && match[1] ? match[1].trim() : instruction.slice(0, 15);
-              let roadName = rawName
-                .replace(/(^接著走|^向[左右]轉[，,]?朝?|^朝|^進入|^沿)/g, "")
-                .replace(/(目的地在.+|朝.+前進)/g, "")
-                .trim();
-
-              if (!roadName || roadName.length < 2) continue;
-              if (seenRoads.has(roadName)) continue;
-              seenRoads.add(roadName);
-
-              segments.push({
-                id: `seg_g_${segments.length}_${roadName}`,
-                name: roadName,
-                coords: pts,
-                clsScore: null,
-                c1: null,
-                c2: null,
-                c3: null,
-                c4: null,
-                c5: null,
-              });
-            }
-          }
-        } catch (e) {
-          // ignore corridor error
-        }
-      }
-    }
-
-    // 2. OSRM fallback/enrichment for local lanes if needed
-    if (segments.length < 4) {
-      try {
-        const nearestUrl = `https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=6`;
-        const nr = await fetch(nearestUrl);
-        const nd: any = await nr.json();
-        for (const wp of nd.waypoints || []) {
-          if (segments.length >= 8) break;
-          const name = wp.name;
-          if (!name || seenRoads.has(name)) continue;
-          seenRoads.add(name);
-
-          const [wLng, wLat] = wp.location;
-          const p1 = `${(wLng - 0.0015).toFixed(6)},${(wLat - 0.0015).toFixed(6)}`;
-          const p2 = `${(wLng + 0.0015).toFixed(6)},${(wLat + 0.0015).toFixed(6)}`;
-          const rUrl = `https://router.project-osrm.org/route/v1/driving/${p1};${p2}?overview=full&geometries=geojson&steps=true`;
-          const rRes = await fetch(rUrl);
-          const rData: any = await rRes.json();
-          const steps = rData.routes?.[0]?.legs?.[0]?.steps || [];
-          for (const s of steps) {
-            if (s.geometry?.coordinates?.length > 1 && s.name && !seenRoads.has(s.name + "_osrm")) {
-              seenRoads.add(s.name + "_osrm");
-              const coords = s.geometry.coordinates.map(([cLng, cLat]: [number, number]) => [cLat, cLng]);
-              segments.push({
-                id: `seg_osrm_${segments.length}_${s.name}`,
-                name: s.name,
-                coords,
-                clsScore: null,
-                c1: null,
-                c2: null,
-                c3: null,
-                c4: null,
-                c5: null,
-              });
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        // ignore OSRM error
-      }
-    }
-
-    return res.json({ segments });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message || "Failed to fetch street network" });
-  }
+// Road reads use the persisted citywide extract; no routing/source calls.
+app.get('/api/street-network', async (req,res) => {
+  let locations;
+  try { locations=validateRoadLocations([{coords:{lat:Number(req.query.lat),lng:Number(req.query.lng)},
+    streetName:String(req.query.streetName || ''),city:String(req.query.city || ''),district:String(req.query.district || '')}]); }
+  catch {res.status(400).json({error:'Invalid street coordinates'});return;}
+  try {await schemaReady; const result=await loadSavedStreetGeometry(locations);
+    const segments=result.roads.map(road=>({...road,clsScore:null,c1:null,c2:null,c3:null,c4:null,c5:null}));
+    res.status(result.dataStatus==='cached' ? 200 : result.dataStatus==='database_required' ? 503 : 202).json({...result,roads:undefined,segments});
+  } catch {res.status(503).json({segments:[],dataStatus:'database_required'});}
 });
 
 // Taiwan official/public transport source adapters.

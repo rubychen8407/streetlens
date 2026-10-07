@@ -1,5 +1,9 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+私人功能|Private features
+以 Google 登入|Sign in with Google
+登出私人功能|Sign out of private features
+登出未完成，請重試或關閉瀏覽器。|Sign-out failed. Retry or close the browser.
 平均成交總價（萬）|Avg total (NT$10k)
 平均成交單價（萬／坪）|Avg unit (NT$10k/ping)
 萬|NT$10k

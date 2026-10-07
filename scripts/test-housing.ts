@@ -4,6 +4,7 @@ import express from 'express';
 import { HOUSING_SCHEMA, importHousing, invalidateHousingCache, parseResidentialRow, readHousing, rocDate } from '../housingStore';
 import { housingStreet, parseHousingFilters } from '../src/utils/housing';
 import { registerHousingImport, registerHousingReads } from '../housingRoutes';
+import { registerPrivateHousingAuth } from '../privateHousingAuth';
 
 const city = '臺北市';
 // Isolated source-shaped fixture; never used by runtime or published as source data.
@@ -60,6 +61,11 @@ const stored = await pg.query<{count: number}>('SELECT count(*)::int AS count FR
 assert.equal(stored.rows[0].count, 3, 'correction preserves rows without deleting history');
 
 const app = express(); process.env.STREETLENS_REFRESH_TOKEN = 'isolated-test-token';
+process.env.GOOGLE_OAUTH_CLIENT_ID = 'fixture-client'; process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'fixture-secret';
+process.env.STREETLENS_OWNER_EMAIL = 'fixture-owner@gmail.com'; process.env.STREETLENS_PUBLIC_ORIGIN = 'https://fixture.example';
+registerPrivateHousingAuth(app, (async (url: any) => new Response(JSON.stringify(String(url).includes('/token')
+  ? { access_token: 'fixture-access', token_type: 'Bearer' } : { sub: 'fixture-sub', email: 'fixture-owner@gmail.com', email_verified: true }),
+  { headers: { 'Content-Type': 'application/json' } })) as typeof fetch);
 registerHousingImport(app, db, () => Promise.resolve()); registerHousingReads(app, db, Promise.resolve());
 const server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve));
 const port = (server.address() as any).port, base = 'http://127.0.0.1:' + port;
@@ -67,8 +73,16 @@ try {
   const beforeUnauthorized = queries;
   assert.equal((await fetch(base + '/api/internal/import-housing', { method: 'POST', body: 'bad', headers: { 'Content-Type': 'application/json' } })).status, 401);
   assert.equal(queries, beforeUnauthorized);
-  assert.equal((await fetch(base + '/api/housing?city=臺北市&district=大安區&street=永康街&years=2')).status, 400);
-  const response = await fetch(base + '/api/housing?city=臺北市&district=大安區&street=永康街');
+  assert.equal((await fetch(base + '/api/housing?city=臺北市&district=大安區&street=永康街')).status, 401);
+  assert.equal(queries, beforeUnauthorized, 'private read rejects before DB access');
+  const login = await fetch(base + '/api/private/google/login', { redirect: 'manual' });
+  const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+  const callback = await fetch(base + '/api/private/google/callback?code=fixture-code&state=' + state,
+    { redirect: 'manual', headers: { Cookie: login.headers.getSetCookie()[0].split(';')[0] } });
+  const sessionCookie = callback.headers.getSetCookie().find(value => value.startsWith('__Host-streetlens-private='))!.split(';')[0];
+  assert.equal((await fetch(base + '/api/housing?city=臺北市&district=大安區&street=永康街&years=2', { headers: { Cookie: sessionCookie } })).status, 400);
+  const response = await fetch(base + '/api/housing?city=臺北市&district=大安區&street=永康街', { headers: { Cookie: sessionCookie } });
   assert.equal(response.status, 200); assert.ok(JSON.stringify(await response.json()).length < 5000);
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
 } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await pg.close(); }
 console.log('Residential housing passed: official usage/type exclusion, parking split, dates, exact street sections, SQL stats/filters, metadata coverage, caching, atomic corrections, authentication and bounded responses.');

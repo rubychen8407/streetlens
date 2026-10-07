@@ -92,6 +92,35 @@ export function ScoutMap({
   const [knownRoads, setKnownRoads] = useState(() => {
     try { return readStreetGeometry(localStorage); } catch { return []; }
   });
+  const knownRoadsRef = useRef(knownRoads);
+  knownRoadsRef.current = knownRoads;
+  const roadRequestsRef = useRef(new Set<string>());
+  const roadTargetsKey=JSON.stringify(savedScores.slice(0,200).map(({coords,streetName,city,district})=>({coords,streetName,city,district})));
+  useEffect(() => {
+    const missing = savedScores.slice(0,200).filter(record => {
+      const key=JSON.stringify([record.coords,record.streetName,record.city,record.district]);
+      if(roadRequestsRef.current.has(key) || savedStreetGeometry(record,knownRoadsRef.current).paths.length) return false;
+      roadRequestsRef.current.add(key); return true;
+    });
+    if(!missing.length) return;
+    let active=true;
+    const controller=new AbortController();
+    void fetch('/api/saved-street-geometry',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({locations:missing.map(({coords,streetName,city,district})=>({coords,streetName,city,district}))}),signal:controller.signal})
+      .then(async response => {
+        if(!response.ok || response.status===202) return;
+        const data=await response.json();
+        if(!active || !Array.isArray(data.roads)) return;
+        setKnownRoads(previous=> {
+          const roads=mergeStreetGeometry(previous,data.roads);
+          try {localStorage.setItem(STREET_GEOMETRY_KEY,JSON.stringify({updatedAt:Date.now(),roads}));} catch {}
+          return roads;
+        });
+      }).catch(()=>{});
+    return ()=> {active=false;controller.abort();
+      missing.forEach(record=>roadRequestsRef.current.delete(JSON.stringify([record.coords,record.streetName,record.city,record.district])));
+    };
+  },[roadTargetsKey]);
   useEffect(() => {
     if (!streetSegments.length) return;
     setKnownRoads(previous => {

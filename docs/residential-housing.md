@@ -1,5 +1,42 @@
 # Residential street market
 
+## Private owner access
+
+Housing is not public. With missing OAuth configuration it is completely hidden
+and `/api/housing` rejects before database access. Profile settings offers Google
+sign-in only when the server is configured. The backend uses an authorization-code
+flow with PKCE, a random single-use state bound to an HttpOnly browser cookie,
+and Google UserInfo from the server-obtained access token. Only a verified owner
+email is allowed. Gmail accounts can use email alone; non-Gmail accounts must
+also pin `STREETLENS_OWNER_GOOGLE_SUB` because Google may not remain authoritative
+for an external email's ownership. No email/sub is sent to unauthenticated clients.
+
+Configure server-only Render environment variables (never `VITE_*`):
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `STREETLENS_OWNER_EMAIL`,
+`STREETLENS_PUBLIC_ORIGIN=https://streetlens-fokj.onrender.com`, and optional/required
+`STREETLENS_OWNER_GOOGLE_SUB` as above. Create a Google OAuth **Web application**
+client with exact authorized redirect URI:
+`https://streetlens-fokj.onrender.com/api/private/google/callback`.
+For an External app in Testing, add the owner as a test user; only `openid email`
+scopes are requested. Do not paste Client Secret into chat or commit it.
+
+Private access uses random opaque, Secure/HttpOnly/SameSite=Lax host-only cookies.
+Sessions last one hour in bounded server memory (32 sessions), not PostgreSQL;
+server restart requires sign-in again. This MVP assumes one server instance;
+multiple instances require an appropriately secured shared session store.
+Logout validates the exact configured Origin, revokes the server session and
+immediately clears client housing results. Auth/session and housing responses
+are `private, no-store` so shared HTTP caches cannot expose them. Frontend in-memory
+housing caching remains bounded and is cleared on lock/expiry. No OAuth provider
+tokens are persisted, exposed to the browser, or logged. Google calls have timeouts
+and reject redirects. Login starts are rate-limited and flows bounded; the
+rate limit intentionally uses the socket IP, without trusting forwarded headers.
+
+Private deployment is **not** permission to crawl or reuse another website's
+content. No live-listing crawler has been enabled. OAuth itself and deployment
+still require real credentials and a real-browser acceptance check; deterministic
+tests use isolated mock Google responses, never actual owner credentials.
+
 The collapsible housing section in assessments and saved reports is separate
 from CLS. Opening it reads stored housing data; map movement and editing filters
 do not acquire housing data. Applying filters sends one bounded read. Server

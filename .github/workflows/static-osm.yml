@@ -1,5 +1,11 @@
 name: Weekly static OSM fallback
 on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/extract-static-osm.py
+      - streetGeometryStore.ts
+      - .github/workflows/static-osm.yml
   schedule:
     - cron: '45 18 * * 0' # Monday 02:45 Taipei
   workflow_dispatch:
@@ -23,7 +29,7 @@ jobs:
       - run: pip install osmium==4.3.1 shapely==2.1.2
       - name: Download source outside Render and Neon
         run: |
-          curl --fail --retry 3 --max-time 600 -D /tmp/osm-headers -o /tmp/taiwan.osm.pbf https://download.geofabrik.de/asia/taiwan-latest.osm.pbf
+          curl --location --fail --retry 3 --max-time 600 -D /tmp/osm-headers -o /tmp/taiwan.osm.pbf https://download.geofabrik.de/asia/taiwan-latest.osm.pbf
           test "$(stat -c%s /tmp/taiwan.osm.pbf)" -lt 500000000
           python - <<'PY'
           from email.utils import parsedate_to_datetime
@@ -32,7 +38,7 @@ jobs:
           value = next(row.split(':', 1)[1].strip() for row in reversed(rows) if row.lower().startswith('last-modified:'))
           Path('/tmp/osm-time').write_text(parsedate_to_datetime(value).isoformat())
           PY
-      - name: Extract Taipei amenities and parks
+      - name: Extract Taipei amenities, parks and actual road geometry
         run: python scripts/extract-static-osm.py /tmp/taiwan.osm.pbf /tmp/static-osm.json "$(cat /tmp/osm-time)"
       - name: Import compact evidence inventory
         env:

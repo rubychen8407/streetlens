@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Home, ChevronDown, ExternalLink, Loader2 } from 'lucide-react';
 import { t, bilingual } from '../i18n';
 import { formatNumber } from '../utils/formatNumber';
+import { revokeHousingAccess, usePrivateHousingAccess } from '../utils/privateHousingAccess';
 import { HOUSING_TYPES, housingStreet, parseHousingFilters, type HousingResult } from '../utils/housing';
 
 const results = new Map<string, { expires: number; result: HousingResult }>();
 const inputStyle = 'w-full rounded-lg border border-white/15 bg-[#0E131A] px-2 py-2 text-sm text-white min-h-11';
 export function HousingPanel({ city, district, streetName }: { city: string; district: string; streetName: string }) {
+  const access = usePrivateHousingAccess();
   const [openKey, setOpenKey] = useState(''), [data, setData] = useState<HousingResult | null>(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
@@ -15,10 +17,15 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
   const street = housingStreet(streetName, city, district);
   const scopeKey = city + '|' + district + '|' + streetName;
   const open = openKey === scopeKey;
+  useEffect(() => {
+    const clear = () => { results.clear(); setData(null); setOpenKey(''); ++requestId.current; };
+    window.addEventListener('private-housing-locked', clear);
+    return () => window.removeEventListener('private-housing-locked', clear);
+  }, []);
   useEffect(() => { setOpenKey(''); setData(null); setError(''); setPage(0); setQuery('years=3'); form.current?.reset(); }, [scopeKey]);
   useEffect(() => {
     const id = ++requestId.current;
-    if (!open || !city || !district || !street) return;
+    if (!access.authorized || !open || !city || !district || !street) return;
     const controller = new AbortController();
     const params = new URLSearchParams(query);
     params.set('city', city); params.set('district', district); params.set('street', street); params.set('page', String(page));
@@ -28,6 +35,7 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
     setLoading(true);
     const timeout = window.setTimeout(() => controller.abort(), 15000);
     void fetch('/api/housing?' + key, { signal: controller.signal }).then(async response => {
+      if (response.status === 401) { revokeHousingAccess(); throw new Error('Private session expired'); }
       if (!response.ok) throw new Error('Housing read failed');
       const body = await response.json() as HousingResult;
       if (!['available', 'not_imported'].includes(body.status) || !Array.isArray(body.records) || !body.stats || !body.coverage) throw new Error('Invalid housing response');
@@ -37,10 +45,11 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
     }).catch(() => { if (id === requestId.current) setError(t('住宅資料暫時無法讀取，請稍後重試。')); })
       .finally(() => { clearTimeout(timeout); if (id === requestId.current) setLoading(false); });
     return () => { ++requestId.current; controller.abort(); clearTimeout(timeout); };
-  }, [open, city, district, street, query, page, retry]);
+  }, [access.authorized, open, city, district, street, query, page, retry]);
   const applied = new URLSearchParams(query);
   const numberField = (name: string, label: string, max: number) => <label className="text-sm text-slate-300">{t(label)}<input className={inputStyle + ' mt-1'} name={name} defaultValue={applied.get(name) || ''} type="number" min="0" max={max} step={['rooms', 'minFloor', 'maxFloor'].includes(name) ? 1 : 'any'} /></label>;
   const booleanField = (name: string, label: string) => <label className="text-sm text-slate-300">{t(label)}<select className={inputStyle + ' mt-1'} name={name} defaultValue={applied.get(name) || ''}><option value="">{t('不限')}</option><option value="true">{t('有')}</option><option value="false">{t('無')}</option></select></label>;
+  if (!access.authorized) return null;
   return <section className="rounded-2xl border border-white/10 bg-white/[0.03] mb-4" data-testid="housing-panel">
     <button type="button" aria-expanded={open} onClick={() => setOpenKey(open ? '' : scopeKey)} className="flex w-full items-center justify-between gap-2 px-4 py-3 min-h-11 text-left text-base font-semibold">
       <span className="flex items-center gap-2"><Home size={18} />{t('住宅行情')}</span><ChevronDown size={18} className={open ? 'rotate-180' : ''} />

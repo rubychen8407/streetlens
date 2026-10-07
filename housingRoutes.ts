@@ -2,6 +2,7 @@ import express, { type Express } from 'express';
 import type { Pool } from 'pg';
 import { importHousing, readHousing } from './housingStore';
 import { parseHousingFilters } from './src/utils/housing';
+import { requireHousingOwner } from './privateHousingAuth';
 export function registerHousingImport(app: Express, db: Pool | null, ready: () => Promise<void>) {
   app.post('/api/internal/import-housing', (req, res, next) => {
     if (!process.env.STREETLENS_REFRESH_TOKEN || req.headers.authorization !== 'Bearer ' + process.env.STREETLENS_REFRESH_TOKEN) {
@@ -15,7 +16,7 @@ export function registerHousingImport(app: Express, db: Pool | null, ready: () =
   });
 }
 export function registerHousingReads(app: Express, db: Pool | null, ready: Promise<void>) {
-  app.get('/api/housing', async (req, res) => {
+  app.get('/api/housing', requireHousingOwner, async (req, res) => {
     let filters;
     try { filters = parseHousingFilters(req.query); }
     catch { res.status(400).json({ error: '請選擇縣市、行政區、街道與有效篩選條件。' }); return; }

@@ -29,7 +29,7 @@ jobs:
       - name: Production build
         run: npm run build
 
-      - name: Residential housing tests
+      - name: Residential housing and private access tests
         run: npm run test:housing
 
       - name: Score integrity tests
@@ -64,8 +64,11 @@ jobs:
       - name: Spatial inventory and refresh client regression tests
         run: npm run test:spatial-inventory && npm run test:refresh-client
 
+      - name: WheelRoute sidewalk parsing tests
+        run: npm run test:wheelroute-parser
+
       - name: Walk and saved CLS regression tests
-        run: npm run test:walk-moments
+        run: npm run test:walk-moments && npm run test:street-geometry
 
       - name: Language and AI explanation tests
         run: npm run test:language

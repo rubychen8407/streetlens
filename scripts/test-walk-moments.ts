@@ -25,8 +25,8 @@ test('street ribbons reuse valid real geometry, clip locally and never invent mi
   assert.deepEqual(savedStreetGeometry(record,[{...road,coords:[[25,122],[25.01,122]]}]).anchor,[25,121],'distant same-name road does not move the fallback point');
   assert.deepEqual(savedStreetGeometry(record,[]).paths,[],'no synthetic street geometry');
   assert.deepEqual(road,before);
-  const many = Array.from({length:100},(_,i)=>({...road,id:String(i),name:`road ${i}`}));
-  assert.equal(mergeStreetGeometry([],many).length,80,'local geometry cache is bounded');
+  const many = Array.from({length:300},(_,i)=>({...road,id:String(i),name:`road ${i}`}));
+  assert.equal(mergeStreetGeometry([],many).length,200,'local geometry cache covers the bounded saved overlay');
   assert.equal(mergeStreetGeometry([road],[road]).length,1,'repeated fetches do not grow the cache');
   assert.deepEqual(mergeStreetGeometry([],[{...road,coords:[[NaN,121],[25,121]]}]),[]);
   const cache = (updatedAt:number) => ({getItem:()=>JSON.stringify({updatedAt,roads:[road]})});

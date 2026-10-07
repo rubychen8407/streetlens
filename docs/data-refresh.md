@@ -10,7 +10,9 @@ A user request registers the requested coordinate as an assessment target. It do
 
 ## Refresh cadence
 
-The scheduled job runs daily at 03:20 Asia/Taipei.
+The scheduled workflow checks every six hours; each source's cadence decides
+whether it is actually fetched. The separate Data refresh workflow is manual
+only, and both share a concurrency group to avoid overlapping work.
 
 | Source | Cadence |
 | --- | --- |

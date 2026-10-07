@@ -509,7 +509,6 @@ export function AssessmentWorkspace({
                         [t("Bus stop"), assessment.officialServiceMetrics.busStopNearestDistance == null ? '—' : formatNumber(assessment.officialServiceMetrics.busStopNearestDistance) + ' m'],
                         [t("MRT station"), assessment.officialServiceMetrics.mrtStationNearestDistance == null ? '—' : formatNumber(assessment.officialServiceMetrics.mrtStationNearestDistance) + ' m'],
                         [t("Libraries · 800m"), formatNumber(assessment.officialServiceMetrics.libraryCount800m)],
-                        [t("Public toilets · 800m"), formatNumber(assessment.officialServiceMetrics.publicToiletCount800m)],
                         [t("Street lights · 300m"), assessment.officialServiceMetrics.streetLightCount300m == null ? '—' : formatNumber(assessment.officialServiceMetrics.streetLightCount300m)],
                         [t("Parks · 800m"), formatNumber(assessment.officialServiceMetrics.officialParkCount800m)],
                       ].map(([label, value]) => (
@@ -934,7 +933,7 @@ export function AssessmentWorkspace({
                 </div>
               </div>
               <div className="mt-3 space-y-2">
-                {(assessment?.sourceStatus || []).map(source => (
+                {(assessment?.sourceStatus || []).filter(source => !['taipei_aed', 'taipei_public_toilets'].includes(source.source)).map(source => (
                   <div key={t(source.source)} className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-slate-300 truncate">{t(source.source)}</span>
                     <span className={!source.stale && source.status === 'available' ? 'text-emerald-400' : 'text-slate-300'}>

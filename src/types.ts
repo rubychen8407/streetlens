@@ -392,7 +392,8 @@ export interface StreetAssessmentResponse {
     mrtStationNearestDistance: number | null;
     libraryCount800m: number;
     libraryNearestDistance800m: number | null;
-    publicToiletCount800m: number;
+    // Legacy snapshots only; no longer queried or displayed.
+    publicToiletCount800m?: number;
     streetLightCount300m: number | null;
     officialParkCount800m: number;
     officialParkNearestDistance800m: number | null;

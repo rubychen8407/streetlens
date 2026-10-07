@@ -44,12 +44,10 @@ export const OFFICIAL_SOURCE_URLS = {
   taipeiBusStops: "https://tcgbusfs.blob.core.windows.net/blobbus/TstStop.json",
   taipeiMrtStations: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a63e3278-9d10-4916-9f24-e5a4d78afb31",
   taipeiLibraries: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=fb6cc268-e2b8-43a7-86f2-e79702291a2b",
-  taipeiPublicToilets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=9e0e6ad4-b9f9-4810-8551-0cffd1b915b3",
   taipeiParks: "https://parks.gov.taipei/parks/api/",
   taipeiBikeLanes: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=a69988de-6a49-4956-9220-40ebd7c42800",
   taipeiMarkets: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=35acfce1-2c4d-4c70-aa75-601cdab2b3f7",
   taipeiCoolingPoints: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=ae7e5986-859d-4294-b289-7c1b2e7c23f1",
-  taipeiAed: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=438c61ad-24f6-4e54-a1cc-e2cfe0e7051e",
   taipeiFireHydrants: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=b9f8154d-c627-48a8-b3ef-512ed9cde9e7",
   taipeiOfficialAqi: "https://tpdep.blob.core.windows.net/techdep/tldep_AQI_DAYHour.json",
   taipeiFireStations: "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=4486e759-4159-4208-9832-c32300c4e832",
@@ -674,44 +672,6 @@ export async function fetchTaipeiParks(): Promise<OfficialCitywideSourceResult> 
   }
 }
 
-export async function fetchTaipeiPublicToilets(): Promise<OfficialCitywideSourceResult> {
-  const retrievedAt = new Date().toISOString();
-  const source = "Taipei City Environmental Protection Department public toilet points";
-  try {
-    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiPublicToilets);
-    const rows = parseCsv(text);
-    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
-      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
-      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
-      const name = firstValue(row, ["公廁名稱", "名稱", "name"]) || `public-toilet-${index}`;
-      return {
-        id: [firstValue(row, ["公廁編號", "編號", "id"]), name, lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
-        name,
-        lat: lat ?? Number.NaN,
-        lng: lng ?? Number.NaN,
-        properties: {
-          address: firstValue(row, ["公廁地址", "地址"]) || null,
-          district: firstValue(row, ["行政區"]) || null,
-          category: firstValue(row, ["公廁類別"]) || null,
-          accessibilitySeats: numberValue(row, ["無障礙廁座數"]),
-          familySeats: numberValue(row, ["親子廁座數"]),
-          topGradeSeats: numberValue(row, ["特優級"]),
-        },
-      };
-    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-
-    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
-  } catch (error: any) {
-    return {
-      points: [],
-      source,
-      status: error?.name === "AbortError" ? "timeout" : "error",
-      retrievedAt,
-      error: error?.message || String(error),
-    };
-  }
-}
-
 export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceResult> {
   const retrievedAt = new Date().toISOString();
   const source = "Taipei City Public Works Department street light inventory";
@@ -844,35 +804,6 @@ export async function fetchTaipeiCoolingPoints(): Promise<OfficialCitywideSource
   }
 }
 
-
-export async function fetchTaipeiAed(): Promise<OfficialCitywideSourceResult> {
-  const retrievedAt = new Date().toISOString();
-  const source = "Taipei City Health Department AED locations";
-  try {
-    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiAed, 60_000);
-    const rows = parseCsv(text);
-    const points: OfficialSpatialPoint[] = rows.map((row, index) => {
-      const lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
-      const lng = numberValue(row, ["經度", "longitude", "Longitude"]);
-      const name = firstValue(row, ["場所名稱", "場所", "name"]) || `AED-${index}`;
-      return {
-        id: [firstValue(row, ["場所名稱", "場所", "name"]), lat?.toFixed(6) || "", lng?.toFixed(6) || ""].join("|"),
-        name,
-        lat: lat ?? Number.NaN,
-        lng: lng ?? Number.NaN,
-        properties: {
-          address: firstValue(row, ["場所地址", "地址"]) || null,
-          category: firstValue(row, ["場所分類"]) || null,
-          type: firstValue(row, ["場所類型"]) || null,
-          location: firstValue(row, ["AED放置地點", "AED地點描述"]) || null,
-        },
-      };
-    }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-    return { points, source, status: points.length ? "available" : "empty", retrievedAt, sourceUpdatedAt: lastModified };
-  } catch (error: any) {
-    return { points: [], source, status: error?.name === "AbortError" ? "timeout" : "error", retrievedAt, error: error?.message || String(error) };
-  }
-}
 
 export async function fetchTaipeiFireHydrants(): Promise<OfficialCitywideSourceResult> {
   const retrievedAt = new Date().toISOString();

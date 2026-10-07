@@ -2,8 +2,11 @@ name: Data refresh
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '20 19 * * *' # 03:20 Asia/Taipei (UTC+8)
+
+# Scheduling is owned by scheduled-data-refresh.yml; keep this entry manual.
+concurrency:
+  group: streetlens-data-refresh
+  cancel-in-progress: false
 
 jobs:
   refresh:
@@ -18,7 +21,7 @@ jobs:
         run: npm ci
       - name: Refresh persisted source snapshots
         env:
-          STREETLENS_BASE_URL: ${{ secrets.STREETLENS_BASE_URL }}
+          STREETLENS_REFRESH_URL: ${{ secrets.STREETLENS_REFRESH_URL || secrets.STREETLENS_BASE_URL }}
           STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}
         run: npm run refresh:data
 

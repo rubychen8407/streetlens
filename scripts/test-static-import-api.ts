@@ -13,6 +13,13 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.ok(ready, 'API test server must start');
+  for (const sourceKey of ['taipei_public_toilets', 'taipei_aed']) {
+    const retired = await fetch(base + '/api/internal/refresh-data?sourceKey=' + sourceKey, {
+      method: 'POST', headers: { Authorization: 'Bearer local-test-token' },
+    });
+    assert.equal(retired.status, 400, 'retired sources cannot trigger external or database work');
+    assert.ok(!(await retired.json()).allowedSourceKeys.includes(sourceKey));
+  }
   const url = base + '/api/internal/import-static-osm';
   const invalid = '{invalid json';
   const unauthorized = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: invalid });

@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { applyFieldObservationAdjustment, calculateAssessment, validateAssessmentIntegrity } from "../scoring.ts";
 
 const baseline = {};
+const safety = { accidentCount500m: 2, accidentCountReference: [1, 2, 3], source: 'test', method: 'official' as const, confidence: 'high' as const };
+assert.deepEqual(
+  calculateAssessment(baseline, {}, undefined, { ...safety, aedCount500m: 99, aedCountReference: Array.from({ length: 50 }, (_, i) => i) }),
+  calculateAssessment(baseline, {}, undefined, safety),
+  'Legacy AED observations and references no longer affect CLS',
+);
 const emptyAssessment = calculateAssessment(baseline, {});
 const emptyValidation = validateAssessmentIntegrity(emptyAssessment);
 assert.equal(emptyValidation.valid, true, emptyValidation.errors.join("; "));

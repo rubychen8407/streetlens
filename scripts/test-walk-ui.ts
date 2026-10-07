@@ -371,10 +371,12 @@ try {
   });
   await deltaContext.addInitScript(() => {
     if (localStorage.getItem('cls_saved_locations')) return;
+    // One clock read makes visit 3 deterministically newest even on slow CI.
+    const visitStartedAt = Date.now();
     localStorage.setItem('cls_saved_locations', JSON.stringify([3, 5].map((points, i) => ({
       id: 'delta-' + i, name: 'Delta visit ' + points, streetName: '舊街道', district: '大安區', city: '臺北市',
       coords: { lat: 25.0326 + i * 0.0001, lng: 121.5298 }, clsScore: 70 + points, baselineClsScore: 70,
-      fieldAdjustment: points, grade: 'B', scores: {}, timestamp: Date.now() - i, syncStatus: 'synced',
+      fieldAdjustment: points, grade: 'B', scores: {}, timestamp: visitStartedAt - i, syncStatus: 'synced',
       observationRatings: { c3_sidewalk_quality: 4 }, fieldNotes: '保留原始筆記', evidence: [],
     }))));
   });

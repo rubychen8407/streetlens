@@ -1528,7 +1528,7 @@ async function computeStreetAssessment({ lat, lng, district, city, streetName }:
       const candidates = [
         ...(exact ? [exact] : []),
         ...nearby.filter((item) => item.scopeKey !== scopeKey),
-      ];
+      ].filter(item => item.status === 'available' || item.status === 'empty');
 
       if (!candidates.length) {
         snapshots[key] = null;
@@ -1596,7 +1596,7 @@ async function computeStreetAssessment({ lat, lng, district, city, streetName }:
       getCachedSnapshot("taipei_fire_hydrants", "__citywide__"),
       getCachedSnapshot("taipei_official_aqi", "__citywide__"),
       getCachedSnapshot("taipei_fire_stations", "__citywide__"),
-    ]);
+    ]).then(items => items.map(item => item && (item.status === 'available' || item.status === 'empty') ? item : null));
     const [nearbyYouBike, nearbyMedical, nearbyStreetLights, nearbyBusStops, nearbyMrtStations, nearbyLibraries, nearbyOfficialParks, nearbyBikeLanes, sidewalkCoverage, nearbyMarkets, nearbyCoolingPoints, nearbyHydrants, nearbyOfficialAqi] = await Promise.all([
       youBikeSnapshot ? getNearbyExternalSpatialPoints("taipei_youbike", lat, lng, 1500, 500) : Promise.resolve([]),
       medicalSnapshot ? getNearbyExternalSpatialPoints("taipei_medical", lat, lng, 1500, 500) : Promise.resolve([]),
@@ -1908,7 +1908,7 @@ async function computeStreetAssessment({ lat, lng, district, city, streetName }:
     };
 
     const accidents = safetyData.accidents || [];
-    const fireHydrantCount500m = nearbyHydrants.length;
+    const fireHydrantCount500m = hydrantSnapshot ? nearbyHydrants.length : undefined;
     const streetLightCount300m = streetLightSnapshot
       ? nearbyStreetLights.reduce((sum, point) => {
           const quantity = Number(point.properties?.quantity);
@@ -1921,9 +1921,9 @@ async function computeStreetAssessment({ lat, lng, district, city, streetName }:
       ...(hydrantSnapshot?.payload?.source ? [hydrantSnapshot.payload.source] : []),
     ].filter(Boolean);
     const c1SafetyMetrics: C1SafetyMetrics = {
-      accidentCount500m: accidents.length,
-      fatalAccidentCount500m: accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length,
-      injuryAccidentCount500m: accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length,
+      accidentCount500m: snapshots.taipei_safety ? accidents.length : undefined,
+      fatalAccidentCount500m: snapshots.taipei_safety ? accidents.filter((x: any) => /1類|A1|死亡/.test(String(x.type || ""))).length : undefined,
+      injuryAccidentCount500m: snapshots.taipei_safety ? accidents.filter((x: any) => /2類|A2|受傷/.test(String(x.type || ""))).length : undefined,
       streetLightCount300m,
       fireHydrantCount500m,
       source: [...new Set(c1SourceNames)].join(" + ") || "unavailable",
@@ -1950,11 +1950,12 @@ async function computeStreetAssessment({ lat, lng, district, city, streetName }:
     ]);
     c1SafetyMetrics.accidentCountReference = safetyReference.accidentCounts;
     c1SafetyMetrics.floodDepthReference = safetyReference.floodDepths;
-    c1SafetyMetrics.streetLightCountReference = streetLightReference;
-    c1SafetyMetrics.fireHydrantCountReference = normalizationReferences.c1HydrantCounts;
-    c4GreenMetrics.coolingPointCountReference = coolingPointCountReference;
+    c1SafetyMetrics.streetLightCountReference = streetLightSnapshot ? streetLightReference : [];
+    c1SafetyMetrics.fireHydrantCountReference = hydrantSnapshot ? normalizationReferences.c1HydrantCounts : [];
+    c4GreenMetrics.coolingPointCountReference = coolingPointSnapshot ? coolingPointCountReference : [];
 
-    const communityCount = mergedCommunity.length;
+    const communityCount = mergedCommunity.length || snapshots.google_places || snapshots.openstreetmap || staticPois.length || librarySnapshot
+      ? mergedCommunity.length : undefined;
     const scores = calculateAssessment(
       null,
       {},
@@ -1977,8 +1978,8 @@ async function computeStreetAssessment({ lat, lng, district, city, streetName }:
         c4NearestParkRetrievedAt: parkRetrievedAt,
         c4ParkSource: parkSources,
         c4ParkRetrievedAt: parkRetrievedAt,
-        c5Source: communityPois.length ? [...new Set(communityPois.map((x: any) => x.source).filter(Boolean))].join(" + ") : undefined,
-        c5RetrievedAt: communityPois.length ? (snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt) : undefined,
+        c5Source: [...new Set(mergedCommunity.map(x => x.source).filter(Boolean))].join(" + ") || (librarySnapshot ? 'Taipei Public Library' : undefined),
+        c5RetrievedAt: snapshots.google_places?.fetchedAt || snapshots.openstreetmap?.fetchedAt || librarySnapshot?.fetchedAt || staticSnapshot?.sourceUpdatedAt,
       },
     );
     const factors = [...scores.c1.factors, ...scores.c2.factors, ...scores.c3.factors, ...scores.c4.factors, ...scores.c5.factors];

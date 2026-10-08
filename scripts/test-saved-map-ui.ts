@@ -103,10 +103,11 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   await gradePin.click();
   await report.getByText('Keep this note',{exact:true}).waitFor();
   await map.click({position:{x:4,y:4}});await report.waitFor({state:'hidden'});
+  const widthBeforeZoom=Number(await ribbon.getAttribute('stroke-width'));
   await map.focus(); await page.keyboard.press('+');
-  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) > width, initialWidth);
+  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) > width, widthBeforeZoom);
   await page.keyboard.press('-');
-  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) === width, initialWidth);
+  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) === width, widthBeforeZoom);
   const toggle = page.getByRole('button',{name:/道路等級|Road grades/});
   await toggle.click();
   assert.equal(await page.locator('.saved-street-line').count(),0,'toggle removes the layer');
@@ -149,6 +150,31 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   }
   await colorsPage.screenshot({path:'artifacts/walk-ui/saved-map-grades.png'});
   await colorsContext.close();
+
+  const crossing=await browser.newContext({viewport:{width:390,height:844}});await prepare(crossing);
+  await crossing.addInitScript(()=> {
+    localStorage.setItem('cls_saved_locations',JSON.stringify([85,75].map((score,i)=>({
+      id:`cross-${i}`,coords:{lat:25.0326,lng:121.5298},streetName:`Cross street ${i}`,name:`Cross street ${i}`,
+      city:'',district:'',timestamp:i+1,clsScore:score,grade:'D',scores:{},evidence:[],syncStatus:'synced',fieldNotes:`Cross note ${i}`,
+    }))));
+    localStorage.setItem('cls_street_geometry_v1',JSON.stringify({updatedAt:Date.now(),roads:[
+      {id:'horizontal',name:'Cross street 0',coords:[[25.0326,121.528],[25.0326,121.532]]},
+      {id:'vertical',name:'Cross street 1',coords:[[25.031,121.5298],[25.034,121.5298]]},
+    ]}));
+  });
+  const crossPage=await crossing.newPage();await crossPage.goto(baseURL);
+  await crossPage.locator('.saved-grade-pin').first().waitFor();
+  const first=crossPage.locator('.saved-grade-pin[data-saved-assessment-id="cross-0"]');
+  const second=crossPage.locator('.saved-grade-pin[data-saved-assessment-id="cross-1"]');
+  const a=(await first.boundingBox())!,b=(await second.boundingBox())!;
+  assert.ok(Math.abs(a.x-b.x)>=44 || Math.abs(a.y-b.y)>=44,'intersection grades have separate touch targets');
+  assert.ok((await crossPage.locator('.saved-grade-leader').evaluateAll(elements=>elements.every(e=>!e.getAttribute('d') || e.getAttribute('d')==='M0 0'))),'intersection pins stay on their real roads');
+  for(const [i,pin] of [first,second].entries()) {
+    await pin.click();await crossPage.getByText(`Cross note ${i}`,{exact:true}).waitFor();
+    await crossPage.locator('.leaflet-container').click({position:{x:4,y:4}});
+    await crossPage.getByRole('complementary',{name:t('街道結果報告')}).waitFor({state:'hidden'});
+  }
+  await crossing.close();
 
   // Reproduce the production failure: old scored visits, an empty geometry
   // cache, and an unavailable current CLS must still load persisted roads.

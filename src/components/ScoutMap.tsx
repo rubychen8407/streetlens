@@ -461,13 +461,14 @@ export function ScoutMap({
           });
           hit.on('click', () => savedSelectionHandler.current?.(record));
         }
-        if (!geometry.paths.length) {
-          // A missing road never erases access to an existing saved visit.
+        {
+          // Pin the grade to the real road anchor, or the saved coordinate if unavailable.
           const dot = document.createElement('span');
-          dot.className = 'saved-street-point';
-          dot.style.background = GRADE_COLORS[grade];
+          dot.className = 'saved-street-grade';
+          dot.textContent = grade;
+          dot.style.setProperty('--street-grade', GRADE_COLORS[grade]);
           const fallback = L.marker(geometry.anchor, {
-            icon:L.divIcon({className:'saved-street-fallback',html:dot,iconSize:[44,44],iconAnchor:[22,22]}),
+            icon:L.divIcon({className:'saved-grade-pin',html:dot,iconSize:[44,44],iconAnchor:[22,38]}),
             alt:label,keyboard:true,bubblingMouseEvents:false,zIndexOffset:4000,
           }).addTo(group);
           fallback.on('click', () => savedSelectionHandler.current?.(record));
@@ -475,6 +476,8 @@ export function ScoutMap({
           element?.setAttribute('aria-label', label);
           element?.setAttribute('role', 'button');
           element?.setAttribute('data-saved-assessment-id', record.id);
+          element?.setAttribute('data-street-geometry', geometry.paths.length ? 'road' : 'point');
+          element?.setAttribute('data-grade', grade);
           element?.addEventListener('keydown', event => {
             if (event.key === ' ' || event.key === 'Enter') {
               event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);

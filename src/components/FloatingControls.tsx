@@ -352,7 +352,7 @@ export function FloatingControls({
       {!isSheetOpen && activeLayers && onToggleLayer && <div className="mt-2 flex items-center gap-2 flex-wrap">
         <button type="button" aria-pressed={activeLayers.streetScores} onClick={() => onToggleLayer('streetScores')}
           className="min-h-11 px-3 rounded-2xl bg-[#1A212B]/95 text-slate-100 text-sm flex items-center gap-2 shadow-lg">
-          <Layers size={16} />{bilingual('道路色帶', 'Road colors')}<span className="text-xs text-slate-300">{activeLayers.streetScores ? bilingual('開', 'On') : bilingual('關', 'Off')}</span>
+          <Layers size={16} />{bilingual('道路等級', 'Road grades')}<span className="text-xs text-slate-300">{activeLayers.streetScores ? bilingual('開', 'On') : bilingual('關', 'Off')}</span>
         </button>
         {activeLayers.streetScores && <div aria-label={bilingual('CLS 等級圖例', 'CLS grade legend')} className="flex items-center gap-2 px-3 min-h-11 rounded-2xl bg-[#1A212B]/95 text-xs text-slate-100">
           {Object.entries(GRADE_COLORS).map(([grade,color]) => <span key={grade} className="flex items-center gap-1"><i aria-hidden="true" style={{background:color}} className="w-2 h-2 rounded-full" />{grade}</span>)}

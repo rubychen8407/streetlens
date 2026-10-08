@@ -1,3 +1,6 @@
+import { ensureHousingSchema } from './housingStore';
+import { registerHousingImport, registerHousingReads } from './housingRoutes';
+import { registerPrivateHousingAuth } from './privateHousingAuth';
 import { normalizeSpatialInventory } from './spatialInventory';
 import { fetchMoenvAirQuality, shouldReplaceInventory, STATIC_OSM_SOURCE, STATIC_MAX_AGE_MS, AQI_MAX_AGE_MS, isSourceFresh, poiIdentity, withinStaticCoverage } from './sourceFallbacks';
 import { persistStaticImport, staticPointsToPois } from './staticOsm';
@@ -25,6 +28,7 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+registerPrivateHousingAuth(app);
 
 app.post('/api/internal/import-static-osm', (req, res, next) => {
   if (!process.env.STREETLENS_REFRESH_TOKEN || req.headers.authorization !== 'Bearer ' + process.env.STREETLENS_REFRESH_TOKEN) {
@@ -35,10 +39,12 @@ app.post('/api/internal/import-static-osm', (req, res, next) => {
   try { await schemaReady; res.json(await persistStaticImport(req.body)); }
   catch (error: any) { res.status(400).json({ error: error.message }); }
 });
+registerHousingImport(app, dataDb, () => schemaReady);
 app.use(express.json());
 
 // Assessment data is persisted first. User requests never crawl scoring sources.
-const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema(), ensureStreetGeometrySchema()]).then(() => ensureStorageBudget(dataDb));
+const schemaReady = Promise.all([ensureDataCacheSchema(), ensureAssessmentSchema(), ensureStreetGeometrySchema(), ensureHousingSchema(dataDb)]).then(() => ensureStorageBudget(dataDb));
+registerHousingReads(app, dataDb, schemaReady);
 schemaReady.catch((error) => console.error("Data schema initialization failed:", error));
 app.get('/api/street-geometry/status', async (_req,res) => {
   if(!dataDb) {res.status(503).json({geometryPipeline:1,error:'Road database unavailable'});return;}

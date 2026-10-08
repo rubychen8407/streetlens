@@ -1,5 +1,65 @@
 // Source text is also a stable lookup key; user-authored content is never translated.
 const pairs = `
+私人功能|Private features
+以 Google 登入|Sign in with Google
+登出私人功能|Sign out of private features
+登出未完成，請重試或關閉瀏覽器。|Sign-out failed. Retry or close the browser.
+平均成交總價（萬）|Avg total (NT$10k)
+平均成交單價（萬／坪）|Avg unit (NT$10k/ping)
+萬|NT$10k
+年|yrs
+筆|sales
+有|Yes
+無|No
+
+住宅行情|Residential market
+純住宅成交|Residential sales only
+請先選擇有街道名稱及行政區的地點。|Select a named street and district first.
+不限|Any
+最低總價（萬）|Min total (NT$10k)
+最高總價（萬）|Max total (NT$10k)
+成交期間|Transaction period
+房屋型態|Property type
+更多房屋條件|More housing filters
+最低建物坪數|Min floor area (ping)
+最高建物坪數|Max floor area (ping)
+房數|Bedrooms
+最高屋齡（成交時）|Max age at transaction
+最低樓層|Min floor
+最高樓層|Max floor
+電梯|Elevator
+車位|Parking
+包含特殊交易|Include special transactions
+套用住宅篩選|Apply housing filters
+讀取住宅成交資料|Loading residential transactions
+住宅資料暫時無法讀取，請稍後重試。|Housing data is temporarily unavailable. Try again later.
+請確認最小值不大於最大值，且篩選條件有效。|Check that minimum values do not exceed maximums and filters are valid.
+此縣市住宅資料尚未匯入，尚無法提供成交行情。|Residential transactions have not been imported for this city yet.
+平均成交總價|Average total sale price
+平均成交單價|Average sale price per ping
+符合條件|Matching sales
+單價樣本|Unit-price samples
+總價中位數|Median total price
+最近符合篩選成交|Latest matching sale
+已匯入資料中沒有符合條件的住宅成交；不代表街道沒有交易。|No matching residential sales in imported data; this does not mean no transactions occurred.
+（含車位）|(includes parking)
+成交時屋齡|Age at transaction
+特殊交易|Special transaction
+縣市已匯入交易日期|Imported transaction dates for city
+資料擷取日期|Data retrieved
+以整條道路及段別比對，非 CLS 的 250 公尺路段。總價含車位；單價僅採可拆車位資料。坪數含公設；屋齡為成交時。|Matched by road and section, not the CLS 250 m portion. Total includes parking; unit prices use separable parking data only. Area includes shared spaces; age is at transaction.
+在售房源尚未接入；以下開啟外部網站，需在原站設定住宅及價格條件。|Live listings are not connected. These links open external sites; set residential and price filters there.
+來源：內政部實價登錄開放資料|Source: Ministry of the Interior open transaction data
+萬／坪|NT$10k / ping
+坪|ping
+房|bedrooms
+樓|floor
+公寓|Walk-up apartment
+華廈|Mid-rise apartment
+住宅大樓|Residential tower
+透天厝|Townhouse
+套房|Studio
+
 資料完整度|Data completeness
 暫定分數|Provisional score
 暫定|Provisional

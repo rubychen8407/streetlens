@@ -7,3 +7,7 @@ coverage/
 .env*
 !.env.example
 artifacts/
+
+node_modules
+__pycache__/
+*.pyc

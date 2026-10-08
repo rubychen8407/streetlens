@@ -29,6 +29,9 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Residential housing and private access tests
+        run: npm run test:housing
+
       - name: Score integrity tests
         run: npm run test:score-integrity
 

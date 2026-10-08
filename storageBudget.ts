@@ -3,7 +3,7 @@ import type { Pool } from 'pg';
 // Decimal MB: leave 300 MB below the requested 1 GB project budget.
 export const WRITE_LIMIT_BYTES = 700_000_000;
 export const GUARDED_TABLES = [
-  'assessment_sessions', 'assessment_evidence', 'assessment_targets', 'street_baselines',
+  'housing_transactions', 'housing_imports', 'assessment_sessions', 'assessment_evidence', 'assessment_targets', 'street_baselines',
   'external_data_snapshots', 'external_spatial_points', 'external_spatial_areas',
   'external_spatial_lines', 'flood_hazard_polygons', 'historical_flood_events',
 ] as const;

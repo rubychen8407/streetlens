@@ -22,7 +22,7 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
     });
     const page = await context.newPage(); await page.goto(baseURL);
-    await page.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+    await page.locator('.leaflet-container').click({ position: { x: 150, y: 280 } });
     const panel = page.getByTestId('housing-panel'); await panel.waitFor();
     assert.equal(reads.length, 0, 'closed housing never fetches');
     const savedBefore = await page.evaluate(() => localStorage.getItem('cls_saved_locations'));
@@ -75,7 +75,7 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state === 'not_imported' ? { ...response, status: 'not_imported', stats: { ...response.stats, count: 0 }, records: [], latest: null } : response) });
     });
     const page = await context.newPage(); await page.goto(baseURL);
-    await page.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+    await page.locator('.leaflet-container').click({ position: { x: 150, y: 280 } });
     const panel = page.getByTestId('housing-panel'); await panel.waitFor();
     await panel.getByRole('button', { name: '住宅行情', exact: true }).click();
     const results = panel.getByTestId('housing-results');
@@ -94,7 +94,7 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     contentType: 'application/json', body: JSON.stringify({ enabled: true, authorized: false, expiresAt: null }) }); });
   await publicContext.route(url => url.pathname === '/api/housing', route => { ++publicReads; return route.abort(); });
   const publicPage = await publicContext.newPage(); await publicPage.goto(baseURL);
-  await publicPage.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+  await publicPage.locator('.leaflet-container').click({ position: { x: 150, y: 280 } });
   await publicPage.getByText('Start environment observations', { exact: true }).or(publicPage.getByText('開始環境觀察', { exact: true })).waitFor();
   assert.equal(await publicPage.getByTestId('housing-panel').count(), 0); assert.equal(publicReads, 0);
   assert.equal(accessReads, 1, 'permission read is deduplicated and never queries DB');
@@ -112,7 +112,7 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     });
     await recovery.route(url => url.pathname === '/api/housing', route => { ++housingReads; return route.abort(); });
     const recoveredPage = await recovery.newPage(); await recoveredPage.goto(baseURL);
-    await recoveredPage.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+    await recoveredPage.locator('.leaflet-container').click({ position: { x: 150, y: 280 } });
     await recoveredPage.getByRole('button', { name: 'Start environment observations', exact: true }).waitFor();
     await recoveredPage.getByRole('button', { name: 'Profile settings', exact: true }).click();
     // Browser reconnect may race the failed fetch; retry explicitly when opening settings again.

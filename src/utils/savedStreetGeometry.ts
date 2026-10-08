@@ -8,7 +8,7 @@ export type StreetGeometry = Pick<StreetSegmentScore, 'id' | 'name' | 'coords'> 
 export const STREET_GEOMETRY_KEY = 'cls_street_geometry_v1';
 const MAX_ROADS = 200;
 const MAX_AGE = 30 * 24 * 60 * 60 * 1000;
-export const GRADE_COLORS = { S: '#c7db85', A: '#91cbb2', B: '#8abbd1', C: '#d8bd87', D: '#cc9aa3' };
+export const GRADE_COLORS = { S: '#8b5cf6', A: '#10b981', B: '#0ea5e9', C: '#f59e0b', D: '#ef4444' };
 function roadHasIdentity(record: StreetAddress, name: string) {
   const identity=streetIdentity(record.city,record.district,record.streetName);
   return name.normalize('NFKC').split(';').some(alias=>streetIdentity(record.city,record.district,alias)===identity);
@@ -109,4 +109,9 @@ export function associateObservedRoad(record: StreetAddress, candidates: StreetG
   const chosen=named || (nearest && !nearest.road.name.trim() && nearest.distance<=10
     && (!ranked[1] || ranked[1].distance-nearest.distance>=4) ? nearest : undefined);
   return chosen ? {...chosen.road,matchedIdentity:identity,matchedAnchor:[record.coords.lat,record.coords.lng]} : null;
+}
+
+// Screen-pixel width follows zoom while preserving the original road centerline.
+export function streetHighlightStyle(zoom: number) {
+  return { weight: Math.max(1, Math.min(6, 2 ** ((zoom - 15) / 2))), opacity: 0.38 };
 }

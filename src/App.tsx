@@ -151,9 +151,11 @@ export default function App() {
     c3Transit: true,
     c4Green: true,
     c5Vitality: true,
-    streetScores: true,
+    streetScores: (() => { try { return localStorage.getItem('cls_road_colors') !== 'off'; } catch { return true; } })(),
     walkingRadius: true,
   });
+
+  useEffect(() => { try { localStorage.setItem('cls_road_colors', activeLayers.streetScores ? 'on' : 'off'); } catch { /* Session toggle works without storage. */ } }, [activeLayers.streetScores]);
 
   // Never calculate scores in the browser. The backend is the single source of truth.
   const selectedSaved = savedLocations.find(item => item.id === activeSavedAssessmentId);

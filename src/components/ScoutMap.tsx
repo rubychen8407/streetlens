@@ -5,7 +5,7 @@ import { LocationCoord, POIMarker, StreetSegmentScore, SavedLocation } from '../
 import { savedScoreLocations, visibleSavedScores } from '../utils/savedScoreMap';
 import { formatNumber } from '../utils/formatNumber';
 import { gradeForScore } from '../utils/savedLocations';
-import { GRADE_COLORS, mergeStreetGeometry, readStreetGeometry, savedStreetGeometry, STREET_GEOMETRY_KEY } from '../utils/savedStreetGeometry';
+import { GRADE_COLORS, streetHighlightStyle, mergeStreetGeometry, readStreetGeometry, savedStreetGeometry, STREET_GEOMETRY_KEY } from '../utils/savedStreetGeometry';
 
 interface ScoutMapProps {
   currentLocation: LocationCoord;
@@ -401,85 +401,91 @@ export function ScoutMap({
 
   // Update Street Heatmap Polylines
   useEffect(() => {
-    if (!streetLayersRef.current) return;
-    streetLayersRef.current.clearLayers();
-
-    if (activeLayers.streetScores) {
-      streetSegments.forEach((segment) => {
-        const grade = gradeForScore(segment.clsScore);
-        const color = grade ? GRADE_COLORS[grade] : '#64748b';
-
-        const poly = L.polyline(segment.coords, {
-          color,
-          weight: grade ? 3 : 1,
-          opacity: grade ? 0.75 : 0.18,
-          lineCap: 'round',
-          interactive: false,
-        });
-
-        streetLayersRef.current?.addLayer(poly);
-      });
-    }
-  }, [mapInstance, streetSegments, activeLayers.streetScores, language]);
-
-  // Local-only score overlay. Pan/zoom/layer changes never request history,
-  // assessment, reverse-geocoding or source data. Bound DOM work to 200 labels.
-  useEffect(() => {
-    if (!mapInstance) return;
-    const layer = L.layerGroup().addTo(mapInstance);
-    const markers = new Map<string, L.LayerGroup>();
+    if (!mapInstance || !streetLayersRef.current) return;
     const draw = () => {
+      streetLayersRef.current?.clearLayers();
       if (!activeLayers.streetScores) return;
+      streetSegments.forEach(segment => {
+        const grade = gradeForScore(segment.clsScore);
+        if (!grade) return;
+        // Saved roads already carry the same baseline: avoid doubling the ink.
+        if (savedScores.some(record => savedStreetGeometry(record, [segment]).paths.length && savedStreetGeometry(record, knownRoads).paths.length)) return;
+        streetLayersRef.current?.addLayer(L.polyline(segment.coords, {
+          color: GRADE_COLORS[grade], ...streetHighlightStyle(mapInstance.getZoom()),
+          lineCap: 'round', interactive: false,
+        }));
+      });
+    };
+    draw(); mapInstance.on('zoomend', draw);
+    return () => { mapInstance.off('zoomend', draw); streetLayersRef.current?.clearLayers(); };
+  }, [mapInstance, streetSegments, savedScores, knownRoads, activeLayers.streetScores]);
+
+  // Local-only road overlay; pan/zoom never requests assessment or source data.
+  useEffect(() => {
+    if (!mapInstance || !activeLayers.streetScores) return;
+    const layer = L.layerGroup().addTo(mapInstance);
+    const roads = new Map<string, { group: L.LayerGroup; lines: L.Polyline[] }>();
+    const draw = () => {
       const bounds = mapInstance.getBounds().pad(0.1);
       const records = visibleSavedScores(savedScores, { south:bounds.getSouth(), north:bounds.getNorth(), west:bounds.getWest(), east:bounds.getEast() });
       const visibleIds = new Set(records.map(record => record.id));
-      for (const [id, marker] of markers) {
-        if (!visibleIds.has(id)) { layer.removeLayer(marker); markers.delete(id); }
+      for (const [id, road] of roads) {
+        if (!visibleIds.has(id)) { layer.removeLayer(road.group); roads.delete(id); }
       }
       for (const record of records) {
-        if (markers.has(record.id)) continue;
-        const score = formatNumber(record.clsScore);
-        const grade = gradeForScore(record.clsScore);
-        const color = GRADE_COLORS[grade!];
+        const existing = roads.get(record.id);
+        if (existing) {
+          existing.lines.forEach(line => line.setStyle(streetHighlightStyle(mapInstance.getZoom())));
+          continue;
+        }
+        const grade = gradeForScore(record.clsScore)!;
         const geometry = savedStreetGeometry(record, knownRoads);
         const group = L.layerGroup().addTo(layer);
+        const lines: L.Polyline[] = [];
+        const label = bilingual('已儲存 CLS', 'Saved CLS') + ' ' + formatNumber(record.clsScore) + ' ' + grade + ' · ' + (record.name || record.streetName);
         for (const path of geometry.paths) {
-          L.polyline(path, { color:'#0e131a', weight:7, opacity:0.65, lineCap:'round', interactive:false }).addTo(group);
-          const line = L.polyline(path, { color, weight:3, opacity:0.9, lineCap:'round', interactive:false, className:'saved-street-line' }).addTo(group);
+          const line = L.polyline(path, { color:GRADE_COLORS[grade], ...streetHighlightStyle(mapInstance.getZoom()), lineCap:'round', interactive:false, className:'saved-street-line' }).addTo(group);
+          lines.push(line);
           line.getElement()?.setAttribute('data-saved-assessment-id', record.id);
-          const hit = L.polyline(path, { weight:16, opacity:0, bubblingMouseEvents:false, className:'saved-street-hit' }).addTo(group);
-          hit.getElement()?.setAttribute('data-saved-assessment-id', record.id);
+          line.getElement()?.setAttribute('data-grade', grade);
+          const hit = L.polyline(path, { weight:24, opacity:0, bubblingMouseEvents:false, className:'saved-street-hit' }).addTo(group);
+          const element = hit.getElement();
+          element?.setAttribute('data-saved-assessment-id', record.id);
+          element?.setAttribute('aria-label', label);
+          element?.setAttribute('role', 'button');
+          element?.setAttribute('tabindex', '0');
+          element?.addEventListener('keydown', event => {
+            if ((event as KeyboardEvent).key === ' ' || (event as KeyboardEvent).key === 'Enter') {
+              event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
+            }
+          });
           hit.on('click', () => savedSelectionHandler.current?.(record));
         }
-        const label = bilingual('已儲存 CLS', 'Saved CLS') + ' ' + score + ' ' + grade + ' · ' + (record.name || record.streetName);
-        const badge = document.createElement('div');
-        badge.className = 'saved-score-badge';
-        badge.dataset.grade = grade || '';
-        badge.style.setProperty('--street-grade', color);
-        const value = document.createElement('strong'); value.textContent = String(Math.round(record.clsScore!));
-        badge.append(value);
-        const marker = L.marker(geometry.anchor, {
-          icon:L.divIcon({ className:'saved-score-marker', html:badge, iconSize:[44,44], iconAnchor:[22,50] }),
-          alt:label, keyboard:true, bubblingMouseEvents:false, zIndexOffset:4000,
-        });
-        marker.on('click', () => savedSelectionHandler.current?.(record));
-        group.addLayer(marker);
-        markers.set(record.id, group);
-        const element = marker.getElement();
-        element?.setAttribute('aria-label',label);
-        element?.setAttribute('role','button');
-        element?.setAttribute('data-saved-assessment-id',record.id);
-        element?.setAttribute('data-street-geometry',geometry.paths.length ? 'road' : 'point');
-        element?.addEventListener('keydown', event => {
-          if (event.key === ' ' || event.key === 'Enter') {
-            event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
-          }
-        });
+        if (!geometry.paths.length) {
+          // A missing road never erases access to an existing saved visit.
+          const dot = document.createElement('span');
+          dot.className = 'saved-street-point';
+          dot.style.background = GRADE_COLORS[grade];
+          const fallback = L.marker(geometry.anchor, {
+            icon:L.divIcon({className:'saved-street-fallback',html:dot,iconSize:[44,44],iconAnchor:[22,22]}),
+            alt:label,keyboard:true,bubblingMouseEvents:false,zIndexOffset:4000,
+          }).addTo(group);
+          fallback.on('click', () => savedSelectionHandler.current?.(record));
+          const element = fallback.getElement();
+          element?.setAttribute('aria-label', label);
+          element?.setAttribute('role', 'button');
+          element?.setAttribute('data-saved-assessment-id', record.id);
+          element?.addEventListener('keydown', event => {
+            if (event.key === ' ' || event.key === 'Enter') {
+              event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
+            }
+          });
+        }
+        roads.set(record.id, {group, lines});
       }
     };
-    draw();
-    mapInstance.on('moveend',draw);
-    return () => { mapInstance.off('moveend',draw); layer.remove(); };
+    draw(); mapInstance.on('moveend zoomend',draw);
+    return () => { mapInstance.off('moveend zoomend',draw); layer.remove(); };
   }, [mapInstance, savedScores, knownRoads, activeLayers.streetScores, language]);
 
   // Update POI Markers (Apple Maps style icons)

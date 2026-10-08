@@ -28,16 +28,29 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     const savedBefore = await page.evaluate(() => localStorage.getItem('cls_saved_locations'));
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByTestId('housing-stats').waitFor(); assert.equal(reads.length, 1);
+    const filters = panel.getByTestId('housing-filters');
+    assert.equal(await filters.getAttribute('open'), null, 'filters are optional and collapsed while data displays immediately');
+    assert.equal(await panel.evaluate(element => Boolean(element.querySelector('[data-testid="housing-results"]')!.compareDocumentPosition(element.querySelector('[data-testid="housing-filters"]')!) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'results precede filters in reading order');
+    await filters.locator('summary').first().click();
     await panel.locator('[name="minPrice"]').fill('1000'); await panel.locator('[name="maxPrice"]').fill('1500');
     assert.equal(reads.length, 1, 'editing filters does not fetch');
     await panel.getByRole('button', { name: english ? 'Apply housing filters' : '套用住宅篩選', exact: true }).click();
     await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="housing-stats"]')));
     assert.equal(reads.length, 2); assert.equal(reads.at(-1)?.searchParams.get('maxPrice'), '1500');
+    assert.equal(await filters.getAttribute('open'), null, 'apply returns directly to results');
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByTestId('housing-stats').waitFor(); assert.equal(reads.length, 2, 'reopening reuses cache');
+    await filters.locator('summary').first().click();
     assert.equal(await panel.locator('[name="minPrice"]').inputValue(), '1000', 'reopened filters match cached results');
     assert.equal(await panel.locator('[name="maxPrice"]').inputValue(), '1500');
+    await panel.getByRole('button', { name: english ? 'Clear filters and show street market' : '清除篩選，顯示整條街行情', exact: true }).click();
+    await panel.getByTestId('housing-stats').waitFor();
+    assert.equal(reads.length, 2, 'clearing filters reuses the original street result without another DB read');
+    await filters.locator('summary').first().click();
+    assert.equal(await panel.locator('[name="minPrice"]').inputValue(), '');
+    assert.equal(await panel.locator('[name="maxPrice"]').inputValue(), '');
+    await filters.locator('summary').first().click();
     const bounds = await panel.boundingBox(); assert.ok(bounds && bounds.width <= width && bounds.x >= 0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     assert.equal(overflow, false, 'housing does not overflow narrow screens');
@@ -50,6 +63,30 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     await page.getByRole('button', { name: english ? 'Sign out of private features' : '登出私人功能', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('[data-testid="housing-panel"]'));
     assert.equal(reads.length, 2); await context.close();
+  }
+  for (const state of ['not_imported', 'error'] as const) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 900 } }); await prepare(context);
+    await context.addInitScript(() => localStorage.setItem('streetlens-language', 'zh-TW'));
+    await context.route(url => url.pathname === '/api/private/access', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true, authorized: true, expiresAt: Date.now() + 3600000 }) }));
+    let reads = 0;
+    await context.route(url => url.pathname === '/api/housing', route => {
+      ++reads;
+      if (state === 'error' && reads === 1) return route.fulfill({ status: 503 });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state === 'not_imported' ? { ...response, status: 'not_imported', stats: { ...response.stats, count: 0 }, records: [], latest: null } : response) });
+    });
+    const page = await context.newPage(); await page.goto(baseURL);
+    await page.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+    const panel = page.getByTestId('housing-panel'); await panel.waitFor();
+    await panel.getByRole('button', { name: '住宅行情', exact: true }).click();
+    const results = panel.getByTestId('housing-results');
+    await results.getByText(state === 'not_imported' ? '此縣市住宅資料尚未匯入，尚無法提供成交行情。' : '住宅資料暫時無法讀取，請稍後重試。', { exact: state === 'not_imported' }).waitFor();
+    assert.equal(await panel.getByTestId('housing-filters').getAttribute('open'), null, 'missing data and errors show without filling filters');
+    assert.equal(reads, 1);
+    if (state === 'error') {
+      await results.getByRole('button', { name: '重試', exact: true }).click();
+      await panel.getByTestId('housing-stats').waitFor(); assert.equal(reads, 2);
+    }
+    await context.close();
   }
   const publicContext = await browser.newContext({ viewport: { width: 390, height: 900 } }); await prepare(publicContext);
   let publicReads = 0, accessReads = 0;

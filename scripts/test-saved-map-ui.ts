@@ -144,7 +144,9 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   }
   assert.equal(new Set(backgrounds).size,5,'five distinct grade colors');
   assert.equal(await colorsPage.locator('.saved-street-line').count(),5);
-  assert.deepEqual(await colorsPage.locator('.saved-grade-pin').allTextContents(),['S','A','B','C','D'],'all five grades are readable without interpreting color');
+  for (const [i,grade] of ['S','A','B','C','D'].entries()) {
+    assert.equal(await colorsPage.locator(`.saved-grade-pin[data-saved-assessment-id="grade-${i}"]`).innerText(),grade,'each street displays its own grade regardless of render order');
+  }
   await colorsPage.screenshot({path:'artifacts/walk-ui/saved-map-grades.png'});
   await colorsContext.close();
 

@@ -1,34 +1,7 @@
-.saved-score-marker, .ios-target-marker {
-  background: none;
-  border: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.saved-score-badge {
-  box-sizing: border-box;
-  width: 28px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #e8edf1;
-  background: rgba(14, 19, 26, 0.84);
-  border-bottom: 2px solid var(--street-grade);
-  border-radius: 4px;
-  box-shadow: 0 1px 4px #0003;
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-.saved-score-badge strong { font-size: 12px; font-weight: 600; }
-.saved-score-marker:focus-visible, .ios-target-marker:focus-visible {
-  outline: 2px solid #d4f971;
-  border-radius: 6px;
-  outline-offset: 1px;
-}
-.saved-score-marker:hover .saved-score-badge { background: #1a212b; }
-.saved-street-line { filter: drop-shadow(0 1px 2px #0003); }
+.ios-target-marker { background:none; border:0; display:flex; align-items:center; justify-content:center; }
+.saved-street-hit { cursor:pointer; }
+.saved-street-hit:focus-visible { stroke-opacity:0.15; stroke:#d4f971; outline:none; }
+.ios-target-marker:focus-visible { outline:2px solid #d4f971; border-radius:6px; }
 .selected-point {
   box-sizing: border-box;
   width: 20px;

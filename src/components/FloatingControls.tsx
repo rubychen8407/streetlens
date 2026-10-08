@@ -1,4 +1,5 @@
-import { t, displayPlace } from '../i18n';
+import { t, bilingual, displayPlace } from '../i18n';
+import { GRADE_COLORS } from '../utils/savedStreetGeometry';
 import { DockButton } from './DockButton';
 import { ProfileSettings } from './ProfileSettings';
 import { useTheme, setTheme } from '../utils/theme';
@@ -348,6 +349,15 @@ export function FloatingControls({
             <Library className="w-5 h-5" />
           </button>
         </div>
+      {!isSheetOpen && activeLayers && onToggleLayer && <div className="mt-2 flex items-center gap-2 flex-wrap">
+        <button type="button" aria-pressed={activeLayers.streetScores} onClick={() => onToggleLayer('streetScores')}
+          className="min-h-11 px-3 rounded-2xl bg-[#1A212B]/95 text-slate-100 text-sm flex items-center gap-2 shadow-lg">
+          <Layers size={16} />{bilingual('道路色帶', 'Road colors')}<span className="text-xs text-slate-300">{activeLayers.streetScores ? bilingual('開', 'On') : bilingual('關', 'Off')}</span>
+        </button>
+        {activeLayers.streetScores && <div aria-label={bilingual('CLS 等級圖例', 'CLS grade legend')} className="flex items-center gap-2 px-3 min-h-11 rounded-2xl bg-[#1A212B]/95 text-xs text-slate-100">
+          {Object.entries(GRADE_COLORS).map(([grade,color]) => <span key={grade} className="flex items-center gap-1"><i aria-hidden="true" style={{background:color}} className="w-2 h-2 rounded-full" />{grade}</span>)}
+        </div>}
+      </div>}
       {clsScore == null && !isSheetOpen && !statusDismissed && (
         <section
           className="cls-read-status hud-card mt-2 flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#1A212B]/95 backdrop-blur-md border border-white/[0.08] shadow-xl text-slate-200"

@@ -23,21 +23,17 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   context.on('request',request => { const url=new URL(request.url()); if(url.pathname.startsWith('/api/')) reads.push(url.pathname); });
   const page = await context.newPage();
   await page.goto(baseURL);
-  const marker = page.locator('.saved-score-marker[data-saved-assessment-id="map-latest"]');
+  const marker = page.locator('.saved-street-hit[data-saved-assessment-id="map-latest"]');
   await marker.waitFor();
-  assert.equal(await page.locator('.saved-score-marker').count(),1,'one visible badge per saved location');
-  assert.equal(await marker.locator('strong').innerText(),'73','compact labels round only the display');
-  assert.match(await marker.getAttribute('aria-label') || '', /73\.46 B/, 'accessible label retains score and grade');
-  assert.equal(await marker.getAttribute('title'),null,'no native tooltip');
-  assert.equal(await marker.locator('.saved-score-badge').getAttribute('data-grade'),'B');
-  assert.equal((await marker.boundingBox())?.width,44,'tap target remains usable');
-  assert.equal((await marker.locator('.saved-score-badge').boundingBox())?.width,28,'visual label is compact');
-  assert.equal(await marker.getAttribute('data-street-geometry'),'road');
+  assert.equal(await page.locator('.saved-score-marker').count(),0,'floating score labels are removed');
+  assert.equal(await page.locator('.saved-street-hit').count(),1,'nearby visits share one road');
+  assert.match(await marker.getAttribute('aria-label') || '', /73\.46 B/, 'road keyboard label retains exact score and grade');
+  assert.equal(await marker.getAttribute('title'),null);
   const ribbon = page.locator('.saved-street-line[data-saved-assessment-id="map-latest"]');
   await ribbon.waitFor();
-  assert.equal(await ribbon.getAttribute('stroke-width'),'3','fine ribbon follows saved real road geometry');
-  await marker.hover();
-  assert.equal(await page.locator('.leaflet-tooltip').count(),0,'no map hover tooltip');
+  const initialWidth = Number(await ribbon.getAttribute('stroke-width'));
+  assert.ok(Number(await ribbon.getAttribute('stroke-opacity')) < 0.5,'street text remains visible through the highlight');
+  assert.equal(await page.locator('.leaflet-tooltip').count(),0);
   await page.getByRole('button',{name:t('Street Library'),exact:true}).click();
   assert.equal(await page.getByTestId('saved-library-card').count(),2,'one library card for nearby visits, plus offscreen street');
   await page.getByText(`${t('歷次紀錄')} · 3`,{exact:true}).click();
@@ -53,7 +49,7 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   const beforePosition = (await marker.boundingBox())!.x;
   await marker.evaluate(element => { (window as any).savedBadgeElement = element; });
   await map.focus(); await page.keyboard.press('ArrowRight');
-  await page.waitForFunction(position => document.querySelector('.saved-score-marker[data-saved-assessment-id="map-latest"]')?.getBoundingClientRect().x !== position,beforePosition);
+  await page.waitForFunction(position => document.querySelector('.saved-street-hit[data-saved-assessment-id="map-latest"]')?.getBoundingClientRect().x !== position,beforePosition);
   assert.equal(await marker.evaluate(element => element === (window as any).savedBadgeElement),true,
     'panning keeps visible badge DOM stable so keyboard focus is not destroyed');
   assert.deepEqual({history:count('/api/assessments'),assessment:count('/api/assessment'),address:count('/api/reverse-geocode')},before,
@@ -86,6 +82,20 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   await report.waitFor();
   await map.click({position:{x:4,y:4}});
   await report.waitFor({state:'hidden'});
+  await map.focus(); await page.keyboard.press('+');
+  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) > width, initialWidth);
+  await page.keyboard.press('-');
+  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) === width, initialWidth);
+  const toggle = page.getByRole('button',{name:/道路色帶|Road colors/});
+  await toggle.click();
+  assert.equal(await page.locator('.saved-street-line').count(),0,'toggle removes the layer');
+  assert.equal(await page.locator('.saved-street-hit').count(),0,'hidden roads cannot intercept taps');
+  assert.equal(await page.evaluate(() => localStorage.getItem('cls_road_colors')),'off');
+  await page.reload();
+  await page.getByRole('button',{name:/道路色帶|Road colors/}).waitFor();
+  assert.equal(await page.locator('.saved-street-line').count(),0,'off preference survives reload');
+  await page.getByRole('button',{name:/道路色帶|Road colors/}).click();
+  await page.locator('.saved-street-line').waitFor();
   await page.screenshot({path:'artifacts/walk-ui/saved-map.png'});
   await context.close();
 
@@ -105,19 +115,14 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
     }))}));
   });
   const colorsPage = await colorsContext.newPage(); await colorsPage.goto(baseURL);
-  await colorsPage.locator('.saved-score-badge[data-grade="S"]').waitFor();
+  await colorsPage.locator('.saved-street-line[data-grade="S"]').waitFor();
   const backgrounds = [];
   for (const grade of ['S','A','B','C','D']) {
-    const badge = colorsPage.locator(`.saved-score-badge[data-grade="${grade}"]`);
-    await badge.waitFor();
-    backgrounds.push(await badge.evaluate(element => getComputedStyle(element).borderBottomColor));
+    backgrounds.push(await colorsPage.locator(`.saved-street-line[data-grade="${grade}"]`).getAttribute('stroke'));
   }
-  assert.equal(new Set(backgrounds).size,5,'each score grade has a distinct ribbon/underline color, derived from score');
-  assert.equal(await colorsPage.locator('.saved-street-line').count(),5,'all five saved scores follow their roads');
-  assert.equal(await colorsPage.locator('.saved-score-marker[data-saved-assessment-id="grade-2"]').evaluate(element => {
-    const badge = element.querySelector('.saved-score-badge')!.getBoundingClientRect();
-    return document.elementFromPoint(badge.x + badge.width/2, badge.y + badge.height/2)?.closest('.saved-score-marker') === element;
-  }),true,'GPS and selected-point markers cannot obscure a saved score at the same location');
+  assert.equal(new Set(backgrounds).size,5,'five distinct grade colors');
+  assert.equal(await colorsPage.locator('.saved-street-line').count(),5);
+  assert.equal(await colorsPage.locator('.saved-score-marker').count(),0,'no detached score labels');
   await colorsPage.screenshot({path:'artifacts/walk-ui/saved-map-grades.png'});
   await colorsContext.close();
 

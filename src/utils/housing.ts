@@ -1,4 +1,5 @@
 export const HOUSING_TYPES = ['公寓', '華廈', '住宅大樓', '透天厝', '套房'] as const;
+export const HOUSING_PAGE_SIZE = 5;
 export type HousingType = typeof HOUSING_TYPES[number];
 export interface HousingRecord {
   id: string; city: string; district: string; street: string; address: string;
@@ -63,7 +64,7 @@ export function parseHousingFilters(query: Record<string, unknown>): HousingFilt
   const city = text('city'), district = text('district');
   const street = housingStreet(text('street'), city, district);
   if (!city || !district || !street) throw new Error('City, district and named road are required');
-  const years = numeric('years', 5, true) ?? 3;
+  const years = numeric('years', 5, true) ?? 5;
   if (![1, 3, 5].includes(years)) throw new Error('Years must be 1, 3 or 5');
   const buildingType = text('buildingType') || undefined;
   if (buildingType && !HOUSING_TYPES.includes(buildingType as HousingType)) throw new Error('Invalid building type');

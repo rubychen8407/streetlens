@@ -26,6 +26,7 @@ assert.equal(rocDate('1150230'), null); assert.equal(rocDate('1130229'), '2024-0
 assert.equal(housingStreet('台北市大安區忠孝東路四段123巷2號', city, '大安區'), '忠孝東路4段');
 assert.equal(housingStreet('永康街口', city, '大安區'), '永康街');
 const filters = parseHousingFilters({ city, district: '大安區', street: '永康街', years: '3' });
+assert.equal(parseHousingFilters({ city, district: '大安區', street: '永康街' }).years, 5);
 for (const bad of [{ years: '2' }, { minPrice: '3000', maxPrice: '1000' }, { elevator: 'yes' }, { rooms: '1.5' }, { street: '未知' }, { minPrice: "0 OR 1=1" }])
   assert.throws(() => parseHousingFilters({ city, district: '大安區', street: '永康街', ...bad }));
 
@@ -67,6 +68,21 @@ await importHousing(db, { ...source, publishedOn: '2026-10-21', rows: [{ ...row,
 assert.equal((await readHousing(db, filters)).stats.count, 0, 'an all-commercial valid release cannot keep a corrected residential transaction eligible');
 const stored = await pg.query<{count: number}>('SELECT count(*)::int AS count FROM housing_transactions');
 assert.equal(stored.rows[0].count, 3, 'correction preserves rows without deleting history');
+await importHousing(db, { ...source, publishedOn: '2026-10-21', rows: [
+  ...Array.from({ length: 7 }, (_, i) => ({ ...row, '編號': 'page-' + i,
+    '土地位置建物門牌': '臺北市大安區仁愛路四段12號', '總價元': String(12000000 + i * 1000000),
+    '交易年月日': i === 6 ? '1110102' : '115010' + (i + 1) })),
+  { ...row, '編號': 'page-old', '土地位置建物門牌': '臺北市大安區仁愛路四段12號', '交易年月日': '1090102' }
+] });
+const pageFilters = parseHousingFilters({ city, district: '大安區', street: '仁愛路四段' });
+const firstPage = await readHousing(db, pageFilters), secondPage = await readHousing(db, { ...pageFilters, page: 1 });
+assert.equal(firstPage.stats.count, 7, 'five-year stats include all matches but exclude older sales');
+assert.equal(firstPage.records.length, 5); assert.equal(firstPage.hasMore, true);
+assert.equal(secondPage.records.length, 2); assert.equal(secondPage.hasMore, false);
+assert.equal(secondPage.stats.count, 7, 'pagination never truncates aggregation');
+assert.equal(new Set([...firstPage.records, ...secondPage.records].map(r => r.id)).size, 7, 'five-row pages do not overlap');
+const filteredPage = await readHousing(db, { ...pageFilters, maxPrice: 1600 });
+assert.equal(filteredPage.stats.count, 5); assert.equal(filteredPage.records.length, 5); assert.equal(filteredPage.hasMore, false);
 
 const app = express(); process.env.STREETLENS_REFRESH_TOKEN = 'isolated-test-token';
 process.env.GOOGLE_OAUTH_CLIENT_ID = 'fixture-client'; process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'fixture-secret';

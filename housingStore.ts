@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { createHash } from 'node:crypto';
-import { HOUSING_TYPES, housingStreet, normalizeHousingText, type HousingFilters, type HousingRecord, type HousingResult } from './src/utils/housing';
+import { HOUSING_TYPES, HOUSING_PAGE_SIZE, housingStreet, normalizeHousingText, type HousingFilters, type HousingRecord, type HousingResult } from './src/utils/housing';
 
 export const HOUSING_SCHEMA = `
   CREATE TABLE IF NOT EXISTS housing_transactions (
@@ -100,7 +100,7 @@ export async function readHousing(db: Pick<Pool, 'connect'>, filters: HousingFil
       percentile_cont(0.5) WITHIN GROUP (ORDER BY total_twd) AS "medianTotalTwd",
       avg(unit_twd_ping) AS "averageUnitTwdPing", count(unit_twd_ping)::int AS "unitSampleCount"
       FROM housing_transactions WHERE ${sql}`, values),
-    client.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT 21 OFFSET $${values.length + 1}`, [...values, filters.page * 20]),
+    client.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT ${HOUSING_PAGE_SIZE + 1} OFFSET $${values.length + 1}`, [...values, filters.page * HOUSING_PAGE_SIZE]),
     client.query(`SELECT max(imported_at)::text AS "importedAt", min(oldest_date)::text AS "oldestTransaction",
       max(newest_date)::text AS "newestTransaction" FROM housing_imports WHERE city=$1`, [filters.city]),
     client.query(`SELECT ${columns} FROM housing_transactions WHERE ${sql} ORDER BY traded_on DESC, id DESC LIMIT 1`, values),
@@ -108,7 +108,7 @@ export async function readHousing(db: Pick<Pool, 'connect'>, filters: HousingFil
   const data: HousingResult = { status: coverage.rows[0]?.importedAt ? 'available' : 'not_imported',
     scope: { city: filters.city, district: filters.district, street: filters.street, years: filters.years },
     coverage: coverage.rows[0], stats: stats.rows[0], latest: latest.rows[0] ?? null,
-    records: records.rows.slice(0, 20), hasMore: records.rows.length > 20 };
+    records: records.rows.slice(0, HOUSING_PAGE_SIZE), hasMore: records.rows.length > HOUSING_PAGE_SIZE };
   if (cache.size >= 128) cache.delete(cache.keys().next().value!);
   await client.query('COMMIT');
   if (generation === cacheGeneration) cache.set(key, { data, expires: Date.now() + 10 * 60 * 1000 }); return data;

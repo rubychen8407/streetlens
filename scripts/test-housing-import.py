@@ -63,6 +63,17 @@ class OfficialHousingImport(unittest.TestCase):
         self.assertEqual(releases[-2], ('115S3', '2026-09-30'))
         self.assertNotIn('115S4', [key for key, _ in releases])
 
+    def test_five_year_quarterly_backfill_and_schedule(self):
+        releases = list(housing.releases(5, dt.date(2026, 10, 15)))
+        self.assertEqual(releases[0], ('110S4', '2021-12-31'))
+        self.assertEqual(releases[-1], ('current', '2026-10-15'))
+        self.assertEqual(len({key for key, _ in releases}), len(releases))
+        workflow = Path(__file__).parents[1].joinpath('.github/workflows/refresh-housing.yml').read_text()
+        self.assertIn("cron: '30 2 1,11,21 * *'", workflow)
+        self.assertIn("cron: '30 2 15 1,4,7,10 *'", workflow)
+        self.assertIn("default: '5'", workflow)
+        self.assertIn("github.event.schedule == '30 2 15 1,4,7,10 *' && '5' || '0'", workflow)
+
 
 if __name__ == '__main__':
     unittest.main()

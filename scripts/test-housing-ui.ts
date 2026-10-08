@@ -6,10 +6,10 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
   const record: HousingRecord = { id: 'test-only', city: '臺北市', district: '大安區', street: '永康街', address: '住宅測試地址',
     tradedOn: '2026-01-02', totalTwd: 12000000, areaPing: 30, unitTwdPing: 333333.33, rooms: 3,
     ageYears: 20, floor: 3, floors: 9, buildingType: '華廈', elevator: true, parking: true, parkingSeparated: true, special: false, notes: '' };
-  const response: HousingResult = { status: 'available', scope: { city: '臺北市', district: '大安區', street: '永康街', years: 3 },
+  const response: HousingResult = { status: 'available', scope: { city: '臺北市', district: '大安區', street: '永康街', years: 5 },
     coverage: { importedAt: '2026-10-01T00:00:00Z', oldestTransaction: '2023-10-01', newestTransaction: '2026-09-01' },
-    stats: { count: 1, averageTotalTwd: 12000000, medianTotalTwd: 12000000, averageUnitTwdPing: 333333.33, unitSampleCount: 1 },
-    latest: record, records: [record], hasMore: false };
+    stats: { count: 5, averageTotalTwd: 12000000, medianTotalTwd: 12000000, averageUnitTwdPing: 333333.33, unitSampleCount: 5 },
+    latest: record, records: Array.from({ length: 5 }, (_, i) => ({ ...record, id: 'test-only-' + i })), hasMore: false };
   for (const [width, language] of [[320, 'zh-TW'], [390, 'zh-TW'], [1440, 'zh-TW'], [320, 'en']] as const) {
     const context = await browser.newContext({ viewport: { width, height: 900 } }); await prepare(context);
     await context.addInitScript(language => localStorage.setItem('streetlens-language', language), language);
@@ -28,6 +28,16 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     const savedBefore = await page.evaluate(() => localStorage.getItem('cls_saved_locations'));
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByTestId('housing-stats').waitFor(); assert.equal(reads.length, 1);
+    assert.equal(reads[0].searchParams.get('years'), '5', 'opening always shows five-year data without filters');
+    assert.equal(await panel.locator('[name="years"]').count(), 0, 'period is fixed rather than another filter');
+    const transactions = panel.getByTestId('housing-transactions');
+    assert.equal(await transactions.getAttribute('open'), null, 'matching transaction details are collapsed');
+    assert.equal(await transactions.locator('article').first().isVisible(), false);
+    await transactions.locator('summary').click();
+    assert.equal(await transactions.locator('article').first().isVisible(), true);
+    assert.equal(await transactions.locator('article').count(), 5, 'details show five records without filters');
+    assert.equal(reads.length, 1, 'expanding details reuses loaded data');
+    await transactions.locator('summary').click();
     const filters = panel.getByTestId('housing-filters');
     assert.equal(await filters.getAttribute('open'), null, 'filters are optional and collapsed while data displays immediately');
     assert.equal(await panel.evaluate(element => Boolean(element.querySelector('[data-testid="housing-results"]')!.compareDocumentPosition(element.querySelector('[data-testid="housing-filters"]')!) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'results precede filters in reading order');
@@ -37,6 +47,9 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
     await panel.getByRole('button', { name: english ? 'Apply housing filters' : '套用住宅篩選', exact: true }).click();
     await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="housing-stats"]')));
     assert.equal(reads.length, 2); assert.equal(reads.at(-1)?.searchParams.get('maxPrice'), '1500');
+    assert.equal(reads.at(-1)?.searchParams.get('years'), '5');
+    assert.equal(await transactions.getAttribute('open'), null, 'new filters reset transaction details to collapsed');
+    assert.equal(await transactions.locator('article').count(), 5, 'filtered result also shows at most five records');
     assert.equal(await filters.getAttribute('open'), null, 'apply returns directly to results');
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();
     await panel.getByRole('button', { name: english ? 'Residential market' : '住宅行情', exact: true }).click();

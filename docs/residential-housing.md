@@ -56,7 +56,10 @@ The collapsible housing section in assessments and saved reports is separate
 from CLS. Opening it reads stored housing data; map movement and editing filters
 do not acquire housing data. Applying filters sends one bounded read. Server
 results cache for ten minutes (128 keys); browser results for five minutes (32).
-The source import invalidates the server cache. Paging returns twenty records.
+The source import invalidates the server cache. Paging returns five records.
+The UI uses a fixed five-year window. Aggregate totals include every matching
+transaction, not just the five displayed records. Transaction details are
+collapsed until requested; expanding them adds no network or database read.
 Stats are computed in SQL, not by transferring entire city payloads.
 
 ## Official transaction source
@@ -83,7 +86,8 @@ road sections stay separate. No address is geocoded, and no coordinates are
 fabricated. This whole-road market is distinct from the CLS 250 m street portion.
 Queries require district and a recognizable named road.
 
-The time window is transaction date, with 1/3/5 calendar-year lookback. Latest
+The UI time window is transaction date over the last five calendar years
+(the API retains 1/3/5-year compatibility). Latest
 means latest matching transaction **within the chosen filters and time window**.
 Average and median totals include parking. Unit price and area exclude parking
 only when both parking price and area are valid. If parking cannot be separated,
@@ -97,10 +101,15 @@ displayed; city date extents do not certify complete street history.
 ## Import and operations
 
 Deploy matching server code before importing. The initial import is explicit:
-run the `Refresh residential transactions` workflow with `history_years=3`.
+run the `Refresh residential transactions` workflow with `history_years=5`.
 Existing STREETLENS_REFRESH_URL / STREETLENS_REFRESH_TOKEN secrets are reused.
-Scheduled runs download only the current release. They do not magically supply
-missing historical quarters; use 1/3/5-year manual imports to populate them.
+On the 1st, 11th and 21st of each month at 10:30 Asia/Taipei, scheduled runs
+download only the current release. On January/April/July/October 15 at 10:30,
+an additional scheduled run reconciles the five-year quarterly history and
+current release. GitHub may delay scheduled jobs. Identical hashes skip DB
+writes, but historical ZIPs still require download/validation, so the full
+five-year reconciliation is quarterly, not every regular update. The manual
+workflow defaults to five years for initial setup or an earlier backfill.
 An unavailable historical ZIP is reported as an incomplete/failed action while
 other releases, including the current one, are still attempted.
 No production import or database migration was executed during development.
@@ -144,6 +153,8 @@ queries. Unit tests cover usage/type exclusion, date validation, exact sections,
 parking and unknown-field behavior, conflict/auth handling and cache hits.
 Python tests cover actual CSV quoting/header/schema/history-window handling.
 Browser tests check on-demand reads, no requests per keystroke, cache reuse,
-320/390/1440 px layouts and preservation of saved records. Source network
+320/390/1440 px layouts, collapsed details, fixed five-year queries, and
+preservation of saved records. SQL tests verify five-row pagination with
+untruncated statistics and no overlapping records. Source network
 availability, real official download/schema variants, Neon migration/import
 and operating footprint require deployment verification, separate from CI.

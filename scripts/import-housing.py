@@ -1,7 +1,8 @@
 """Download official buy/sell CSV releases, then submit bounded city batches.
 
 No geocoding, listings scraping, raw CSV retention or user-triggered acquisition.
-History is opt-in; cron downloads only the current release. Existing snapshots
+Regular cron downloads current releases; quarterly cron reconciles five years.
+Manual history imports remain supported. Existing snapshots
 remain readable if download, validation or the atomic server import fails.
 """
 import argparse

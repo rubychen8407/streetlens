@@ -3,12 +3,13 @@ on:
   workflow_dispatch:
     inputs:
       history_years:
-        description: First import historical years; scheduled runs only fetch current releases
+        description: Historical years (5 recommended); regular runs fetch current, quarterly runs reconcile 5 years
         type: choice
         options: ['0', '1', '3', '5']
-        default: '3'
+        default: '5'
   schedule:
     - cron: '30 2 1,11,21 * *'
+    - cron: '30 2 15 1,4,7,10 *'
 concurrency:
   group: streetlens-housing-import
   cancel-in-progress: false
@@ -23,6 +24,6 @@ jobs:
           python-version: '3.12'
       - run: python scripts/import-housing.py --history-years "$HOUSING_HISTORY_YEARS"
         env:
-          HOUSING_HISTORY_YEARS: ${{ inputs.history_years || '0' }}
+          HOUSING_HISTORY_YEARS: ${{ inputs.history_years || (github.event.schedule == '30 2 15 1,4,7,10 *' && '5' || '0') }}
           STREETLENS_REFRESH_URL: ${{ secrets.STREETLENS_REFRESH_URL || secrets.STREETLENS_BASE_URL }}
           STREETLENS_REFRESH_TOKEN: ${{ secrets.STREETLENS_REFRESH_TOKEN }}

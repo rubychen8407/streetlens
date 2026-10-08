@@ -12,7 +12,7 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
   const [openKey, setOpenKey] = useState(''), [data, setData] = useState<HousingResult | null>(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
-  const [query, setQuery] = useState('years=3'), [page, setPage] = useState(0);
+  const [query, setQuery] = useState('years=5'), [page, setPage] = useState(0);
   const form = useRef<HTMLFormElement>(null), requestId = useRef(0);
   const street = housingStreet(streetName, city, district);
   const scopeKey = city + '|' + district + '|' + streetName;
@@ -22,7 +22,7 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
     window.addEventListener('private-housing-locked', clear);
     return () => window.removeEventListener('private-housing-locked', clear);
   }, []);
-  useEffect(() => { setOpenKey(''); setData(null); setError(''); setPage(0); setQuery('years=3'); form.current?.reset(); }, [scopeKey]);
+  useEffect(() => { setOpenKey(''); setData(null); setError(''); setPage(0); setQuery('years=5'); form.current?.reset(); }, [scopeKey]);
   useEffect(() => {
     const id = ++requestId.current;
     if (!access.authorized || !open || !city || !district || !street) return;
@@ -58,7 +58,7 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
       {!street || !city || !district ? <p className="text-sm text-slate-300">{t('請先選擇有街道名稱及行政區的地點。')}</p> : <>
         <div className="flex items-center justify-between gap-2 text-sm"><span>{city} · {district} · {street}</span><span className="text-[#D4F971] shrink-0">{t('純住宅成交')}</span></div>
         <div aria-live="polite" aria-busy={loading} className="space-y-3" data-testid="housing-results">
-          <p className="text-sm text-slate-300">{bilingual(`近 ${applied.get('years') || '3'} 年住宅成交`, `Residential sales over ${applied.get('years') || '3'} years`)}</p>
+          <p className="text-sm text-slate-300">{bilingual(`近 ${applied.get('years') || '5'} 年住宅成交`, `Residential sales over ${applied.get('years') || '5'} years`)}</p>
           {loading && <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="animate-spin" size={16} />{t('讀取住宅成交資料')}</p>}
           {error && <div className="text-sm text-slate-300">{error}<button type="button" className="ml-2 underline min-h-11" onClick={() => { setRetry(r => r + 1); }}>{t('重試')}</button></div>}
           {data?.status === 'not_imported' && <p className="text-sm text-slate-300">{t('此縣市住宅資料尚未匯入，尚無法提供成交行情。')}</p>}
@@ -70,6 +70,8 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
             <p className="text-sm text-slate-300">{t('符合條件')} {data.stats.count} {t('筆')} · {t('單價樣本')} {data.stats.unitSampleCount} {t('筆')} · {t('總價中位數')} {formatNumber(data.stats.medianTotalTwd == null ? null : data.stats.medianTotalTwd / 10000)} {t('萬')}</p>
             {data.latest && <p className="text-sm">{t('最近符合篩選成交')} · {data.latest.tradedOn} · {formatNumber(data.latest.totalTwd / 10000)} {t('萬')}</p>}
             {!data.stats.count && <p className="text-sm text-slate-300">{t('已匯入資料中沒有符合條件的住宅成交；不代表街道沒有交易。')}</p>}
+            <details key={scopeKey + query + page} data-testid="housing-transactions" className="rounded-xl border border-white/10 p-3">
+              <summary className="text-sm cursor-pointer min-h-11 flex items-center">{bilingual(`查看成交明細（本頁 ${data.records.length} 筆）`, `View transactions (${data.records.length} on this page)`)}</summary>
             <div className="divide-y divide-white/10">{data.records.map(record => <article key={record.id} className="py-3 space-y-1 text-sm">
               <div className="flex justify-between gap-2"><span className="break-all">{record.address}</span><strong className="shrink-0 tabular-nums">{formatNumber(record.totalTwd / 10000)} {t('萬')}</strong></div>
               <p className="text-slate-300">{record.tradedOn} · {t(record.buildingType)} · {formatNumber(record.areaPing)} {t('坪')}{!record.parkingSeparated ? t('（含車位）') : ''} · {record.rooms == null ? '—' : record.rooms} {t('房')}</p>
@@ -77,13 +79,14 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
               {record.special && <p className="text-amber-200">{t('特殊交易')} · {record.notes}</p>}
             </article>)}</div>
             {(page > 0 || data.hasMore) && <div className="flex justify-between"><button type="button" disabled={!page} onClick={() => setPage(p => p - 1)} className="min-h-11 text-sm disabled:opacity-40">{t('上一頁')}</button><button type="button" disabled={!data.hasMore} onClick={() => setPage(p => p + 1)} className="min-h-11 text-sm disabled:opacity-40">{t('下一頁')}</button></div>}
+            </details>
             <p className="text-sm text-slate-300">{t('縣市已匯入交易日期')} {data.coverage.oldestTransaction || '—'} — {data.coverage.newestTransaction || '—'}<br />{t('資料擷取日期')} {data.coverage.importedAt?.slice(0, 10) || '—'}</p>
           </>}
         </div>
         <details data-testid="housing-filters" className="rounded-xl border border-white/10 p-3">
           <summary className="text-sm cursor-pointer min-h-11 flex items-center">{bilingual('調整房屋篩選（選填）', 'Adjust housing filters (optional)')}</summary>
         <form key={scopeKey} ref={form} onSubmit={event => {
-          event.preventDefault(); const fields = new FormData(event.currentTarget), params = new URLSearchParams();
+          event.preventDefault(); const fields = new FormData(event.currentTarget), params = new URLSearchParams('years=5');
           fields.forEach((value, key) => { if (String(value)) params.set(key, String(value)); });
           try { parseHousingFilters({ ...Object.fromEntries(params), city, district, street: street || '' }); }
           catch { setError(t('請確認最小值不大於最大值，且篩選條件有效。')); return; }
@@ -93,7 +96,6 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
         }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             {numberField('minPrice', '最低總價（萬）', 1e6)}{numberField('maxPrice', '最高總價（萬）', 1e6)}
-            <label className="text-sm text-slate-300">{t('成交期間')}<select className={inputStyle + ' mt-1'} name="years" defaultValue={applied.get('years') || '3'}>{[1, 3, 5].map(n => <option key={n} value={n}>{bilingual(`近 ${n} 年`, `Last ${n} yrs`)}</option>)}</select></label>
             <label className="text-sm text-slate-300">{t('房屋型態')}<select className={inputStyle + ' mt-1'} name="buildingType" defaultValue={applied.get('buildingType') || ''}><option value="">{t('不限')}</option>{HOUSING_TYPES.map(type => <option key={type} value={type}>{t(type)}</option>)}</select></label>
           </div>
           <details><summary className="text-sm text-slate-300 cursor-pointer py-2 min-h-11">{t('更多房屋條件')}</summary><div className="grid grid-cols-2 gap-2">
@@ -105,11 +107,11 @@ export function HousingPanel({ city, district, streetName }: { city: string; dis
           <label className="flex items-center gap-2 text-sm text-slate-300 min-h-11"><input type="checkbox" name="includeSpecial" value="true" defaultChecked={applied.get('includeSpecial') === 'true'} />{t('包含特殊交易')}</label>
           <button className="w-full rounded-xl bg-[#D4F971] text-[#0E131A] text-sm font-semibold min-h-11" type="submit">{t('套用住宅篩選')}</button>
           <button className="w-full text-sm min-h-11 underline" type="button" onClick={() => {
-            setQuery('years=3'); setPage(0); setError('');
+            setQuery('years=5'); setPage(0); setError('');
             if (form.current) {
               for (const field of Array.from(form.current.elements)) {
                 if (field instanceof HTMLInputElement) { if (field.type === 'checkbox') field.checked = false; else field.value = ''; }
-                if (field instanceof HTMLSelectElement) field.value = field.name === 'years' ? '3' : '';
+                if (field instanceof HTMLSelectElement) field.value = field.name === 'years' ? '5' : '';
               }
               const filters = form.current.closest('details'); if (filters) filters.open = false;
             }

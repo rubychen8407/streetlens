@@ -154,7 +154,7 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   const crossing=await browser.newContext({viewport:{width:390,height:844}});await prepare(crossing);
   await crossing.addInitScript(()=> {
     localStorage.setItem('cls_saved_locations',JSON.stringify([85,75].map((score,i)=>({
-      id:`cross-${i}`,coords:{lat:25.0326,lng:121.5298},streetName:`Cross street ${i}`,name:`Cross street ${i}`,
+      id:`cross-${i}`,coords:{lat:25.0326+(i===0 ? 0.00003 : 0),lng:121.5298+(i===1 ? 0.00003 : 0)},streetName:`Cross street ${i}`,name:`Cross street ${i}`,
       city:'',district:'',timestamp:i+1,clsScore:score,grade:'D',scores:{},evidence:[],syncStatus:'synced',fieldNotes:`Cross note ${i}`,
     }))));
     localStorage.setItem('cls_street_geometry_v1',JSON.stringify({updatedAt:Date.now(),roads:[

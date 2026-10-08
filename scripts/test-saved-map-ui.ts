@@ -103,10 +103,12 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   await gradePin.click();
   await report.getByText('Keep this note',{exact:true}).waitFor();
   await map.click({position:{x:4,y:4}});await report.waitFor({state:'hidden'});
+  // Report selection starts an 800 ms fly-to and restores focus on dismissal.
+  await page.waitForTimeout(900);
   const widthBeforeZoom=Number(await ribbon.getAttribute('stroke-width'));
   await map.focus(); await page.keyboard.press('+');
   await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) > width, widthBeforeZoom);
-  await page.keyboard.press('-');
+  await map.focus(); await page.keyboard.press('-');
   await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) === width, widthBeforeZoom);
   const toggle = page.getByRole('button',{name:/道路等級|Road grades/});
   await toggle.click();

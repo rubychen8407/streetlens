@@ -25,12 +25,30 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   await page.goto(baseURL);
   const marker = page.locator('.saved-street-hit[data-saved-assessment-id="map-latest"]');
   await marker.waitFor();
-  assert.equal(await page.locator('.saved-score-marker').count(),0,'floating score labels are removed');
+  const gradePin=page.locator('.saved-grade-pin[data-saved-assessment-id="map-latest"]');
+  await gradePin.waitFor();
+  assert.equal(await gradePin.innerText(),'B','pin shows grade, not a floating numeric score');
+  assert.equal(await page.locator('.saved-grade-pin').count(),1,'one grade pin per grouped street');
+  assert.equal((await gradePin.boundingBox())?.width,44);
+  assert.equal((await gradePin.locator('.saved-street-grade').boundingBox())?.width,24);
+  assert.equal(await gradePin.getAttribute('title'),null);
   assert.equal(await page.locator('.saved-street-hit').count(),1,'nearby visits share one road');
   assert.match(await marker.getAttribute('aria-label') || '', /73\.46 B/, 'road keyboard label retains exact score and grade');
   assert.equal(await marker.getAttribute('title'),null);
   const ribbon = page.locator('.saved-street-line[data-saved-assessment-id="map-latest"]');
   await ribbon.waitFor();
+  const attachment = await ribbon.evaluate(element => {
+    const path=element as SVGPathElement;
+    const pin=document.querySelector('.saved-grade-pin')!.getBoundingClientRect();
+    let nearest=Infinity;
+    for(let i=0;i<=400;i++) {
+      const p=path.getPointAtLength(path.getTotalLength()*i/400);
+      const screen=new DOMPoint(p.x,p.y).matrixTransform(path.getScreenCTM()!);
+      nearest=Math.min(nearest,Math.hypot(screen.x-(pin.x+22),screen.y-(pin.y+38)));
+    }
+    return nearest;
+  });
+  assert.ok(attachment<2,'grade pin tip stays attached to its real road');
   const initialWidth = Number(await ribbon.getAttribute('stroke-width'));
   assert.ok(Number(await ribbon.getAttribute('stroke-opacity')) < 0.5,'street text remains visible through the highlight');
   assert.equal(await page.locator('.leaflet-tooltip').count(),0);
@@ -78,23 +96,30 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   assert.equal(await page.evaluate(() => localStorage.getItem('cls_saved_locations')),original);
   await map.click({position:{x:4,y:4}});
   await report.waitFor({state:'hidden'});
-  await marker.focus(); await page.keyboard.press('Space');
+  await gradePin.focus(); await page.keyboard.press('Space');
   await report.waitFor();
   await map.click({position:{x:4,y:4}});
   await report.waitFor({state:'hidden'});
+  await gradePin.click();
+  await report.getByText('Keep this note',{exact:true}).waitFor();
+  await map.click({position:{x:4,y:4}});await report.waitFor({state:'hidden'});
+  // Report selection starts an 800 ms fly-to and restores focus on dismissal.
+  await page.waitForTimeout(900);
+  const widthBeforeZoom=Number(await ribbon.getAttribute('stroke-width'));
   await map.focus(); await page.keyboard.press('+');
-  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) > width, initialWidth);
-  await page.keyboard.press('-');
-  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) === width, initialWidth);
-  const toggle = page.getByRole('button',{name:/道路色帶|Road colors/});
+  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) > width, widthBeforeZoom);
+  await map.focus(); await page.keyboard.press('-');
+  await page.waitForFunction(width => Number(document.querySelector('.saved-street-line')?.getAttribute('stroke-width')) === width, widthBeforeZoom);
+  const toggle = page.getByRole('button',{name:/道路等級|Road grades/});
   await toggle.click();
   assert.equal(await page.locator('.saved-street-line').count(),0,'toggle removes the layer');
   assert.equal(await page.locator('.saved-street-hit').count(),0,'hidden roads cannot intercept taps');
+  assert.equal(await page.locator('.saved-grade-pin').count(),0,'the same toggle hides grade pins');
   assert.equal(await page.evaluate(() => localStorage.getItem('cls_road_colors')),'off');
   await page.reload();
-  await page.getByRole('button',{name:/道路色帶|Road colors/}).waitFor();
+  await page.getByRole('button',{name:/道路等級|Road grades/}).waitFor();
   assert.equal(await page.locator('.saved-street-line').count(),0,'off preference survives reload');
-  await page.getByRole('button',{name:/道路色帶|Road colors/}).click();
+  await page.getByRole('button',{name:/道路等級|Road grades/}).click();
   await page.locator('.saved-street-line').waitFor();
   await page.screenshot({path:'artifacts/walk-ui/saved-map.png'});
   await context.close();
@@ -122,9 +147,36 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   }
   assert.equal(new Set(backgrounds).size,5,'five distinct grade colors');
   assert.equal(await colorsPage.locator('.saved-street-line').count(),5);
-  assert.equal(await colorsPage.locator('.saved-score-marker').count(),0,'no detached score labels');
+  for (const [i,grade] of ['S','A','B','C','D'].entries()) {
+    assert.equal(await colorsPage.locator(`.saved-grade-pin[data-saved-assessment-id="grade-${i}"]`).innerText(),grade,'each street displays its own grade regardless of render order');
+  }
   await colorsPage.screenshot({path:'artifacts/walk-ui/saved-map-grades.png'});
   await colorsContext.close();
+
+  const crossing=await browser.newContext({viewport:{width:390,height:844}});await prepare(crossing);
+  await crossing.addInitScript(()=> {
+    localStorage.setItem('cls_saved_locations',JSON.stringify([85,75].map((score,i)=>({
+      id:`cross-${i}`,coords:{lat:25.0326+(i===0 ? 0.00003 : 0),lng:121.5298+(i===1 ? 0.00003 : 0)},streetName:`Cross street ${i}`,name:`Cross street ${i}`,
+      city:'',district:'',timestamp:i+1,clsScore:score,grade:'D',scores:{},evidence:[],syncStatus:'synced',fieldNotes:`Cross note ${i}`,
+    }))));
+    localStorage.setItem('cls_street_geometry_v1',JSON.stringify({updatedAt:Date.now(),roads:[
+      {id:'horizontal',name:'Cross street 0',coords:[[25.0326,121.528],[25.0326,121.532]]},
+      {id:'vertical',name:'Cross street 1',coords:[[25.031,121.5298],[25.034,121.5298]]},
+    ]}));
+  });
+  const crossPage=await crossing.newPage();await crossPage.goto(baseURL);
+  await crossPage.locator('.saved-grade-pin').first().waitFor();
+  const first=crossPage.locator('.saved-grade-pin[data-saved-assessment-id="cross-0"]');
+  const second=crossPage.locator('.saved-grade-pin[data-saved-assessment-id="cross-1"]');
+  const a=(await first.boundingBox())!,b=(await second.boundingBox())!;
+  assert.ok(Math.abs(a.x-b.x)>=44 || Math.abs(a.y-b.y)>=44,'intersection grades have separate touch targets');
+  assert.ok((await crossPage.locator('.saved-grade-leader').evaluateAll(elements=>elements.every(e=>!e.getAttribute('d') || e.getAttribute('d')==='M0 0'))),'intersection pins stay on their real roads');
+  for(const [i,pin] of [first,second].entries()) {
+    await pin.click();await crossPage.getByText(`Cross note ${i}`,{exact:true}).waitFor();
+    await crossPage.locator('.leaflet-container').click({position:{x:4,y:4}});
+    await crossPage.getByRole('complementary',{name:t('街道結果報告')}).waitFor({state:'hidden'});
+  }
+  await crossing.close();
 
   // Reproduce the production failure: old scored visits, an empty geometry
   // cache, and an unavailable current CLS must still load persisted roads.
@@ -141,10 +193,10 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   // A missing/temporarily unavailable geometry response must not hide history.
   await legacyContext.route('**/api/saved-street-geometry',route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
   const missingPage=await legacyContext.newPage();await missingPage.goto(baseURL);
-  const fallback=missingPage.locator('.saved-street-fallback');await fallback.waitFor();
+  const fallback=missingPage.locator('.saved-grade-pin[data-street-geometry="point"]');await fallback.waitFor();
   assert.equal(await missingPage.locator('.saved-street-line').count(),0,'missing geometry never invents a road');
   assert.equal((await fallback.boundingBox())?.width,44,'tiny fallback retains a usable target');
-  assert.equal(await fallback.innerText(),'','fallback contains no detached score');
+  assert.equal(await fallback.innerText(),'B','fallback contains no detached score');
   const missingHistory=await missingPage.evaluate(()=>localStorage.getItem('cls_saved_locations'));
   await fallback.focus();await missingPage.keyboard.press('Enter');
   await missingPage.getByText('Preserved legacy note',{exact:true}).waitFor();
@@ -164,7 +216,7 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   });
   const legacyPage=await legacyContext.newPage();await legacyPage.goto(baseURL);
   const legacyLine=legacyPage.locator('.saved-street-line[data-saved-assessment-id="legacy-road"]');await legacyLine.waitFor();
-  assert.equal(await legacyPage.locator('.saved-street-fallback').count(),0,'road replaces fallback once geometry arrives');
+  assert.equal(await legacyPage.locator('.saved-grade-pin[data-street-geometry="point"]').count(),0,'road replaces fallback once geometry arrives');
   assert.equal(batches,1,'road retrieval is independent of failed CLS loading');
   const savedHistory=await legacyPage.evaluate(()=>localStorage.getItem('cls_saved_locations'));
   await legacyPage.locator('.leaflet-container').focus();await legacyPage.keyboard.press('ArrowRight');

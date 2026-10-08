@@ -425,12 +425,13 @@ export function ScoutMap({
     if (!mapInstance || !activeLayers.streetScores) return;
     const layer = L.layerGroup().addTo(mapInstance);
     const roads = new Map<string, { group: L.LayerGroup; lines: L.Polyline[] }>();
+    const pins = new Map<string, { marker:L.Marker; geometry:ReturnType<typeof savedStreetGeometry>; leader:L.Polyline }>();
     const draw = () => {
       const bounds = mapInstance.getBounds().pad(0.1);
       const records = visibleSavedScores(savedScores, { south:bounds.getSouth(), north:bounds.getNorth(), west:bounds.getWest(), east:bounds.getEast() });
       const visibleIds = new Set(records.map(record => record.id));
       for (const [id, road] of roads) {
-        if (!visibleIds.has(id)) { layer.removeLayer(road.group); roads.delete(id); }
+        if (!visibleIds.has(id)) { layer.removeLayer(road.group); roads.delete(id); pins.delete(id); }
       }
       for (const record of records) {
         const existing = roads.get(record.id);
@@ -461,20 +462,25 @@ export function ScoutMap({
           });
           hit.on('click', () => savedSelectionHandler.current?.(record));
         }
-        if (!geometry.paths.length) {
-          // A missing road never erases access to an existing saved visit.
+        {
+          // Pin the grade to the real road anchor, or the saved coordinate if unavailable.
           const dot = document.createElement('span');
-          dot.className = 'saved-street-point';
-          dot.style.background = GRADE_COLORS[grade];
+          dot.className = 'saved-street-grade';
+          dot.textContent = grade;
+          dot.style.setProperty('--street-grade', GRADE_COLORS[grade]);
           const fallback = L.marker(geometry.anchor, {
-            icon:L.divIcon({className:'saved-street-fallback',html:dot,iconSize:[44,44],iconAnchor:[22,22]}),
+            icon:L.divIcon({className:'saved-grade-pin',html:dot,iconSize:[44,44],iconAnchor:[22,38]}),
             alt:label,keyboard:true,bubblingMouseEvents:false,zIndexOffset:4000,
           }).addTo(group);
+          const leader=L.polyline([], {color:GRADE_COLORS[grade],weight:1,opacity:0.6,interactive:false,className:'saved-grade-leader'}).addTo(group);
+          pins.set(record.id, {marker:fallback,geometry,leader});
           fallback.on('click', () => savedSelectionHandler.current?.(record));
           const element = fallback.getElement();
           element?.setAttribute('aria-label', label);
           element?.setAttribute('role', 'button');
           element?.setAttribute('data-saved-assessment-id', record.id);
+          element?.setAttribute('data-street-geometry', geometry.paths.length ? 'road' : 'point');
+          element?.setAttribute('data-grade', grade);
           element?.addEventListener('keydown', event => {
             if (event.key === ' ' || event.key === 'Enter') {
               event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
@@ -482,6 +488,38 @@ export function ScoutMap({
           });
         }
         roads.set(record.id, {group, lines});
+      }
+      // Prefer another point on the same real road when grade targets collide.
+      // Only geometry-less/densely packed pins need a short visual leader.
+      const occupied:L.Point[]=[];
+      const free=(p:L.Point)=>occupied.every(q=>Math.abs(p.x-q.x)>=46 || Math.abs(p.y-q.y)>=46);
+      for (const [,pin] of [...pins.entries()].sort(([a],[b])=>a.localeCompare(b))) {
+        const anchor=mapInstance.latLngToLayerPoint(pin.geometry.anchor);
+        const candidates=[anchor];
+        for (const path of pin.geometry.paths) for(let i=1;i<path.length;i++) {
+          const a=mapInstance.latLngToLayerPoint(path[i-1]), b=mapInstance.latLngToLayerPoint(path[i]);
+          const steps=Math.max(1,Math.ceil(a.distanceTo(b)/12));
+          for(let j=0;j<=steps;j++) {
+            const p=a.add(b.subtract(a).multiplyBy(j/steps));
+            if(p.distanceTo(anchor)<=128) candidates.push(p);
+          }
+        }
+        candidates.sort((a,b)=>a.distanceTo(anchor)-b.distanceTo(anchor));
+        let position=candidates.find(free);
+        const needsLeader=!position;
+        if(!position) {
+          for(let ring=1;!position;ring++) {
+            for(let x=-ring;x<=ring && !position;x++) for(let y=-ring;y<=ring;y++) {
+              if(Math.max(Math.abs(x),Math.abs(y))!==ring) continue;
+              const p=anchor.add(L.point(x*46,y*46));
+              if(free(p)) {position=p;break;}
+            }
+          }
+        }
+        occupied.push(position);
+        const coord=mapInstance.layerPointToLatLng(position);
+        pin.marker.setLatLng(coord);
+        pin.leader.setLatLngs(needsLeader ? [L.latLng(pin.geometry.anchor),coord] : []);
       }
     };
     draw(); mapInstance.on('moveend zoomend',draw);

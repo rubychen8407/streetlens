@@ -461,6 +461,26 @@ export function ScoutMap({
           });
           hit.on('click', () => savedSelectionHandler.current?.(record));
         }
+        if (!geometry.paths.length) {
+          // A missing road never erases access to an existing saved visit.
+          const dot = document.createElement('span');
+          dot.className = 'saved-street-point';
+          dot.style.background = GRADE_COLORS[grade];
+          const fallback = L.marker(geometry.anchor, {
+            icon:L.divIcon({className:'saved-street-fallback',html:dot,iconSize:[44,44],iconAnchor:[22,22]}),
+            alt:label,keyboard:true,bubblingMouseEvents:false,zIndexOffset:4000,
+          }).addTo(group);
+          fallback.on('click', () => savedSelectionHandler.current?.(record));
+          const element = fallback.getElement();
+          element?.setAttribute('aria-label', label);
+          element?.setAttribute('role', 'button');
+          element?.setAttribute('data-saved-assessment-id', record.id);
+          element?.addEventListener('keydown', event => {
+            if (event.key === ' ' || event.key === 'Enter') {
+              event.preventDefault(); event.stopPropagation(); savedSelectionHandler.current?.(record);
+            }
+          });
+        }
         roads.set(record.id, {group, lines});
       }
     };

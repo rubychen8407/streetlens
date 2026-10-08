@@ -138,6 +138,19 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   });
   await legacyContext.route('**/api/assessment?**',route=>route.fulfill({status:503,contentType:'application/json',body:'{"dataStatus":"database_required"}'}));
   let batches=0;
+  // A missing/temporarily unavailable geometry response must not hide history.
+  await legacyContext.route('**/api/saved-street-geometry',route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
+  const missingPage=await legacyContext.newPage();await missingPage.goto(baseURL);
+  const fallback=missingPage.locator('.saved-street-fallback');await fallback.waitFor();
+  assert.equal(await missingPage.locator('.saved-street-line').count(),0,'missing geometry never invents a road');
+  assert.equal((await fallback.boundingBox())?.width,44,'tiny fallback retains a usable target');
+  assert.equal(await fallback.innerText(),'','fallback contains no detached score');
+  const missingHistory=await missingPage.evaluate(()=>localStorage.getItem('cls_saved_locations'));
+  await fallback.focus();await missingPage.keyboard.press('Enter');
+  await missingPage.getByText('Preserved legacy note',{exact:true}).waitFor();
+  assert.equal(await missingPage.evaluate(()=>localStorage.getItem('cls_saved_locations')),missingHistory);
+  await missingPage.close();
+  await legacyContext.unroute('**/api/saved-street-geometry');
   await legacyContext.route('**/api/saved-street-geometry',async route=> {
     batches++;assert.equal(route.request().method(),'POST');
     const locations=route.request().postDataJSON().locations;
@@ -151,6 +164,7 @@ export async function testSavedMapUI(browser: Browser, prepare: (context: Browse
   });
   const legacyPage=await legacyContext.newPage();await legacyPage.goto(baseURL);
   const legacyLine=legacyPage.locator('.saved-street-line[data-saved-assessment-id="legacy-road"]');await legacyLine.waitFor();
+  assert.equal(await legacyPage.locator('.saved-street-fallback').count(),0,'road replaces fallback once geometry arrives');
   assert.equal(batches,1,'road retrieval is independent of failed CLS loading');
   const savedHistory=await legacyPage.evaluate(()=>localStorage.getItem('cls_saved_locations'));
   await legacyPage.locator('.leaflet-container').focus();await legacyPage.keyboard.press('ArrowRight');

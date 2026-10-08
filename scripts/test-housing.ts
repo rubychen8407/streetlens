@@ -46,6 +46,14 @@ assert.equal((await readHousing(db, { ...filters, maxPrice: 1000 })).stats.count
 assert.equal((await readHousing(db, { ...filters, elevator: false })).stats.count, 0);
 assert.equal((await readHousing(db, { ...filters, maxArea: 31, parking: true, rooms: 3 })).stats.count, 1);
 assert.equal((await readHousing(db, { ...filters, street: '信義路一段' })).stats.count, 0, 'different section is never mixed');
+for (const column of ['鄉鎮市區', '交易標的', '主要用途', '交易年月日', '建物型態', '建物移轉總面積平方公尺', '總價元', '編號', '土地位置建物門牌']) {
+  const broken: Record<string, string> = { ...row }; delete broken[column];
+  const beforeRejected = queries;
+  await assert.rejects(importHousing(db, { ...source, publishedOn: '2026-10-11', rows: [broken] }), /schema changed/);
+  assert.equal(queries, beforeRejected, 'schema failure is rejected before DB acquisition');
+  assert.equal((await readHousing(db, filters)).stats.count, 1, 'schema failure cannot hide cached existing transaction');
+}
+assert.equal((await pg.query<{eligible: boolean}>("SELECT eligible FROM housing_transactions WHERE id='fixture-one'")).rows[0].eligible, true);
 assert.equal((await importHousing(db, { ...source, rows: [row] })).skipped, false);
 assert.equal((await importHousing(db, { ...source, rows: [row] })).skipped, true);
 await assert.rejects(importHousing(db, { ...source, sourceUrl: 'http://169.254.169.254/', rows: [row] }));

@@ -9,15 +9,20 @@ function update(value: Access) {
   if (value.authorized && value.expiresAt) expiry = setTimeout(() => revokeHousingAccess(), Math.max(0, value.expiresAt - Date.now()));
 }
 export function revokeHousingAccess() { update({ ...access, authorized: false, expiresAt: null }); window.dispatchEvent(new Event('private-housing-locked')); }
-export function usePrivateHousingAccess() {
+export function usePrivateHousingAccess(active = true) {
   const value = useSyncExternalStore(callback => { listeners.add(callback); return () => { listeners.delete(callback); }; }, () => access);
   useEffect(() => {
-    pending ??= fetch('/api/private/access', { cache: 'no-store', credentials: 'same-origin' }).then(async response => {
-      if (!response.ok) return;
+    if (!active) return;
+    const discover = () => { pending ??= fetch('/api/private/access', { cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(10000) }).then(async response => {
+      if (!response.ok) throw new Error('Private access unavailable');
       const body = await response.json();
+      if (typeof body.enabled !== 'boolean' || typeof body.authorized !== 'boolean') throw new Error('Invalid access response');
       update({ enabled: body.enabled === true, authorized: body.authorized === true && typeof body.expiresAt === 'number' && body.expiresAt > Date.now(), expiresAt: body.expiresAt });
-    }).catch(() => {});
-  }, []);
+    }).catch(() => { pending = undefined; }); };
+    discover();
+    window.addEventListener('online', discover);
+    return () => window.removeEventListener('online', discover);
+  }, [active]);
   return value;
 }
 export async function logoutPrivateHousing() {

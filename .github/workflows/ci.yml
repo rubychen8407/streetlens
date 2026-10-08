@@ -35,6 +35,9 @@ jobs:
       - name: Score integrity tests
         run: npm run test:score-integrity
 
+      - name: Fixed standard CLS regression tests
+        run: npm run test:fixed-scoring
+
       - name: Unified street baseline tests
         run: npm run test:unified-baseline
 
@@ -62,7 +65,7 @@ jobs:
         run: npm run test:postgis-optional
 
       - name: Spatial inventory and refresh client regression tests
-        run: npm run test:spatial-inventory && npm run test:refresh-client
+        run: npm run test:spatial-inventory && npm run test:streaming-csv && npm run test:refresh-client
 
       - name: WheelRoute sidewalk parsing tests
         run: npm run test:wheelroute-parser

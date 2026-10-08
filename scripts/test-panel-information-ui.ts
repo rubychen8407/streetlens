@@ -68,6 +68,15 @@ export async function testPanelInformationUI(browser: Browser, prepare: (context
       assert.equal(await body.getByText(new Date(record.timestamp).toLocaleString(english ? 'en-US' : 'zh-TW'), { exact: true }).count(), 1, 'report timestamp appears once');
       await body.getByText('保留筆記', { exact: true }).waitFor();
       await body.getByText(/12 m/).waitFor();
+      const method = body.getByTestId('cls-method');
+      await method.getByText(english ? 'Data completeness' : '資料完整度', { exact: false }).waitFor();
+      const formula = body.getByTestId('cls-formula');
+      assert.equal(await formula.getAttribute('open'), null, 'formula starts collapsed to keep the report compact');
+      await formula.locator('summary').click();
+      await formula.getByText(english ? /Thresholds are provisional product settings/ : /門檻是待校準的產品設定/).waitFor();
+      assert.equal(await formula.locator('div.font-medium').count(), 23, 'all fixed indicator weights and curves are inspectable');
+      assert.ok(await body.evaluate(el => el.scrollWidth <= el.clientWidth), 'formula fits the report at mobile widths');
+      await formula.locator('summary').click();
       await page.screenshot({ path: `artifacts/walk-ui/report-information-${width}-${language}.png` });
       assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('cls_saved_locations')!)), [record], 'layout changes preserve the full saved record');
       await page.getByRole('button', { name: english ? 'Data status' : '資料狀態', exact: true }).click();

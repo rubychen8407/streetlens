@@ -62,5 +62,29 @@ export async function testHousingUI(browser: Browser, prepare: (context: Browser
   assert.equal(await publicPage.getByTestId('housing-panel').count(), 0); assert.equal(publicReads, 0);
   assert.equal(accessReads, 1, 'permission read is deduplicated and never queries DB');
   await publicContext.close();
+  for (const failure of ['http', 'network', 'invalid-json']) {
+    const recovery = await browser.newContext({ viewport: { width: 390, height: 900 } }); await prepare(recovery);
+    await recovery.addInitScript(() => localStorage.setItem('streetlens-language', 'en'));
+    let attempts = 0, housingReads = 0;
+    await recovery.route(url => url.pathname === '/api/private/access', route => {
+      if (++attempts === 1) {
+        if (failure === 'network') return route.abort();
+        return route.fulfill({ status: failure === 'http' ? 503 : 200, contentType: 'text/html', body: '<html>Unavailable</html>' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true, authorized: false, expiresAt: null }) });
+    });
+    await recovery.route(url => url.pathname === '/api/housing', route => { ++housingReads; return route.abort(); });
+    const recoveredPage = await recovery.newPage(); await recoveredPage.goto(baseURL);
+    await recoveredPage.locator('.leaflet-container').click({ position: { x: 150, y: 100 } });
+    await recoveredPage.getByRole('button', { name: 'Start environment observations', exact: true }).waitFor();
+    await recoveredPage.getByRole('button', { name: 'Profile settings', exact: true }).click();
+    // Browser reconnect may race the failed fetch; retry explicitly when opening settings again.
+    await recoveredPage.getByRole('button', { name: 'Close', exact: true }).click();
+    await recoveredPage.getByRole('button', { name: 'Profile settings', exact: true }).click();
+    await recoveredPage.getByRole('link', { name: 'Sign in with Google', exact: true }).waitFor();
+    assert.equal(attempts, 2, 'failed discovery can recover without reload and successful discovery stays deduplicated');
+    assert.equal(housingReads, 0); assert.equal(await recoveredPage.getByTestId('housing-panel').count(), 0);
+    await recovery.close();
+  }
   console.log('Housing UI passed: on-demand cached reads, explicit filters, no saved-data mutation and 320/390/1440px layouts.');
 }

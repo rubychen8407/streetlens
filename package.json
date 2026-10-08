@@ -20,7 +20,7 @@
     "test:language": "node --import tsx scripts/test-language.ts",
     "test:postgis-optional": "node --import tsx scripts/test-postgis-optional.ts",
     "db:storage": "node --import tsx scripts/db-storage-report.ts",
-    "ci": "npm run lint && npm run build && npm run test:housing && npm run test:unified-baseline && npm run test:static-import-api && npm run test:source-fallbacks && npm run test:score-integrity && npm run test:assessment-policy && npm run test:photo-storage && npm run test:safe-writes && npm run test:storage-budget && npm run test:scheduled-backfill && npm run test:snapshot-preservation && npm run test:walk-moments && npm run test:street-geometry && npm run test:wheelroute-parser && npm run test:spatial-inventory && npm run test:refresh-client && npm run test:postgis-optional && npm run test:language && npm run test:walk-ui",
+    "ci": "npm run lint && npm run build && npm run test:housing && npm run test:unified-baseline && npm run test:static-import-api && npm run test:source-fallbacks && npm run test:score-integrity && npm run test:fixed-scoring && npm run test:assessment-policy && npm run test:photo-storage && npm run test:safe-writes && npm run test:storage-budget && npm run test:scheduled-backfill && npm run test:snapshot-preservation && npm run test:walk-moments && npm run test:street-geometry && npm run test:wheelroute-parser && npm run test:spatial-inventory && npm run test:streaming-csv && npm run test:refresh-client && npm run test:postgis-optional && npm run test:language && npm run test:walk-ui",
     "test:scheduled-backfill": "node --import tsx scripts/test-scheduled-backfill.ts",
     "test:safe-writes": "node --import tsx scripts/test-safe-writes.ts",
     "test:storage-budget": "node --import tsx scripts/test-storage-budget.ts",
@@ -32,6 +32,8 @@
     "test:refresh-client": "node --import tsx scripts/test-refresh-client.ts",
     "test:wheelroute-parser": "node --import tsx scripts/test-wheelroute-parser.ts",
     "test:street-geometry": "node --import tsx scripts/test-street-geometry.ts",
+    "test:fixed-scoring": "node --import tsx scripts/test-fixed-scoring.ts",
+    "test:streaming-csv": "node --import tsx scripts/test-streaming-csv.ts",
     "test:housing": "node --import tsx scripts/test-housing.ts && node --import tsx scripts/test-private-housing-auth.ts && python scripts/test-housing-import.py"
   },
   "dependencies": {

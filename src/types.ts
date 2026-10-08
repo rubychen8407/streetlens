@@ -311,13 +311,20 @@ export interface ScoreFactor {
   status?: 'available' | 'unavailable';
   retrievedAt?: string;
   referenceSampleSize?: number;
-  scoringMethod?: 'empirical_percentile' | 'raw_observation' | 'not_scored';
+  scoringMethod?: 'empirical_percentile' | 'raw_observation' | 'not_scored' | 'fixed_standard';
+  normalizedScore?: number | null;
+  indicatorWeight?: number;
+  estimatedValue?: number | null;
+  referencePercentile?: number;
+  estimationMethod?: 'regional_real_data_prior';
   availabilityReason?: 'insufficient_reference_data' | 'source_unavailable' | 'no_observation';
 }
 
 export type ScoreMode = 'observed' | 'estimated';
 
 export interface CategoryScore {
+  completeness?: number;
+  provisional?: boolean;
   score: number | null;
   factors: ScoreFactor[];
   mode: ScoreMode;
@@ -326,6 +333,9 @@ export interface CategoryScore {
 }
 
 export interface StreetAssessmentScores {
+  completeness?: number;
+  provisional?: boolean;
+  scoringStandard?: string;
   c1: CategoryScore;
   c2: CategoryScore;
   c3: CategoryScore;

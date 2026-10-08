@@ -60,6 +60,22 @@ const pairs = `
 透天厝|Townhouse
 套房|Studio
 
+資料完整度|Data completeness
+暫定分數|Provisional score
+暫定|Provisional
+含區域估計|Includes regional estimates
+計分公式與限制|Scoring formula and limitations
+五類各占 20%；類內依固定指標權重加總。最後加上實勘調整，限制在 0–100 分。|Each category has 20% weight, with fixed indicator weights within it. Field adjustments are added last and the result is clamped to 0–100.
+缺資料時，至少 5 筆有效參考觀測才用中位數估計；估計不算入完整度。仍有缺項時，以可計分權重計算暫定分數。|Missing indicators use a reference median only with at least 5 valid observations. Estimates do not count toward completeness. Unresolved gaps produce a provisional score using available weights.
+安全分數最高為較低的風險分數加 10；只有路燈、消防栓時不產生安全分數。|Safety is capped at the lower risk score plus 10. Lights and hydrants alone cannot produce a safety score.
+門檻是待校準的產品設定，不是官方宜居標準。距離為直線距離；人行道為範圍面積占比，尚不代表連續性或實際步行時間。事故數未按交通量校正。|Thresholds are provisional product settings, not official livability standards. Distances are straight-line; sidewalk area does not measure continuity or walking time. Accident counts are not adjusted for traffic exposure.
+數量分數 = 100 × (1 − 2^(−觀測值 / 半飽和值))；距離與風險依下列節點線性插值。|Quantity score = 100 × (1 − 2^(−value / half-saturation)). Distance and risk scores interpolate linearly between the following points.
+指標參考排名僅比較現有樣本，不影響 CLS，也不代表整區街道排名。|Indicator ranks compare available samples only. They do not affect CLS or represent a district-wide street ranking.
+半飽和值|Half-saturation
+區域中位數估計|Reference median estimate
+指標分數|Indicator score
+類內權重|Category weight
+參考樣本百分位|Reference percentile
 街道地圖|Street map
 點選街道查看評估；鍵盤 Enter 查看地圖中心。|Select a street to view its assessment; press Enter to assess the map centre.
 外部 CLS 以路段共用取樣點計算；總分另加此筆實勘調整。|External CLS uses the street portion's shared sampling point; the final score adds this visit's field adjustment.
@@ -515,6 +531,9 @@ Object.assign(catalog, {
 });
 
 const metadata: Record<string, [string, string]> = {
+  aqi: ['空氣品質指數', 'Air quality index'],
+  maxFloodDepthCm: ['最大模擬淹水深度', 'Maximum modeled flood depth'],
+  nearestCommunityCulturalFacilityDist: ['最近社區文化設施距離', 'Nearest community or cultural facility distance'],
   trafficAccidentCount500m: ['交通事故 · 500m', 'Traffic accidents · 500m'],
   fatalTrafficAccidentCount500m: ['死亡事故 · 500m', 'Fatal accidents · 500m'],
   injuryTrafficAccidentCount500m: ['受傷事故 · 500m', 'Injury accidents · 500m'],

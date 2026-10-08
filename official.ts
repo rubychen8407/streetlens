@@ -1,6 +1,7 @@
 import proj4 from "proj4";
 import { parseWheelRouteGeometry } from './wheelRouteGeometry';
 import { normalizeSpatialInventory } from './spatialInventory';
+import { csvRecords, utf8Chunks } from './streamingCsv';
 
 export interface OfficialSpatialPoint {
   id: string;
@@ -134,6 +135,7 @@ function firstValue(row: Record<string, string>, names: string[]): string {
 
 function numberValue(row: Record<string, string>, names: string[]): number | null {
   const raw = firstValue(row, names).replace(/,/g, "");
+  if (!raw.trim()) return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
 }
@@ -505,14 +507,14 @@ export async function fetchTaipeiSidewalkAreas(): Promise<OfficialCitywideSource
   const source = "Taipei City Transportation Department official sidewalks and marked sidewalks (WheelRoute)";
   try {
     const responses = await Promise.all([
-      fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility11, 30_000),
-      fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility12, 30_000),
+      fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility11, 90_000),
+      fetchText(OFFICIAL_SOURCE_URLS.wheelRouteFacility12, 90_000),
     ]);
     const areas: OfficialSpatialArea[] = [];
     responses.forEach(({ text }, responseIndex) => {
       const facilityType = responseIndex === 0 ? 11 : 12;
       let payload: any;
-      try { payload = JSON.parse(text); } catch { return; }
+      try { payload = JSON.parse(text); } catch { throw new Error(`WheelRoute facility ${facilityType} returned invalid JSON`); }
 
       for (const { row, geometry } of findSpatialAreas(payload)) {
         const name = String(
@@ -681,12 +683,22 @@ export async function fetchTaipeiParks(): Promise<OfficialCitywideSourceResult> 
 export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceResult> {
   const retrievedAt = new Date().toISOString();
   const source = "Taipei City Public Works Department street light inventory";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
   try {
-    const { text, lastModified } = await fetchText(OFFICIAL_SOURCE_URLS.taipeiStreetLights, 60_000);
-    const rows = parseCsv(text);
+    const response = await fetch(OFFICIAL_SOURCE_URLS.taipeiStreetLights, {
+      signal: controller.signal, headers: { Accept: 'text/csv', 'User-Agent': USER_AGENT },
+    });
+    if (!response.ok || !response.body) {
+      await response.body?.cancel();
+      throw new Error(`Street lights returned HTTP ${response.status}`);
+    }
+    const lastModified = response.headers.get('last-modified');
     const points: OfficialSpatialPoint[] = [];
-
-    for (const row of rows) {
+    let sourceUpdateMs: number | null = null;
+    for await (const row of csvRecords(utf8Chunks(response.body))) {
+      const parsed = parseDateMs(firstValue(row, ['UpdDate', '更新日期']));
+      if (parsed != null) sourceUpdateMs = Math.max(sourceUpdateMs ?? parsed, parsed);
       let lat = numberValue(row, ["緯度", "latitude", "Latitude"]);
       let lng = numberValue(row, ["經度", "longitude", "Longitude"]);
       if (lat == null || lng == null) {
@@ -721,19 +733,13 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
       });
     }
 
-    const sourceUpdateMs: number[] = [];
-    for (const row of rows) {
-      const parsed = parseDateMs(firstValue(row, ["UpdDate", "更新日期"]));
-      if (parsed != null) sourceUpdateMs.push(parsed);
-    }
-
     return {
       points,
       source,
       status: points.length ? "available" : "empty",
       retrievedAt,
-      sourceUpdatedAt: sourceUpdateMs.length
-        ? new Date(sourceUpdateMs.reduce((max, value) => Math.max(max, value), 0)).toISOString()
+      sourceUpdatedAt: sourceUpdateMs != null
+        ? new Date(sourceUpdateMs).toISOString()
         : lastModified,
     };
   } catch (error: any) {
@@ -745,6 +751,7 @@ export async function fetchTaipeiStreetLights(): Promise<OfficialCitywideSourceR
       error: error?.message || String(error),
     };
   }
+  finally { clearTimeout(timer); }
 }
 
 export async function fetchTaipeiMarkets(): Promise<OfficialCitywideSourceResult> {

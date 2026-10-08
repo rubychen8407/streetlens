@@ -127,6 +127,10 @@ export async function importHousing(db: Pool, input: any) {
   if (!Array.isArray(input.rows) || !input.rows.length || input.rows.length > 30000) throw new Error('Expected 1–30000 source rows');
   const rows = input.rows.map((row: any) => {
     if (!row || typeof row !== 'object' || Array.isArray(row) || Object.values(row).some(v => typeof v !== 'string')) throw new Error('Expected official CSV string fields');
+    const required = ['鄉鎮市區', '交易標的', '主要用途', '交易年月日', '建物型態', '建物移轉總面積平方公尺', '總價元', '編號'];
+    if (required.some(key => !Object.hasOwn(row, key))
+      || !['土地位置建物門牌', '土地區段位置建物區段門牌'].some(key => Object.hasOwn(row, key)))
+      throw new Error('Official schema changed; previous import retained');
     return parseResidentialRow(row, city);
   }).filter((row: HousingRecord | null): row is HousingRecord => row != null);
   if (!rows.length && !input.rows.some((row: any) => row['編號'] && rocDate(row['交易年月日']) && row['主要用途']))

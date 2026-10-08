@@ -8,7 +8,7 @@ export function ProfileSettings({ open, onClose }: { open: boolean; onClose: () 
   const dialog = useRef<HTMLDialogElement>(null);
   const language = useLanguage();
   const theme = useTheme();
-  const access = usePrivateHousingAccess();
+  const access = usePrivateHousingAccess(open);
   const [logoutFailed, setLogoutFailed] = useState(false);
   useEffect(() => {
     if (open && !dialog.current?.open) dialog.current?.showModal();

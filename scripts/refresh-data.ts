@@ -47,7 +47,7 @@ const sourceKeys = [
 // last good snapshots while the rest of the refresh continues.
 const optionalSourceKeys = new Set(["taipei_parks", "taipei_official_aqi"]);
 
-async function requestRefresh(sourceKey: string): Promise<Response> {
+async function requestRefresh(sourceKey: string): Promise<any> {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -66,21 +66,38 @@ async function requestRefresh(sourceKey: string): Promise<Response> {
       );
 
       const retryable = response.status === 429 || response.status >= 500;
-      if (!retryable || attempt === maxAttempts) return response;
-
-      await response.body?.cancel();
-
-      const retryAfter = Number(response.headers.get("retry-after"));
-      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
-        ? retryAfter * 1000
-        : (response.status === 502 || response.status === 503 ? 5000 : 1000) * 2 ** (attempt - 1);
-
-      console.warn(
-        `Refresh source ${sourceKey} returned HTTP ${response.status}; retrying in ${delayMs}ms (${attempt}/${maxAttempts})`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (retryable && attempt < maxAttempts) {
+        await response.body?.cancel();
+        const retryAfter = Number(response.headers.get("retry-after"));
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 30_000)
+          : (response.status === 502 || response.status === 503 ? 5000 : 1000) * 2 ** (attempt - 1);
+        console.warn(`Refresh source ${sourceKey} returned HTTP ${response.status}; retrying in ${delayMs}ms (${attempt}/${maxAttempts})`);
+        clearTimeout(timeoutId);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+      if (!response.ok) {
+        // Do not download potentially huge proxy HTML/error assets.
+        await response.body?.cancel();
+        throw Object.assign(new Error(`Refresh endpoint for ${sourceKey} returned HTTP ${response.status}`), { terminal: true });
+      }
+      // The timeout covers reading/parsing the body, not only response headers.
+      const payload = await response.json();
+      if (!Array.isArray(payload?.snapshots) || (!payload.snapshots.length && payload.targetCount !== 0)) {
+        throw Object.assign(new Error(`Refresh endpoint for ${sourceKey} returned no snapshot results`), { terminal: true });
+      }
+      const transient = payload.snapshots.filter((item: any) => item.error
+        && (item.status === 'timeout' || (item.status === 'error' && /fetch failed|network|ECONNRESET|ETIMEDOUT|HTTP (429|5[0-9]{2})/i.test(String(item.error)))));
+      if (transient.length && attempt < maxAttempts) {
+        console.warn(`Refresh source ${sourceKey} reported a transient source failure; retrying (${attempt}/${maxAttempts}): ${String(transient[0].error).slice(0, 300)}`);
+        clearTimeout(timeoutId);
+        await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
+        continue;
+      }
+      return payload;
     } catch (error: any) {
-      if (error?.name === "AbortError" || attempt === maxAttempts) throw error;
+      if (error?.terminal || error?.name === "AbortError" || attempt === maxAttempts) throw error;
 
       const delayMs = 1000 * 2 ** (attempt - 1);
       console.warn(
@@ -100,24 +117,7 @@ const failedRequests: string[] = [];
 
 for (const sourceKey of sourceKeys) {
   try {
-    const response = await requestRefresh(sourceKey);
-    const raw = await response.text();
-
-    if (!response.ok) {
-      // Gateways return HTML with large embedded assets; log status, not assets.
-      let detail = '';
-      try { detail = String(JSON.parse(raw)?.error || '').slice(0, 300); } catch {}
-      throw new Error(`Refresh endpoint for ${sourceKey} returned HTTP ${response.status}${detail ? ': ' + detail : ''}`);
-    }
-
-    let payload: any;
-    try {
-      payload = raw ? JSON.parse(raw) : {};
-    } catch {
-      throw new Error(
-        `Refresh endpoint returned non-JSON for ${sourceKey} (HTTP ${response.status})`,
-      );
-    }
+    const payload = await requestRefresh(sourceKey);
 
     const snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : [];
     allSnapshots.push(...snapshots);
@@ -129,6 +129,10 @@ for (const sourceKey of sourceKeys) {
       changed: snapshots.filter((item: any) => item.changed).length,
       skipped: snapshots.filter((item: any) => item.skipped).length,
       errors: snapshots.filter((item: any) => item.error).length,
+      failures: snapshots.filter((item: any) => item.error).map((item: any) => ({
+        scopeKey: item.scopeKey, status: item.status,
+        error: String(item.error).slice(0, 300), preservedExisting: item.preservedExisting,
+      })),
     }, null, 2));
   } catch (error: any) {
     failedRequests.push(sourceKey);

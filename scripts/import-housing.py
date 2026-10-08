@@ -22,6 +22,9 @@ FIELDS = ["鄉鎮市區", "交易標的", "土地位置建物門牌", "土地區
           "交易年月日", "交易筆棟數", "移轉層次", "總樓層數", "建物型態", "建築完成年月",
           "建物移轉總面積平方公尺", "建物現況格局-房", "總價元", "車位類別", "車位移轉總面積平方公尺",
           "車位總價元", "備註", "編號", "電梯"]
+REQUIRED_FIELDS = {"鄉鎮市區", "交易標的", "主要用途", "交易年月日", "建物型態",
+                   "建物移轉總面積平方公尺", "總價元", "編號"}
+ADDRESS_FIELDS = {"土地位置建物門牌", "土地區段位置建物區段門牌"}
 
 
 def releases(history_years, today):
@@ -50,7 +53,8 @@ def csv_rows(archive, code):
     except UnicodeDecodeError:
         text = raw.decode("big5")
     reader = csv.DictReader(io.StringIO(text))
-    if not {"主要用途", "總價元", "編號", "交易年月日"}.issubset(reader.fieldnames or []):
+    headers = set(reader.fieldnames or [])
+    if not REQUIRED_FIELDS.issubset(headers) or not ADDRESS_FIELDS.intersection(headers):
         raise ValueError("Official schema changed; refusing import")
     result = []
     for row in reader:

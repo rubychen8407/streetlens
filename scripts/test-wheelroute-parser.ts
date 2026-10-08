@@ -48,5 +48,10 @@ try {
   mode = 'error';
   assert.equal((await fetchTaipeiSidewalkAreas()).status, 'error', 'network failure is not an empty observation');
   assert.equal(calls.length, 8);
+  globalThis.fetch = async input => new Response(String(input).endsWith('/11') ? '{broken' : JSON.stringify([fixture]));
+  const partial = await fetchTaipeiSidewalkAreas();
+  assert.equal(partial.status, 'error', 'invalid JSON in one required facility feed must not replace the complete inventory');
+  assert.equal(partial.areas?.length, 0);
+  assert.match(partial.error!, /facility 11 returned invalid JSON/);
   console.log('WheelRoute native coordinates, names, precision, closed rings, validation, deduplication and adapter failures passed.');
 } finally { globalThis.fetch = originalFetch; }
